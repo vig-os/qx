@@ -52,11 +52,17 @@ export function textBlock(canonical: string, x: number, y: number, size: number)
   const gap = font * 0.3;
   const cx = x + size / 2;
   const y0 = y + (size - innerH) / 2 + font * 0.85;
+  // Mirror label.py text_block: bold font + thin black stroke for
+  // legibility at <2 mm. Without the stroke, bold is only synthetic on
+  // most rendering pipelines and the gain is marginal.
+  const strokeW = font * 0.03;
   return rows
     .map(
       (row, i) =>
         `<text x="${cx.toFixed(3)}" y="${(y0 + i * (font + gap)).toFixed(3)}" ` +
-        `font-family="Courier, monospace" font-size="${font.toFixed(3)}" ` +
+        `font-family="Courier Bold, Courier New, Courier, monospace" ` +
+        `font-weight="700" font-size="${font.toFixed(3)}" ` +
+        `stroke="#000" stroke-width="${strokeW.toFixed(3)}" ` +
         `text-anchor="middle" fill="#000">${row}</text>`,
     )
     .join("\n");

@@ -120,9 +120,16 @@ def text_block(canonical: str, x: float, y: float, size: float) -> str:
     gap = font * 0.3
     cx = x + size / 2
     y0 = y + (size - inner_h) / 2 + font * 0.85
+    # font-weight=700 + a thin black stroke ~3 % of font size noticeably
+    # thickens letterforms after rasterisation. The stroke is what makes
+    # the text readable at <2 mm — bold alone is only synthetic on most
+    # rendering pipelines.
+    stroke_w = font * 0.03
     return "\n".join(
         f'<text x="{cx:.3f}" y="{y0 + i * (font + gap):.3f}" '
-        f'font-family="Courier, monospace" font-size="{font:.3f}" '
+        f'font-family="Courier Bold, Courier New, Courier, monospace" '
+        f'font-weight="700" font-size="{font:.3f}" '
+        f'stroke="#000" stroke-width="{stroke_w:.3f}" '
         f'text-anchor="middle" fill="#000">{row}</text>'
         for i, row in enumerate(rows)
     )

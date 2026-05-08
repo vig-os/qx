@@ -166,9 +166,9 @@
 <rect x="5.714" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.095" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.476" y="6.857" width="0.381" height="0.381" fill="#000"/>
-<text x="12.000" y="2.311" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">C6V9</text>
-<text x="12.000" y="4.622" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">R454</text>
-<text x="12.000" y="6.933" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">R9RU</text></g>
+<text x="12.000" y="2.311" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">C6V9</text>
+<text x="12.000" y="4.622" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">R454</text>
+<text x="12.000" y="6.933" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">R9RU</text></g>
 <g transform="translate(21.000,2.167)"><rect x="0.762" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.143" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.524" y="0.762" width="0.381" height="0.381" fill="#000"/>
@@ -316,9 +316,9 @@
 <rect x="5.333" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.476" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.857" y="6.857" width="0.381" height="0.381" fill="#000"/>
-<text x="12.000" y="2.311" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">CHNH</text>
-<text x="12.000" y="4.622" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">TGSP</text>
-<text x="12.000" y="6.933" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">P4TE</text></g>
+<text x="12.000" y="2.311" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">CHNH</text>
+<text x="12.000" y="4.622" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">TGSP</text>
+<text x="12.000" y="6.933" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">P4TE</text></g>
 <g transform="translate(37.000,2.167)"><rect x="0.762" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.143" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.524" y="0.762" width="0.381" height="0.381" fill="#000"/>
@@ -468,9 +468,9 @@
 <rect x="5.714" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.476" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.857" y="6.857" width="0.381" height="0.381" fill="#000"/>
-<text x="12.000" y="2.311" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">CR99</text>
-<text x="12.000" y="4.622" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">NXPT</text>
-<text x="12.000" y="6.933" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">VC2K</text></g>
+<text x="12.000" y="2.311" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">CR99</text>
+<text x="12.000" y="4.622" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">NXPT</text>
+<text x="12.000" y="6.933" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">VC2K</text></g>
 <g transform="translate(53.000,2.167)"><rect x="0.762" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.143" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.524" y="0.762" width="0.381" height="0.381" fill="#000"/>
@@ -618,9 +618,9 @@
 <rect x="5.333" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.095" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.476" y="6.857" width="0.381" height="0.381" fill="#000"/>
-<text x="12.000" y="2.311" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">D6ZM</text>
-<text x="12.000" y="4.622" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">RZ4M</text>
-<text x="12.000" y="6.933" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">AG8Z</text></g>
+<text x="12.000" y="2.311" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">D6ZM</text>
+<text x="12.000" y="4.622" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">RZ4M</text>
+<text x="12.000" y="6.933" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">AG8Z</text></g>
 <g transform="translate(69.000,2.167)"><rect x="0.762" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.143" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.524" y="0.762" width="0.381" height="0.381" fill="#000"/>
@@ -760,9 +760,9 @@
 <rect x="5.714" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.476" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.857" y="6.857" width="0.381" height="0.381" fill="#000"/>
-<text x="12.000" y="2.311" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">D77D</text>
-<text x="12.000" y="4.622" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">DFRY</text>
-<text x="12.000" y="6.933" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">672M</text></g>
+<text x="12.000" y="2.311" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">D77D</text>
+<text x="12.000" y="4.622" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">DFRY</text>
+<text x="12.000" y="6.933" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">672M</text></g>
 <g transform="translate(5.000,10.500)"><rect x="0.762" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.143" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.524" y="0.762" width="0.381" height="0.381" fill="#000"/>
@@ -903,9 +903,9 @@
 <rect x="4.190" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="4.952" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="5.714" y="6.857" width="0.381" height="0.381" fill="#000"/>
-<text x="12.000" y="2.311" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">DBSF</text>
-<text x="12.000" y="4.622" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">7FBS</text>
-<text x="12.000" y="6.933" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">8TJR</text></g>
+<text x="12.000" y="2.311" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">DBSF</text>
+<text x="12.000" y="4.622" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">7FBS</text>
+<text x="12.000" y="6.933" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">8TJR</text></g>
 <g transform="translate(21.000,10.500)"><rect x="0.762" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.143" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.524" y="0.762" width="0.381" height="0.381" fill="#000"/>
@@ -1035,9 +1035,9 @@
 <rect x="5.714" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.476" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.857" y="6.857" width="0.381" height="0.381" fill="#000"/>
-<text x="12.000" y="2.311" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">DE86</text>
-<text x="12.000" y="4.622" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">DRRU</text>
-<text x="12.000" y="6.933" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">SDKF</text></g>
+<text x="12.000" y="2.311" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">DE86</text>
+<text x="12.000" y="4.622" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">DRRU</text>
+<text x="12.000" y="6.933" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">SDKF</text></g>
 <g transform="translate(37.000,10.500)"><rect x="0.762" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.143" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.524" y="0.762" width="0.381" height="0.381" fill="#000"/>
@@ -1181,9 +1181,9 @@
 <rect x="5.714" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.095" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.476" y="6.857" width="0.381" height="0.381" fill="#000"/>
-<text x="12.000" y="2.311" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">E7UD</text>
-<text x="12.000" y="4.622" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">VXGW</text>
-<text x="12.000" y="6.933" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">4QXB</text></g>
+<text x="12.000" y="2.311" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">E7UD</text>
+<text x="12.000" y="4.622" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">VXGW</text>
+<text x="12.000" y="6.933" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">4QXB</text></g>
 <g transform="translate(53.000,10.500)"><rect x="0.762" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.143" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.524" y="0.762" width="0.381" height="0.381" fill="#000"/>
@@ -1317,9 +1317,9 @@
 <rect x="5.714" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.476" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.857" y="6.857" width="0.381" height="0.381" fill="#000"/>
-<text x="12.000" y="2.311" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">FBBU</text>
-<text x="12.000" y="4.622" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">VJK9</text>
-<text x="12.000" y="6.933" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">JYD9</text></g>
+<text x="12.000" y="2.311" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">FBBU</text>
+<text x="12.000" y="4.622" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">VJK9</text>
+<text x="12.000" y="6.933" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">JYD9</text></g>
 <g transform="translate(69.000,10.500)"><rect x="0.762" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.143" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.524" y="0.762" width="0.381" height="0.381" fill="#000"/>
@@ -1476,9 +1476,9 @@
 <rect x="4.952" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="5.333" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="5.714" y="6.857" width="0.381" height="0.381" fill="#000"/>
-<text x="12.000" y="2.311" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">FBZ9</text>
-<text x="12.000" y="4.622" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">GZ4V</text>
-<text x="12.000" y="6.933" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">UD9G</text></g>
+<text x="12.000" y="2.311" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">FBZ9</text>
+<text x="12.000" y="4.622" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">GZ4V</text>
+<text x="12.000" y="6.933" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">UD9G</text></g>
 <g transform="translate(5.000,18.833)"><rect x="0.762" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.143" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.524" y="0.762" width="0.381" height="0.381" fill="#000"/>
@@ -1630,9 +1630,9 @@
 <rect x="5.714" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.095" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.476" y="6.857" width="0.381" height="0.381" fill="#000"/>
-<text x="12.000" y="2.311" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">GFUB</text>
-<text x="12.000" y="4.622" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">7T9K</text>
-<text x="12.000" y="6.933" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">D9TR</text></g>
+<text x="12.000" y="2.311" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">GFUB</text>
+<text x="12.000" y="4.622" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">7T9K</text>
+<text x="12.000" y="6.933" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">D9TR</text></g>
 <g transform="translate(21.000,18.833)"><rect x="0.762" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.143" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.524" y="0.762" width="0.381" height="0.381" fill="#000"/>
@@ -1778,9 +1778,9 @@
 <rect x="6.095" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.476" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.857" y="6.857" width="0.381" height="0.381" fill="#000"/>
-<text x="12.000" y="2.311" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">GND3</text>
-<text x="12.000" y="4.622" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">DBYF</text>
-<text x="12.000" y="6.933" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">RXP8</text></g>
+<text x="12.000" y="2.311" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">GND3</text>
+<text x="12.000" y="4.622" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">DBYF</text>
+<text x="12.000" y="6.933" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">RXP8</text></g>
 <g transform="translate(37.000,18.833)"><rect x="0.762" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.143" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.524" y="0.762" width="0.381" height="0.381" fill="#000"/>
@@ -1918,9 +1918,9 @@
 <rect x="6.095" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.476" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.857" y="6.857" width="0.381" height="0.381" fill="#000"/>
-<text x="12.000" y="2.311" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">HDKS</text>
-<text x="12.000" y="4.622" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">GVFS</text>
-<text x="12.000" y="6.933" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">PFFF</text></g>
+<text x="12.000" y="2.311" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">HDKS</text>
+<text x="12.000" y="4.622" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">GVFS</text>
+<text x="12.000" y="6.933" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">PFFF</text></g>
 <g transform="translate(53.000,18.833)"><rect x="0.762" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.143" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.524" y="0.762" width="0.381" height="0.381" fill="#000"/>
@@ -2087,9 +2087,9 @@
 <rect x="4.952" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="5.714" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.095" y="6.857" width="0.381" height="0.381" fill="#000"/>
-<text x="12.000" y="2.311" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">HP5U</text>
-<text x="12.000" y="4.622" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">3YMT</text>
-<text x="12.000" y="6.933" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">XVJ3</text></g>
+<text x="12.000" y="2.311" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">HP5U</text>
+<text x="12.000" y="4.622" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">3YMT</text>
+<text x="12.000" y="6.933" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">XVJ3</text></g>
 <g transform="translate(69.000,18.833)"><rect x="0.762" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.143" y="0.762" width="0.381" height="0.381" fill="#000"/>
 <rect x="1.524" y="0.762" width="0.381" height="0.381" fill="#000"/>
@@ -2235,7 +2235,7 @@
 <rect x="6.095" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.476" y="6.857" width="0.381" height="0.381" fill="#000"/>
 <rect x="6.857" y="6.857" width="0.381" height="0.381" fill="#000"/>
-<text x="12.000" y="2.311" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">KRFA</text>
-<text x="12.000" y="4.622" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">K4Z6</text>
-<text x="12.000" y="6.933" font-family="Courier, monospace" font-size="1.778" text-anchor="middle" fill="#000">6QGN</text></g>
+<text x="12.000" y="2.311" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">KRFA</text>
+<text x="12.000" y="4.622" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">K4Z6</text>
+<text x="12.000" y="6.933" font-family="Courier Bold, Courier New, Courier, monospace" font-weight="700" font-size="1.778" stroke="#000" stroke-width="0.053" text-anchor="middle" fill="#000">6QGN</text></g>
 </svg>
