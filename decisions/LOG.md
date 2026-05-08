@@ -3,6 +3,34 @@
 Append-only chronological record of decisions for the parts registry.
 Newest entries first.
 
+## 2026-05-08 — Print event log (CLI side)
+
+**Context:** issue #12 — a printed-but-unbound label is a real
+artifact, but `status` (per ADR-012) is the *logical* unbound/bound/void
+relationship and cannot represent multiplicity (a sticker can be
+reprinted). Audit traceability needs an event log, not a status
+promotion.
+
+**Outcomes:** ADR-015 (Print event log), Status: Proposed. New
+`print_log.csv` at the repo root with the schema
+`id,printed_at,printed_by,layout,size_mm,extra,copies,output_mode,batch_label`.
+`label.py` grows `--log` / `--no-log` (default on), `--operator`
+(default `$USER`), `--output-mode` (default `dk-continuous-auto-cut`).
+After every successful render of all SVGs the script appends one row
+per ID and re-sorts by `printed_at` for stable diffs. `extra` is a
+JSON-encoded string of layout-specific options (`{}` for vert/horz,
+`{"cableOd":N}` for flag).
+
+**Process notes:** the FE wiring (queue print events into the same
+PR pipeline as bind diffs) and the validator wiring (FK to
+registry.csv, sort-stability, header equality) are explicitly out of
+scope for this CLI-only change — separate follow-up work tracked in
+the web app and validators issues. The CLI prints a stderr warning
+on local FK miss but still logs; CI is the source of truth for
+orphan events.
+
+**References:** ADR-015, issue #12, `label.py`, `print_log.csv`.
+
 ## 2026-05-08 — Web app spike (architecture + Lookup/Print/Bind tabs + Error Report plugin)
 
 **Context:** ADR-013 specified the phase 2 web app deployment shape;

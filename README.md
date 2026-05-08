@@ -29,6 +29,9 @@ uv run mint.py --count 50 --batch B-2026-05-sdmd
 uv run label.py --batch B-2026-05-sdmd --layout horz --tape dk-12
 uv run label.py --id K7M3PQ9RT5VA --layout vert --size 8
 uv run label.py --status unbound --layout flag --size 11 --cable-od 6
+# Each successful render also appends a row per ID to print_log.csv
+# (audit trail; see ADR-015). Pass --no-log for ad-hoc renders that
+# aren't real prints, --operator <name> to override $USER.
 
 # 3. bind — attach an ID to a real part (full ID or ≥ 8-char prefix)
 uv run bind.py K7M3PQ9RT5VA \
@@ -137,6 +140,9 @@ fetching the merge-base copy of `registry.csv` for the diff rules.
 - `validators/` — shared CI + FE registry rule set (stdlib only)
 - `registry.csv` — canonical record (sorted by ID; see ADR-013 for the
   sort-stability invariant)
+- `print_log.csv` — append-only audit trail of every label print
+  (sorted by `printed_at`; one row per ID per print event; see
+  [ADR-015](decisions/ADR-015-print-event-log.md))
 - `decisions/` — ADRs and decision log
 - `examples/` — reference renderings at common sizes
 - `labels/` — generated SVG/PDF labels (gitignored)

@@ -20,15 +20,24 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import math
+import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import segno
 
 PARTS_DIR = Path(__file__).resolve().parent
 REGISTRY = PARTS_DIR / "registry.csv"
+PRINT_LOG = PARTS_DIR / "print_log.csv"
 LABELS_DIR = PARTS_DIR / "labels"
+
+PRINT_LOG_FIELDS = [
+    "id", "printed_at", "printed_by", "layout", "size_mm",
+    "extra", "copies", "output_mode", "batch_label",
+]
 
 # Tape printable-height presets, in mm of short-side. Two families:
 #
@@ -143,6 +152,75 @@ def render(canonical: str, layout: str, size: float, cable_od_mm: float | None) 
     sys.exit(f"unknown layout: {layout}")
 
 
+# ---------- Print event log ----------
+
+def _layout_extra(layout: str, cable_od_mm: float | None) -> dict:
+    """Layout-specific options that belong in the print_log `extra` column."""
+    if layout == "flag" and cable_od_mm is not None:
+        return {"cableOd": cable_od_mm}
+    return {}
+
+
+def append_print_events(
+    ids: list[str],
+    *,
+    layout: str,
+    size_mm: float,
+    extra: dict,
+    copies: int,
+    output_mode: str,
+    operator: str,
+    batch_label: str,
+    registry_ids: set[str],
+) -> None:
+    """Append one row per ID to print_log.csv and re-sort by printed_at.
+
+    `copies` is logged as a single row per ID (not duplicated). FK to
+    registry.csv is enforced softly: missing IDs warn to stderr but still
+    log — the CI validator is the source of truth for orphan events.
+    """
+    printed_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    extra_str = json.dumps(extra, separators=(",", ":"), sort_keys=True)
+
+    orphans = [i for i in ids if i not in registry_ids]
+    if orphans:
+        print(
+            f"warning: {len(orphans)} id(s) logged but not in registry.csv "
+            f"(FK orphans will be flagged by CI): {', '.join(orphans[:3])}"
+            f"{'…' if len(orphans) > 3 else ''}",
+            file=sys.stderr,
+        )
+
+    new_rows = [
+        {
+            "id": nid,
+            "printed_at": printed_at,
+            "printed_by": operator,
+            "layout": layout,
+            "size_mm": f"{size_mm:g}",
+            "extra": extra_str,
+            "copies": str(copies),
+            "output_mode": output_mode,
+            "batch_label": batch_label,
+        }
+        for nid in ids
+    ]
+
+    existing_rows: list[dict] = []
+    if PRINT_LOG.exists() and PRINT_LOG.stat().st_size > 0:
+        with PRINT_LOG.open() as f:
+            existing_rows = list(csv.DictReader(f))
+
+    all_rows = existing_rows + new_rows
+    all_rows.sort(key=lambda r: r.get("printed_at", ""))
+
+    with PRINT_LOG.open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=PRINT_LOG_FIELDS, extrasaction="ignore")
+        w.writeheader()
+        for row in all_rows:
+            w.writerow(row)
+
+
 # ---------- ID selection ----------
 
 def select_ids(
@@ -184,7 +262,27 @@ def main() -> None:
                     help="cable outer diameter in mm (required for --layout flag)")
     ap.add_argument("--out-dir", type=Path, default=None,
                     help="output directory (default: labels/<descriptor>)")
+    ap.add_argument("--copies", type=int, default=1,
+                    help="copies per ID (recorded in print_log; default 1). "
+                    "Does not duplicate rendered SVGs — handle copies at the "
+                    "print queue. Only affects the event log row.")
+    log_group = ap.add_mutually_exclusive_group()
+    log_group.add_argument("--log", dest="log", action="store_true",
+                           help="append a row per ID to print_log.csv after "
+                           "rendering (default)")
+    log_group.add_argument("--no-log", dest="log", action="store_false",
+                           help="render only; do not append to print_log.csv")
+    ap.set_defaults(log=True)
+    ap.add_argument("--operator", default=os.getenv("USER", "unknown"),
+                    help="operator name recorded in print_log.printed_by "
+                    "(default: $USER, or 'unknown')")
+    ap.add_argument("--output-mode", default="dk-continuous-auto-cut",
+                    help="print pipeline descriptor recorded in "
+                    "print_log.output_mode (default: dk-continuous-auto-cut)")
     args = ap.parse_args()
+
+    if args.copies < 1:
+        sys.exit("--copies must be >= 1")
 
     if args.tape and args.size is not None:
         sys.exit("use either --size or --tape, not both")
@@ -211,6 +309,27 @@ def main() -> None:
         svg = render(nid, args.layout, size, args.cable_od)
         (out_dir / f"{nid}.svg").write_text(svg)
 
+    if args.log:
+        # batch_label: prefer explicit --batch, otherwise fall back to the
+        # row's batch field if every selected row shares one batch (common
+        # when selecting by --status or --id from a single batch).
+        if args.batch:
+            batch_label = args.batch
+        else:
+            batches = {r.get("batch") or "" for r in selected}
+            batch_label = batches.pop() if len(batches) == 1 else ""
+        append_print_events(
+            [r["id"] for r in selected],
+            layout=args.layout,
+            size_mm=size,
+            extra=_layout_extra(args.layout, args.cable_od),
+            copies=args.copies,
+            output_mode=args.output_mode,
+            operator=args.operator,
+            batch_label=batch_label,
+            registry_ids={r["id"] for r in rows},
+        )
+
     if args.layout == "vert":
         dim = f"{size:.1f} × {2 * size:.1f} mm"
     elif args.layout == "horz":
@@ -220,6 +339,8 @@ def main() -> None:
         dim = f"{4 * size + wrap_w:.1f} × {size:.1f} mm (wrap {wrap_w:.1f})"
     print(f"rendered {len(selected)} labels  layout={args.layout}  ({dim})")
     print(f"  out: {out_dir}/")
+    if args.log:
+        print(f"  logged {len(selected)} print event(s) to {PRINT_LOG.name}")
 
 
 if __name__ == "__main__":
