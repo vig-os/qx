@@ -1,0 +1,14 @@
+# Generated label artifacts (regenerable from registry + label.py)
+labels/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# uv
+uv.lock
+
+# macOS
+.DS_Store

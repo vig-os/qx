@@ -1,0 +1,16 @@
+[project]
+name = "part-registry"
+version = "0.1.0"
+description = "Per-instance physical part identification: nano-id IDs, QR labels, mint-then-bind"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "nanoid>=2.0.0",
+    "segno>=1.6.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "opencv-python-headless>=4.10",
+]
