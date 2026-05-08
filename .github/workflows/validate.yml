@@ -1,0 +1,63 @@
+name: Validate registry
+
+on:
+  pull_request:
+    paths:
+      - "registry.csv"
+      - "validators/**"
+      - ".github/workflows/validate.yml"
+  push:
+    branches: [main]
+    paths:
+      - "registry.csv"
+      - "validators/**"
+      - ".github/workflows/validate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Run validators
+    runs-on: ubuntu-latest
+    steps:
+      # Full history so we can fetch the merge-base copy of registry.csv.
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Pure stdlib by design (ADR-013) — no pip install needed.
+      - name: Run validators (file-local rules)
+        run: python -m validators registry.csv
+
+      - name: Run validators (diff vs merge-base)
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          BASE_FILE="$(mktemp)"
+          # Pull the base-branch copy of registry.csv. If it doesn't exist
+          # in the base (first time the file is being added), skip the
+          # diff rules — there's nothing to diff against.
+          if git cat-file -e "${BASE_SHA}:registry.csv" 2>/dev/null; then
+            git show "${BASE_SHA}:registry.csv" > "${BASE_FILE}"
+            python -m validators registry.csv --base "${BASE_FILE}"
+          else
+            echo "registry.csv not present at base ${BASE_SHA}; skipping diff rules"
+          fi
+
+      # The validator package itself is stdlib-only (ADR-013); pytest is
+      # a dev-only dep used to exercise the rule set. Install it directly
+      # so we don't pull in the full project dep tree (segno, nanoid,
+      # opencv) that the validators don't need.
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run pytest
+        run: python -m pytest validators/test_validators.py -v

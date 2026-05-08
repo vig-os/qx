@@ -94,6 +94,39 @@ The roundtrip suite verifies the critical invariant — **QR-decoded
 payload === displayed text === canonical ID** — across every layout
 and size combination. Requires `rsvg-convert` (`brew install librsvg`).
 
+## Validators
+
+`validators/` is the shared rule set that both CI and the FE (via Pyodide)
+use to gate writes to `registry.csv`. Pure stdlib, no external deps —
+see [ADR-013](decisions/ADR-013-parts-registry-web-app.md) §"Shared
+validation" for why.
+
+```bash
+# Local: validate the working-copy registry
+uv run python -m validators registry.csv
+
+# Local: also enforce the diff-vs-base rules (status transitions, etc.)
+uv run python -m validators registry.csv --base /path/to/main/registry.csv
+
+# Run the rule-set test suite
+uv run pytest validators/test_validators.py -v
+```
+
+Rules encoded:
+
+- Header schema and per-row schema (required fields, status enum,
+  canonical 12-char ID regex from ADR-012's no-lookalike alphabet).
+- Per-status field constraints (`bound` rows must carry `bound_at`;
+  `unbound` rows must not carry `type` / `location` / `bound_at`).
+- ID uniqueness and sort stability — re-sorting by `id` ascending must
+  equal the file, so diffs only show the rows actually changing.
+- Status transitions (with `--base`): `unbound → bound`,
+  `bound → bound` (rebind), `* → void`. No back-transitions, no
+  `void → bound`. New rows must be born `unbound` or `bound`.
+
+CI runs the same module on every PR via `.github/workflows/validate.yml`,
+fetching the merge-base copy of `registry.csv` for the diff rules.
+
 ## Files
 
 - `mint.py` — generate IDs, append rows. **No SVGs.**
@@ -101,6 +134,7 @@ and size combination. Requires `rsvg-convert` (`brew install librsvg`).
   Selectable by `--id`, `--batch`, or `--status`.
 - `bind.py` — flip `unbound → bound`, fill metadata
 - `test_labels.py` — pytest roundtrip suite
+- `validators/` — shared CI + FE registry rule set (stdlib only)
 - `registry.csv` — canonical record (sorted by ID; see ADR-013 for the
   sort-stability invariant)
 - `decisions/` — ADRs and decision log
