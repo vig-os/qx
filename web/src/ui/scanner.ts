@@ -1,40 +1,43 @@
 // Shared QR-camera scan helper. Lookup, Bind, Print all use this.
 //
-// Decoder: native `BarcodeDetector` only.
+// Decoder: zxing-wasm (Apache-2.0, ~1 MB raw / ~420 KB gzipped) wrapped
+// by `barcode-detector` (MIT) — the WASM port of ZXing-C++ exposed
+// behind a `BarcodeDetector`-shaped API. We use it *unconditionally*,
+// not as a fallback to the native API, because:
 //
-// We deliberately do NOT ship a fallback decoder for unsupported
-// browsers. The labels we generate are Micro QR; @zxing/browser doesn't
-// decode Micro QR, so falling back to it would silently produce
-// "scan failed" on every Micro QR label — worse than failing loud.
+//  - Native BarcodeDetector availability is patchy (no Firefox, no
+//    desktop Safari, partial on iOS Safari, present on Chrome).
+//  - Native Micro QR advertisement is inconsistent: Chrome/Android
+//    typically lists only `qr_code` and does *not* decode Micro QR;
+//    iOS reports `qr_code` but the underlying VNDetectBarcodesRequest
+//    decodes Micro QR transparently. We can't tell from feature
+//    detection alone whether a payload like our M4 labels will be
+//    picked up.
 //
-// If the user lands on a browser that doesn't expose BarcodeDetector
-// or doesn't support a QR-variant format, the overlay shows an
-// explicit message naming what's missing and which browsers work.
-// A subagent (issue: "always-on Micro QR decoder via WASM") is
-// surveying open-source decoders we can bundle so this fallback
-// becomes a non-issue cross-browser.
+// Going through one decoder implementation everywhere removes the
+// platform matrix and guarantees Micro QR (M1–M4) + Standard QR work
+// on Chrome / Firefox / Safari / Edge, desktop and mobile.
+//
+// The wasm binary is bundled with the site and served from our own
+// origin (Vite emits a hashed file under /assets/), so there is no
+// third-party CDN dependency at runtime — important for GH Pages CSP
+// and for the planned PWA / offline use case.
+//
+// The polyfill module is dynamic-imported on first scan so the cold
+// page load isn't penalised for the camera dependency.
 
 import { el, button } from "./dom";
 import { icon } from "./icons";
 
-interface BarcodeDetectorCtor {
-  new (init?: { formats?: string[] }): BarcodeDetectorInstance;
-  getSupportedFormats(): Promise<string[]>;
-}
-
-interface BarcodeDetectorInstance {
-  detect(source: CanvasImageSource): Promise<{ rawValue: string; format: string }[]>;
-}
-
-declare global {
-  interface Window {
-    BarcodeDetector?: BarcodeDetectorCtor;
-  }
-}
-
 interface ScanResult {
   payload: string;
   format: string;
+}
+
+interface DecoderHandle {
+  detect(source: CanvasImageSource): Promise<{ rawValue: string; format: string }[]>;
+  /** Human label for the scanner overlay badge. */
+  badge: string;
 }
 
 class ScanUnsupportedError extends Error {
@@ -46,63 +49,74 @@ class ScanUnsupportedError extends Error {
 
 /** Open the scanner UI; resolve with the decoded payload string.
  *
- * Throws `ScanUnsupportedError` if the platform can't decode QR codes
- * via the native BarcodeDetector API. Callers should catch and present
- * the error message to the operator. */
+ * Throws `ScanUnsupportedError` if the platform can't access the
+ * camera or the WASM decoder fails to load. */
 export async function openScanner(): Promise<string> {
   const result = await openScannerWithDetail();
   return result.payload;
 }
 
 export async function openScannerWithDetail(): Promise<ScanResult> {
-  if (typeof window === "undefined" || !window.BarcodeDetector) {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
     showUnsupported(
-      "This browser doesn't expose the BarcodeDetector API.",
-      "Use Chrome on Android, or iOS 16+ Safari. Desktop Safari and Firefox don't have it yet.",
+      "This browser doesn't expose a camera API.",
+      "getUserMedia is required for QR scanning. Try a recent Chrome, Firefox, Safari, or Edge.",
     );
-    throw new ScanUnsupportedError("BarcodeDetector unavailable");
+    throw new ScanUnsupportedError("getUserMedia unavailable");
   }
 
-  let supported: string[];
+  let decoder: DecoderHandle;
   try {
-    supported = await window.BarcodeDetector.getSupportedFormats();
-  } catch {
-    showUnsupported(
-      "BarcodeDetector exists but failed to enumerate formats.",
-      "Try a different browser or device.",
-    );
-    throw new ScanUnsupportedError("getSupportedFormats failed");
+    decoder = await loadDecoder();
+  } catch (e) {
+    const msg = (e as Error)?.message ?? String(e);
+    showUnsupported("The QR decoder failed to load.", `Detail: ${msg}`);
+    throw new ScanUnsupportedError("decoder load failed: " + msg);
   }
 
-  // The platform may report `micro_qr_code` explicitly, or only `qr_code`.
-  // On iOS 16+ Safari, even when only `qr_code` is listed, the underlying
-  // VNDetectBarcodesRequest decodes Micro QR transparently. So we accept
-  // either, and only fail if there's no QR variant at all.
-  const formats = supported.filter(
-    (f) => f === "qr_code" || f === "micro_qr_code",
-  );
-  if (formats.length === 0) {
-    showUnsupported(
-      "BarcodeDetector is available but does not advertise QR support on this device.",
-      `Reported formats: ${supported.join(", ") || "(none)"}.`,
-    );
-    throw new ScanUnsupportedError("no qr formats");
-  }
+  return openScannerWithDecoder(decoder);
+}
 
-  return openScannerNative(formats);
+// ---------- Decoder loader ----------
+
+let cachedDecoderPromise: Promise<DecoderHandle> | null = null;
+
+function loadDecoder(): Promise<DecoderHandle> {
+  if (cachedDecoderPromise) return cachedDecoderPromise;
+  cachedDecoderPromise = (async (): Promise<DecoderHandle> => {
+    // Lazy-load the WASM-backed BarcodeDetector ponyfill on first use.
+    const ponyfill = await import("barcode-detector/ponyfill");
+    // Ship the wasm binary from our own origin (Vite hashes the asset).
+    // Default behaviour would fetch from jsDelivr; we override so the
+    // site is self-contained.
+    const wasmUrl = (await import("zxing-wasm/reader/zxing_reader.wasm?url"))
+      .default;
+    ponyfill.prepareZXingModule({
+      overrides: {
+        locateFile: (path: string, prefix: string) =>
+          path.endsWith(".wasm") ? wasmUrl : prefix + path,
+      },
+    });
+    const detector = new ponyfill.BarcodeDetector({
+      formats: ["qr_code", "micro_qr_code"],
+    });
+    const version = ponyfill.ZXING_WASM_VERSION;
+    return {
+      detect: (src) => detector.detect(src) as Promise<{ rawValue: string; format: string }[]>,
+      badge: `QR + Micro QR (zxing-wasm ${version})`,
+    };
+  })();
+  // If the load fails, drop the cache so a retry tries again.
+  cachedDecoderPromise.catch(() => {
+    cachedDecoderPromise = null;
+  });
+  return cachedDecoderPromise;
 }
 
 // ---------- Camera + decoder loop ----------
 
-async function openScannerNative(formats: string[]): Promise<ScanResult> {
-  const ui = makeOverlay(
-    formats.includes("micro_qr_code")
-      ? "QR + Micro QR (native)"
-      : "QR (native — Micro QR if platform supports it transparently)",
-  );
-
-  const Ctor = window.BarcodeDetector!;
-  const detector = new Ctor({ formats });
+async function openScannerWithDecoder(decoder: DecoderHandle): Promise<ScanResult> {
+  const ui = makeOverlay(decoder.badge);
 
   let stream: MediaStream | undefined;
   return new Promise<ScanResult>((resolve, reject) => {
@@ -122,7 +136,7 @@ async function openScannerNative(formats: string[]): Promise<ScanResult> {
     const tick = async () => {
       if (resolved) return;
       try {
-        const matches = await detector.detect(ui.video);
+        const matches = await decoder.detect(ui.video);
         const hit = matches.find((m) => m.rawValue);
         if (hit) {
           finish(null, {
@@ -132,7 +146,8 @@ async function openScannerNative(formats: string[]): Promise<ScanResult> {
           return;
         }
       } catch {
-        // Detector occasionally throws on un-decodable frames; keep polling.
+        // Decoder occasionally throws on un-decodable / partial frames;
+        // keep polling.
       }
       raf = requestAnimationFrame(tick);
     };

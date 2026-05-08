@@ -49,6 +49,36 @@ npm run build        # type-check + production bundle to dist/
 npm run preview      # serve the built bundle
 ```
 
+## QR / Micro QR scanning
+
+The scanner ([`src/ui/scanner.ts`](src/ui/scanner.ts)) decodes QR and
+Micro QR (M1–M4) using [`barcode-detector`](https://github.com/Sec-ant/barcode-detector)
+(MIT) — a `BarcodeDetector`-shaped polyfill backed by
+[`zxing-wasm`](https://github.com/Sec-ant/zxing-wasm) (Apache-2.0,
+ZXing-C++ compiled to WebAssembly). We use it *unconditionally*, not
+as a fallback to the native `BarcodeDetector` API: native availability
+and Micro QR coverage are both inconsistent across browsers (Firefox
+and desktop Safari don't expose it; Chrome/Android often advertises
+only `qr_code` and doesn't actually decode Micro QR; iOS Safari
+decodes Micro QR transparently but doesn't advertise it). One decoder
+everywhere removes that platform matrix.
+
+**Bundle cost** (lazy-loaded on first scan):
+
+| Asset | Raw | Gzipped |
+|---|---|---|
+| `zxing_reader.wasm` | ~1.0 MB | ~419 KB |
+| `barcode-detector` ponyfill JS | ~43 KB | ~15 KB |
+
+The wasm binary is bundled via Vite (`?url` import) and served from
+the same origin as the rest of the SPA — no third-party CDN
+dependency at runtime. The cold page load is unaffected; the WASM
+chunk only loads when the user opens the scanner.
+
+The overlay badge names the active decoder + version + supported
+formats so a misbehaving scan can be diagnosed quickly:
+`QR + Micro QR (zxing-wasm 3.0.3)`.
+
 ## Drift risk: TS port of label.py
 
 The SVG layout renderers in [`src/layouts/`](src/layouts/) are a
