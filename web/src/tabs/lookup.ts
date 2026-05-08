@@ -11,7 +11,7 @@ import type { AppContext, Tab } from "../core/types";
 import { events, EVENT_REPRINT_REQUEST, type ReprintRequest } from "../core/events";
 import { el, button, input, formRow } from "../ui/dom";
 import { icon } from "../ui/icons";
-import { openScanner } from "../ui/scanner";
+import { openScanner, type ScanStatus } from "../ui/scanner";
 
 export const lookupTab: Tab = {
   id: "lookup",
@@ -72,7 +72,19 @@ function buildUI(ctx: AppContext): HTMLElement {
   });
   scanBtn.addEventListener("click", async () => {
     try {
-      const text = await openScanner();
+      const text = await openScanner({
+        multi: true,
+        // Lookup status is just "what does the registry say?" — no
+        // queue concept here. unbound/bound/void map to the visible
+        // palette; void shows as bound-grey since it's not actionable.
+        resolveStatus: (canonical): ScanStatus => {
+          const row = ctx.registry.findById(canonical);
+          if (!row) return "unknown";
+          if (row.status === "unbound") return "unbound";
+          // bound or void — both are "already-known" greyed-out.
+          return "bound";
+        },
+      });
       queryInput.value = text;
       onSubmit();
     } catch {
