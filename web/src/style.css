@@ -163,6 +163,23 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
   position: fixed; inset: 0; background: rgba(0, 0, 0, 0.85);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   z-index: 200;
+  /* Status palette for snapshot mode polygon overlays. CSS variables
+   * so dark mode (and any future theme) can re-tint without touching
+   * scanner.ts. Stroke / fill use rgb()-with-alpha so light fills work
+   * on any background. */
+  --scan-status-unbound: 60, 170, 80;     /* green */
+  --scan-status-queued: 60, 130, 220;     /* blue */
+  --scan-status-bound: 140, 140, 140;     /* grey */
+  --scan-status-unknown: 220, 70, 70;     /* red */
+}
+:root:not([data-theme="light"]) .scan-overlay,
+:root[data-theme="dark"] .scan-overlay {
+  /* Slightly brighter in dark theme so polygons remain legible against
+   * darker still-frame backgrounds. */
+  --scan-status-unbound: 90, 210, 110;
+  --scan-status-queued: 100, 170, 255;
+  --scan-status-bound: 180, 180, 180;
+  --scan-status-unknown: 255, 110, 110;
 }
 .scan-overlay__video { width: 90%; max-width: 480px; max-height: 70vh; background: #000; }
 .scan-overlay__badge {
@@ -170,7 +187,67 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
   background: rgba(255, 255, 255, 0.1); color: #fff;
   font-family: ui-monospace, monospace; font-size: 12px;
 }
-.scan-overlay__cancel { margin-top: 16px; }
+.scan-overlay__cancel { margin-top: 0; }
+.scan-overlay__actions {
+  margin-top: 16px;
+  display: flex; gap: 8px; align-items: center;
+}
+
+/* ---- Snapshot mode ---- */
+.scan-overlay--snapshot .scan-overlay__snapshot {
+  position: relative;
+  width: 90%; max-width: 720px; max-height: 70vh;
+  display: flex; align-items: center; justify-content: center;
+}
+.scan-overlay__still {
+  position: relative;
+  width: 100%;
+  display: flex; align-items: center; justify-content: center;
+}
+.scan-overlay__still-canvas {
+  display: block;
+  width: 100%; height: auto;
+  max-height: 70vh; object-fit: contain;
+  background: #000;
+}
+.scan-overlay__hits {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+}
+.scan-overlay__hits .scan-hit { pointer-events: auto; }
+.scan-hit__poly {
+  fill: rgba(var(--scan-fill, 60, 170, 80), 0.25);
+  stroke: rgb(var(--scan-stroke, 60, 170, 80));
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+  transition: fill 0.1s ease;
+}
+.scan-hit:hover .scan-hit__poly { fill: rgba(var(--scan-fill, 60, 170, 80), 0.45); }
+.scan-hit__caption {
+  font: 600 14px ui-monospace, monospace;
+  fill: #fff;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.85);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.scan-hit--unbound { --scan-stroke: var(--scan-status-unbound); --scan-fill: var(--scan-status-unbound); }
+.scan-hit--queued  { --scan-stroke: var(--scan-status-queued);  --scan-fill: var(--scan-status-queued);  }
+.scan-hit--bound   { --scan-stroke: var(--scan-status-bound);   --scan-fill: var(--scan-status-bound);   }
+.scan-hit--bound .scan-hit__poly { fill: rgba(var(--scan-status-bound), 0.18); }
+.scan-hit--unknown { --scan-stroke: var(--scan-status-unknown); --scan-fill: var(--scan-status-unknown); }
+.scan-hit--unknown .scan-hit__poly { stroke-dasharray: 6 4; fill: rgba(var(--scan-status-unknown), 0.15); }
+
+.scan-overlay__hint {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border-radius: var(--radius);
+  font-size: 13px;
+}
 
 .scan-overlay--error .scan-overlay__card {
   background: var(--bg-elev); color: var(--fg);

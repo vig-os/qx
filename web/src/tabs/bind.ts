@@ -12,7 +12,7 @@ import { FIELDS } from "../registry/schema";
 import type { AppContext, Tab } from "../core/types";
 import { el, button, input, formRow } from "../ui/dom";
 import { icon } from "../ui/icons";
-import { openScanner } from "../ui/scanner";
+import { openScanner, type ScanStatus } from "../ui/scanner";
 
 const QUEUE_KEY = "part-registry.bind-queue";
 
@@ -201,7 +201,22 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
   const scanBtn = button({ class: "icon-only", title: "Scan QR" }, icon("camera"));
   scanBtn.addEventListener("click", async () => {
     try {
-      const v = await openScanner();
+      // Snapshot multi-pick: greys out IDs already in the queue
+      // (so the operator can see at a glance which on-bench parts
+      // are still un-queued) and reds out IDs not in the registry.
+      const queuedIds = new Set(loadQueue().map((q) => q.id));
+      const v = await openScanner({
+        multi: true,
+        resolveStatus: (canonical): ScanStatus => {
+          if (queuedIds.has(canonical)) return "queued";
+          const row = ctx.registry.findById(canonical);
+          if (!row) return "unknown";
+          if (row.status === "unbound") return "unbound";
+          // bound / void — operator can technically re-bind, but
+          // visually deprioritise.
+          return "bound";
+        },
+      });
       idInput.value = v.toUpperCase().replace(/-/g, "");
       idInput.focus();
     } catch {
