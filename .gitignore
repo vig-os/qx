@@ -1,11 +1,8 @@
-# Generated label artifacts (regenerable from registry + label.py)
+# Generated label artifacts (regenerable from registry + label.py).
+# Per-ID SVGs are high-volume and noisy in diffs; sheet outputs under
+# sheets/ stay tracked so they can be shared and printed straight from
+# the repo without rerunning tools/sheet.py.
 labels/
-
-# Generated sheet binaries (regenerable from registry + tools/sheet.py).
-# CSV templates under sheets/ stay tracked — they're hand-edited by operators.
-sheets/*.svg
-sheets/*.png
-sheets/*.pdf
 
 # Python
 .venv/
