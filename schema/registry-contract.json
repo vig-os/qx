@@ -1,0 +1,22 @@
+{
+  "id": {
+    "alphabet": "23456789ABCDEFGHJKMNPQRSTUVWXYZ",
+    "canonicalLength": 14,
+    "prefixLength": 8,
+    "legacyCanonicalLength": 12
+  },
+  "statuses": ["unbound", "bound", "void"],
+  "fields": [
+    { "key": "id", "label": "ID", "editable": false },
+    { "key": "status", "label": "Status", "editable": false },
+    { "key": "minted_at", "label": "Minted at", "editable": false },
+    { "key": "batch", "label": "Batch", "editable": false },
+    { "key": "bound_at", "label": "Bound at", "editable": false, "meaningfulFrom": "bound" },
+    { "key": "type", "label": "Type", "editable": true, "meaningfulFrom": "bound" },
+    { "key": "description", "label": "Description", "editable": true, "meaningfulFrom": "bound" },
+    { "key": "vendor", "label": "Vendor", "editable": true, "meaningfulFrom": "bound" },
+    { "key": "part_number", "label": "Part number", "editable": true, "meaningfulFrom": "bound" },
+    { "key": "location", "label": "Location", "editable": true, "meaningfulFrom": "bound" },
+    { "key": "notes", "label": "Notes", "editable": true }
+  ]
+}

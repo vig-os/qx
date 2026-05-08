@@ -1,19 +1,13 @@
-// SSOT for the registry row shape.
+// FE view of the shared registry contract.
 //
-// This file is the single declaration of what a registry row looks like.
-// Validators, table renderers, and bind-form generators all import from
-// here — they never assume column names or set their own.
-//
-// Mirror any field-set change in:
-//   - registry.csv header
-//   - mint.py / bind.py REGISTRY_FIELDS
-//   - validators (when added)
-//   - test_labels.py (if it touches columns)
-// SSOT here means: the *shape* lives in one place; the persistence
-// layer (CSV) is one consumer of that shape, the FE is another.
+// Runtime schema facts come from `schema/registry-contract.json`, which
+// is shared with the Python tooling. This module adds FE-specific types
+// on top of that contract so forms and tables can stay typed.
+
+import { REGISTRY_CONTRACT } from "./contract";
 
 export type Status = "unbound" | "bound" | "void";
-export const STATUSES: readonly Status[] = ["unbound", "bound", "void"] as const;
+export const STATUSES = REGISTRY_CONTRACT.statuses as readonly Status[];
 
 export interface RegistryRow {
   id: string;
@@ -40,18 +34,11 @@ export interface FieldDef {
   meaningfulFrom?: Status;
 }
 
-export const FIELDS: readonly FieldDef[] = [
-  { key: "id", label: "ID", editable: false },
-  { key: "status", label: "Status", editable: false },
-  { key: "minted_at", label: "Minted at", editable: false },
-  { key: "batch", label: "Batch", editable: false },
-  { key: "bound_at", label: "Bound at", editable: false, meaningfulFrom: "bound" },
-  { key: "type", label: "Type", editable: true, meaningfulFrom: "bound" },
-  { key: "description", label: "Description", editable: true, meaningfulFrom: "bound" },
-  { key: "vendor", label: "Vendor", editable: true, meaningfulFrom: "bound" },
-  { key: "part_number", label: "Part number", editable: true, meaningfulFrom: "bound" },
-  { key: "location", label: "Location", editable: true, meaningfulFrom: "bound" },
-  { key: "notes", label: "Notes", editable: true },
-] as const;
+export const FIELDS: readonly FieldDef[] = REGISTRY_CONTRACT.fields.map((field) => ({
+  key: field.key as keyof RegistryRow,
+  label: field.label,
+  editable: field.editable,
+  meaningfulFrom: field.meaningfulFrom as Status | undefined,
+}));
 
 export const REGISTRY_FIELD_KEYS = FIELDS.map((f) => f.key);

@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
+    "baseUrl": ".",
     "useDefineForClassFields": true,
     "module": "ESNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
@@ -15,7 +16,10 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "paths": {
+      "@registry-contract": ["../schema/registry-contract.json"]
+    }
   },
   "include": ["src"]
 }

@@ -1,9 +1,9 @@
 // Single source of truth for all build-time / runtime constants.
 //
-// SSOT: every magic value the app uses lives here. Tabs, plugins, and
-// data-layer code import from this module — they never hard-code URLs,
-// repo slugs, or the canonical alphabet. Changing a value here changes
-// it everywhere.
+// The registry schema and ID rules live in the shared contract under
+// `schema/registry-contract.json`; app-only constants stay here.
+
+import { REGISTRY_CONTRACT } from "./registry/contract";
 
 export const REPO_SLUG = "MorePET/part-registry";
 export const DEFAULT_BRANCH = "main";
@@ -16,11 +16,8 @@ export const REGISTRY_URL =
 // GitHub web URL for opening prefilled issue forms (no API token needed).
 export const ISSUE_NEW_URL = `https://github.com/${REPO_SLUG}/issues/new`;
 
-// Canonical ID format — must match decisions/ADR-012-part-identification.md
-// and the Python tooling. If you change here, also change in mint.py /
-// label.py / bind.py / test_labels.py / validators.
-export const ID_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
-export const ID_LENGTH = 12;
+export const ID_ALPHABET = REGISTRY_CONTRACT.id.alphabet;
+export const ID_LENGTH = REGISTRY_CONTRACT.id.canonicalLength;
 export const ID_REGEX = new RegExp(`^[${ID_ALPHABET}]{${ID_LENGTH}}$`);
 
 // QR encoding parameters — must match label.py.

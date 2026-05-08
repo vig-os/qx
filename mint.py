@@ -18,18 +18,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import nanoid
-
-ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
-ID_LENGTH = 12
+from registry_contract import ALPHABET, ID_LENGTH, REGISTRY_FIELDS
 
 PARTS_DIR = Path(__file__).resolve().parent
 REGISTRY = PARTS_DIR / "registry.csv"
-
-REGISTRY_FIELDS = [
-    "id", "status", "minted_at", "batch", "bound_at",
-    "type", "description", "vendor", "part_number", "location", "notes",
-]
-
 
 def mint_id(existing: set[str]) -> str:
     for _ in range(16):

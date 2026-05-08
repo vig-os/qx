@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from registry_contract import ALPHABET, ID_LENGTH
 from validators import (
     REGISTRY_FIELDS,
     Violation,
@@ -207,6 +208,15 @@ def test_registry_fields_match_mint():
         "id", "status", "minted_at", "batch", "bound_at",
         "type", "description", "vendor", "part_number", "location", "notes",
     ]
+
+
+def test_registry_contract_matches_committed_registry_header():
+    repo_root = Path(__file__).resolve().parent.parent
+    header = (repo_root / "registry.csv").read_text(encoding="utf-8").splitlines()[0]
+    assert header.split(",") == REGISTRY_FIELDS
+    assert ID_LENGTH == 12
+    assert "I" not in ALPHABET
+    assert "L" not in ALPHABET
 
 
 # --- CLI ----------------------------------------------------------------

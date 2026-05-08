@@ -20,17 +20,10 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from registry_contract import HUMAN_LENGTH, ID_LENGTH, REGISTRY_FIELDS
+
 PARTS_DIR = Path(__file__).resolve().parent
 REGISTRY = PARTS_DIR / "registry.csv"
-
-REGISTRY_FIELDS = [
-    "id", "status", "minted_at", "batch", "bound_at",
-    "type", "description", "vendor", "part_number", "location", "notes",
-]
-
-ID_LENGTH = 12
-HUMAN_LENGTH = 8
-
 
 def normalize(query: str) -> str:
     """Strip dashes/whitespace, uppercase. `K7M3-PQ9R` → `K7M3PQ9R`."""

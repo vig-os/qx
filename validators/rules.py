@@ -17,22 +17,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from registry_contract import (
+    ALPHABET,
+    ID_LENGTH,
+    LEGACY_ID_LENGTH,
+    REGISTRY_FIELDS,
+    STATUS_VALUES as CONTRACT_STATUS_VALUES,
+)
+
 # --- canonical schema ---------------------------------------------------
 
-# Mirror of REGISTRY_FIELDS in mint.py / bind.py. Single source of truth
-# for column order; if these drift, CSV writes desynchronize.
-REGISTRY_FIELDS: list[str] = [
-    "id", "status", "minted_at", "batch", "bound_at",
-    "type", "description", "vendor", "part_number", "location", "notes",
-]
-
-# ADR-012: 12-char nano-id, no-lookalike alphabet (Crockford-style:
-# no 0/O, no 1/I/L).
-ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
-ID_LENGTH = 12
+# Accept both canonical (14) and legacy (12) lengths. Legacy IDs are
+# deprecated — they still validate but emit a warning violation.
 ID_REGEX = re.compile(rf"^[{ALPHABET}]{{{ID_LENGTH}}}$")
-
-STATUS_VALUES: frozenset[str] = frozenset({"unbound", "bound", "void"})
+STATUS_VALUES: frozenset[str] = frozenset(CONTRACT_STATUS_VALUES)
 
 # Fields that must be non-empty regardless of status.
 REQUIRED_ALWAYS: tuple[str, ...] = ("id", "status", "minted_at", "batch")
