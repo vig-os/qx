@@ -61,7 +61,12 @@ TAPE_SIZES = {
 }
 
 DEFAULT_SIZE_MM = 11.0
-QR_BORDER_MODULES = 4
+# Standard QR uses a 4-module quiet zone; Micro QR specifies 2 (and most
+# decoders honor it). We use the spec-mandated minimum per mode below.
+QR_BORDER_STANDARD = 4
+QR_BORDER_MICRO = 2
+# Backwards-compat alias — older callers reference QR_BORDER_MODULES.
+QR_BORDER_MODULES = QR_BORDER_STANDARD
 
 
 def four_four_four(canonical: str) -> tuple[str, str, str]:
@@ -79,16 +84,28 @@ def svg_wrap(w_mm: float, h_mm: float, body: str) -> str:
     )
 
 
-def qr_block(canonical: str, x: float, y: float, size: float) -> str:
-    matrix = segno.make(canonical, error="m", micro=False).matrix
-    n_modules = len(matrix) + 2 * QR_BORDER_MODULES
+def qr_block(canonical: str, x: float, y: float, size: float, *, micro: bool = False) -> str:
+    """Render the QR matrix into a `size × size` square.
+
+    micro=False  → Standard QR (V1 for our 12-char payload, 21×21 modules,
+                    4-module quiet zone, 29 modules per side total).
+    micro=True   → Micro QR M4 (17×17 modules, 2-module quiet zone,
+                    21 modules per side total ≈ 72 % of Standard linear,
+                    52 % of Standard area).
+
+    Both modes use error correction "M" (~15 %). The 12-char alphanumeric
+    payload fits M4 at error M with a one-char margin.
+    """
+    matrix = segno.make(canonical, error="m", micro=micro).matrix
+    border = QR_BORDER_MICRO if micro else QR_BORDER_STANDARD
+    n_modules = len(matrix) + 2 * border
     module = size / n_modules
     rects = []
     for r, row in enumerate(matrix):
         for c, v in enumerate(row):
             if v:
-                rx = x + (c + QR_BORDER_MODULES) * module
-                ry = y + (r + QR_BORDER_MODULES) * module
+                rx = x + (c + border) * module
+                ry = y + (r + border) * module
                 rects.append(
                     f'<rect x="{rx:.3f}" y="{ry:.3f}" '
                     f'width="{module:.3f}" height="{module:.3f}" fill="#000"/>'
@@ -113,23 +130,39 @@ def text_block(canonical: str, x: float, y: float, size: float) -> str:
 
 # ---------- Layouts ----------
 
-def render_vert(canonical: str, size: float) -> str:
-    body = qr_block(canonical, 0, 0, size) + "\n" + text_block(canonical, 0, size, size)
+def render_vert(canonical: str, size: float, *, micro: bool = False) -> str:
+    body = (
+        qr_block(canonical, 0, 0, size, micro=micro)
+        + "\n"
+        + text_block(canonical, 0, size, size)
+    )
     return svg_wrap(size, 2 * size, body)
 
 
-def render_horz(canonical: str, size: float) -> str:
-    body = qr_block(canonical, 0, 0, size) + "\n" + text_block(canonical, size, 0, size)
+def render_horz(canonical: str, size: float, *, micro: bool = False) -> str:
+    body = (
+        qr_block(canonical, 0, 0, size, micro=micro)
+        + "\n"
+        + text_block(canonical, size, 0, size)
+    )
     return svg_wrap(2 * size, size, body)
 
 
-def render_flag(canonical: str, size: float, cable_od_mm: float) -> str:
+def render_flag(canonical: str, size: float, cable_od_mm: float, *, micro: bool = False) -> str:
     horz_w = 2 * size
     wrap_w = math.pi * cable_od_mm * 1.1
     W = 2 * horz_w + wrap_w
-    left = qr_block(canonical, 0, 0, size) + "\n" + text_block(canonical, size, 0, size)
+    left = (
+        qr_block(canonical, 0, 0, size, micro=micro)
+        + "\n"
+        + text_block(canonical, size, 0, size)
+    )
     rx = horz_w + wrap_w
-    right = text_block(canonical, rx, 0, size) + "\n" + qr_block(canonical, rx + size, 0, size)
+    right = (
+        text_block(canonical, rx, 0, size)
+        + "\n"
+        + qr_block(canonical, rx + size, 0, size, micro=micro)
+    )
     wrap = (
         f'<rect x="{horz_w:.3f}" y="0" width="{wrap_w:.3f}" height="{size:.3f}" '
         f'fill="none" stroke="#888" stroke-width="0.1" stroke-dasharray="0.6,0.6"/>\n'
@@ -140,15 +173,22 @@ def render_flag(canonical: str, size: float, cable_od_mm: float) -> str:
     return svg_wrap(W, size, "\n".join([left, wrap, right]))
 
 
-def render(canonical: str, layout: str, size: float, cable_od_mm: float | None) -> str:
+def render(
+    canonical: str,
+    layout: str,
+    size: float,
+    cable_od_mm: float | None,
+    *,
+    micro: bool = False,
+) -> str:
     if layout == "vert":
-        return render_vert(canonical, size)
+        return render_vert(canonical, size, micro=micro)
     if layout == "horz":
-        return render_horz(canonical, size)
+        return render_horz(canonical, size, micro=micro)
     if layout == "flag":
         if cable_od_mm is None:
             sys.exit("--layout flag requires --cable-od <mm>")
-        return render_flag(canonical, size, cable_od_mm)
+        return render_flag(canonical, size, cable_od_mm, micro=micro)
     sys.exit(f"unknown layout: {layout}")
 
 
@@ -279,6 +319,18 @@ def main() -> None:
     ap.add_argument("--output-mode", default="dk-continuous-auto-cut",
                     help="print pipeline descriptor recorded in "
                     "print_log.output_mode (default: dk-continuous-auto-cut)")
+    micro_group = ap.add_mutually_exclusive_group()
+    micro_group.add_argument(
+        "--micro", dest="micro", action="store_true",
+        help="encode the QR as Micro QR M4 (~52 %% area of Standard QR V1). "
+        "Suitable for very small labels. Some older scanners don't decode "
+        "Micro QR — verify with the operator's hardware before adopting.",
+    )
+    micro_group.add_argument(
+        "--no-micro", dest="micro", action="store_false",
+        help="encode the QR as Standard QR V1 (default; widest decoder support)",
+    )
+    ap.set_defaults(micro=False)
     args = ap.parse_args()
 
     if args.copies < 1:
@@ -306,7 +358,7 @@ def main() -> None:
 
     for row in selected:
         nid = row["id"]
-        svg = render(nid, args.layout, size, args.cable_od)
+        svg = render(nid, args.layout, size, args.cable_od, micro=args.micro)
         (out_dir / f"{nid}.svg").write_text(svg)
 
     if args.log:
