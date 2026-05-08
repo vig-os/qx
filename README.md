@@ -83,6 +83,23 @@ it from the system print sheet directly; no app install needed.
 For one-off ad-hoc printing without the CLI: open any `.svg` in a viewer
 or browser, Cmd+P, pick the Brother in the dialog.
 
+## Operator docs
+
+Bench-side documentation for technicians using the SPA day-to-day
+lives in [`docs/`](docs/):
+
+- [`docs/operator-cheatsheet.md`](docs/operator-cheatsheet.md) —
+  one-page lab-floor reference: ID format, daily scan/bind/print
+  workflow, Brother QL-820NWBc tape mapping, jam recovery, bug
+  reporting. Pin near the printer.
+- [`docs/quickstart.md`](docs/quickstart.md) — narrative onboarding
+  for a new operator: install the PWA on phone, first scan, first
+  bind, first print.
+
+In-app help (inline help icons, dismissable quickstart panel,
+printer-friendly cheatsheet route inside the SPA) is tracked in
+[issue #8](../../issues/8).
+
 ## Tests
 
 ```bash
