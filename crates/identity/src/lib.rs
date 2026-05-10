@@ -4,12 +4,21 @@
 //!
 //! Adapters live in sibling crates (`identity_git_config`,
 //! `identity_github_oauth`, future `identity_oidc_generic`, etc.).
+//!
+//! Per foundation issue #28: `Capabilities`, `Action`, `AuthDecision`
+//! now live in `crates/domain/`. Re-exported here for adapter
+//! convenience.
 
 #![forbid(unsafe_code)]
 
 use thiserror::Error;
 
-use part_registry_domain::{Action, AuthDecision, Operator};
+use part_registry_domain::Operator;
+
+// Re-export the policy / authorization types so adapters can do
+// `use part_registry_identity::{IdentityProvider, Capabilities};`
+// without a separate `part_registry_domain` import.
+pub use part_registry_domain::{Action, AuthDecision, Capabilities};
 
 #[derive(Debug, Error)]
 pub enum IdentityError {
@@ -21,16 +30,13 @@ pub enum IdentityError {
     Backend(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct Capabilities {
-    pub can_propose: bool,
-    pub can_approve_destructive: bool,
-    pub roles: Vec<String>,
-}
-
 pub trait IdentityProvider: Send + Sync {
     fn current(&self) -> Result<Operator, IdentityError>;
     fn refresh(&self) -> Result<Operator, IdentityError>;
+    /// Per ADR-020 §"Capabilities": MVP adapters return
+    /// `Capabilities::default()` — the MVP `Authorizer` reads
+    /// `Operator::claims` directly. Future adapters populate this
+    /// struct from richer claim sources (RBAC roles, ABAC attributes).
     fn capabilities(&self, op: &Operator) -> Capabilities;
 }
 

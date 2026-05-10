@@ -7,13 +7,24 @@
 //!
 //! Adapters live in sibling crates (`storage_csv_git`, future
 //! `storage_sqlite`, etc.). This crate names no concrete adapter.
+//!
+//! Per foundation issue #28: `Part`, `PrintEvent`, `PartFilter`,
+//! `AuditFilter`, `PrintEventFilter` now live in `crates/domain/`.
+//! Re-exported here for adapter convenience so adapters import
+//! everything from `part_registry_storage::*` without a separate
+//! `part_registry_domain` import.
 
 #![forbid(unsafe_code)]
 
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use part_registry_domain::{AuditEntry, Hash, PartId};
+// Re-export the storage-shaped domain types so adapters can do
+// `use part_registry_storage::{Repository, Part, AuditEntry, ...};`
+// without a separate `part_registry_domain` import. Per ADR-018 these
+// types live in `crates/domain/`; the trait surface lives here.
+pub use part_registry_domain::{
+    AuditEntry, AuditFilter, Hash, Part, PartFilter, PartId, PrintEvent, PrintEventFilter,
+};
 
 #[derive(Debug, Error)]
 pub enum RepoError {
@@ -25,46 +36,6 @@ pub enum RepoError {
     Backend(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error("not implemented (foundation scaffold): {0}")]
     Other(String),
-}
-
-// -------------------------------------------------------------------
-// Filter types — placeholder shapes for the foundation scaffold.
-// Concrete fields land with the strangler-fig step 4 PR.
-// -------------------------------------------------------------------
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct PartFilter {
-    pub id: Option<PartId>,
-    pub limit: Option<usize>,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct AuditFilter {
-    pub limit: Option<usize>,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct PrintEventFilter {
-    pub limit: Option<usize>,
-}
-
-// -------------------------------------------------------------------
-// Domain placeholders that strictly belong here (storage-shaped) but
-// have not yet earned their own module in `domain`. `Part` and
-// `PrintEvent` are placeholders; ADR-013 §Decision and ADR-015 fix
-// the column sets that fill them in during step 4.
-// -------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Part {
-    pub id: PartId,
-    // ADR-023 forward-compat columns are owned by `domain` once the
-    // full `Part` lands; placeholder body keeps the trait compilable.
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PrintEvent {
-    pub part_id: PartId,
 }
 
 // -------------------------------------------------------------------

@@ -4,25 +4,19 @@
 //! — acceptance belongs to the policy authority (CI + reviewers per
 //! ADR-016), not the binary that authored the proposal. See ADR-019
 //! §"Why submit + status only" for the load-bearing rationale.
+//!
+//! Per foundation issue #28: `Proposal`, `ProposalRef`,
+//! `ProposalStatus`, `Diff`, `Action`/`ChangeClass` all live in
+//! `crates/domain/`. Re-exported here for adapter convenience.
 
 #![forbid(unsafe_code)]
 
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use part_registry_domain::{Proposal, ProposalRef};
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ProposalStatus {
-    Open,
-    PolicyPending,
-    Merged { sha: String },
-    MergedAfterReview { sha: String, reviewer: String },
-    Closed { reason: String },
-    RequiresReview,
-    BlockedByPolicy { reason: String },
-}
+// Re-export the proposal payload / status types so adapters can do
+// `use part_registry_transport::{ProposalSink, Proposal, ProposalStatus};`
+// without a separate `part_registry_domain` import.
+pub use part_registry_domain::{Proposal, ProposalRef, ProposalStatus};
 
 #[derive(Debug, Error)]
 pub enum ProposalError {

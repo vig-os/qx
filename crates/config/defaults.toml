@@ -1,12 +1,18 @@
 # Built-in configuration defaults per ADR-021. Embedded into every
-# binary via `include_str!`. Env vars (`PART_REGISTRY_*`) and an
-# optional deploy file override these values; the embedded copy is the
-# floor.
+# binary via `include_str!`. Env vars (`PART_REGISTRY__*`, double-
+# underscore-separated) and an optional deploy file override these
+# values; the embedded copy is the floor.
+#
+# Optional fields (serde `Option<...>`) are omitted entirely from this
+# file — their absence becomes `None`. Setting them via env var
+# (e.g. `PART_REGISTRY__STORAGE__SQLITE_PATH=/var/lib/...`) populates
+# `Some(...)` at runtime.
 
 [repo]
 data_repo_url = ""
 code_repo_url = "https://github.com/MorePET/part-registry"
 local_clone_path = "."
+branch = "main"
 
 [storage]
 # csv_git | sqlite | duckdb | dolt | file_per_entry  (ADR-018)
@@ -16,6 +22,9 @@ adapter = "csv_git"
 # git_config | github_oauth | env_user | oidc_generic | mtls_cert | sigstore_keyless  (ADR-020)
 adapter = "git_config"
 verified_at_window_secs = 3600
+# `env_user` adapter is rejected at construction time in release
+# builds unless this flag is explicitly true.
+allow_dev_identity = false
 
 [transport]
 # github_pr | local_branch | webhook | filesystem | dolt  (ADR-019)
@@ -33,6 +42,11 @@ font_family = "Consolas, monospace"
 labels_dir = "./labels"
 
 [observability]
-# Per ADR-022 — log level default.
+# Per ADR-022 — log level default plus subscriber-layer toggles.
 log_level = "info"
 audit_log_path = "./audit_log.csv"
+stdout_json = true
+stderr_human = true
+# Mutating processes flip this to true to engage the audit-CSV layer
+# (see ADR-022 §"Subscriber composition").
+audit_csv = false
