@@ -15,3 +15,7 @@ uv.lock
 
 # macOS
 .DS_Store
+
+# Rust
+target/
+**/*.rs.bk

@@ -3,6 +3,106 @@
 Append-only chronological record of decisions for the parts registry.
 Newest entries first.
 
+## 2026-05-10 — Architectural reset: Rust core, ports/adapters, multi-target deploy, audit-grade crypto-MVP
+
+**Context:** the conversation started with a narrow question — "is the
+Python QR + 4/4 / 4/4/4 / 5/5/4 properly built and tested? if yes,
+update examples; also wire it through Pyodide to the FE." Tests were
+partial (default `4/4/4` only); examples were stale (12-char IDs vs.
+the 14-char canonical from ADR-012); the FE was hardcoded to 4/4 and
+shipped a separate JS QR encoder. Issue #3 (Pyodide PRIORITY) was the
+queued resolution.
+
+The conversation widened deliberately. In sequence the user asked
+about:
+
+1. mismatches between FE state and stated principles (yielded an
+   audit of #3, #6, #10, #11, #13, #14, #16, #18, #23 against
+   ADR-013/014)
+2. Rust-vs-Python WASM, with portability to standalone desktop and
+   mobile (research subagent confirmed `qrcode-rust2` + `rxing`
+   viable; ~1–1.5 MB gzipped vs. ~6 MB Pyodide)
+3. tool decomposition for swappable backends (CSV → SQLite/DuckDB/
+   Dolt/file-per-entry without redesign)
+4. 12-factor configurability + structured logging + auth-as-a-port
+5. cryptographic security: distribution integrity, identity
+   attestation, action non-repudiation, audit-log tamper-evidence,
+   per-row chain of custody, signed/reproducible distribution
+6. whether git signed commits + branch protection on GH would
+   suffice (honest answer: covers ~60% of the threat model the user
+   later picked; misses long-term non-repudiation, no-operator-keys
+   UX constraint, per-row attribution, compromised-CI defense)
+7. whether Sigstore could be bolt-on rather than refactor (yes, if
+   the data model + traits are forward-compatible from day one) and
+   whether tests should enforce that discipline (yes — four-tier
+   conformance + parity + drift framework)
+
+The threat-model interview yielded:
+
+- **Adversaries in scope:** external attacker, insider with repo
+  write, compromised CI runner. **Out of scope:** compromised
+  operator device.
+- **Assets in scope:** registry contents, per-part chain of custody,
+  long-term non-repudiation.
+- **Consequence tier:** regulatory finding / contractual breach
+  (audit-grade, ISO 13485 / IEC 62304 / Notified Body review). Not
+  life-critical (skips formal verification + HSM).
+- **UX constraint:** no bespoke key infrastructure for operators.
+  Identity piggybacks on existing IdP login (GitHub for now).
+- **Crypto MVP:** git signed commits + branch protection + signed
+  tags + reproducible builds. Per-row Sigstore deferred with
+  explicit re-open triggers T1–T6.
+
+**Outcomes:** nine ADRs Proposed today (one updated, eight new),
+~4,050 lines total, all cross-referenced. Status: all Proposed
+(formal review pending; methodology requires named reviewers for
+Accepted).
+
+| ADR | Decision |
+|---|---|
+| 016 (updated) | PR-diff policy stands; FE preflight runs Rust validators (not Pyodide) compiled native + WASM |
+| 017 | Rust workspace + ports/adapters + strangler-fig migration; supersedes the Pyodide direction in ADR-014 §"Pyodide migration trigger" |
+| 018 | Storage as a port; CSV+git first adapter; SQLite/DuckDB/Dolt/file-per-entry future |
+| 019 | Proposal sink as a port; GitHub PR first adapter; data-repo split (code stays in `MorePET/part-registry`, data moves to a separate repo) |
+| 020 | Identity & authorization as a port; git-config + GitHub OAuth first adapters; OIDC/mTLS/Sigstore future |
+| 021 | 12-factor configuration via `crates/config/`; every hardcoded path in `label.py:33-78` and `web/src/config.ts` migrated to env-driven |
+| 022 | Observability via Rust `tracing` + audit-csv layer; `print_log.csv` becomes one slice of the broader audit log; request_id propagates across CLI / FE / CI |
+| 023 | Threat model fixed; MVP crypto scope = git signed commits + branch protection + signed tags + reproducible builds; deferred controls have explicit re-open triggers |
+| 024 | Crypto baseline MVP per ADR-023; SigningProvider trait designed forward-compatible so Sigstore-keyless adapter slots in later without schema change |
+| 027 | Four-tier port test discipline: trait conformance, forward-shape, cross-adapter parity, drift-detection (lint-as-test); enforced in CI |
+
+**Process notes:**
+
+- The conversation deliberately delayed all written work until the
+  threat-model + crypto direction converged (the user's principle:
+  "subagents for codifying decisions you've already made, foreground
+  for making decisions"). Once converged, the eight new ADRs were
+  written in ~30 minutes via parallel subagents (3 in foreground:
+  016 update, 017, 023; 7 in subagents: 018, 019, 020, 021, 022,
+  024, 027).
+- The Rust workspace scaffold was landed in the same session
+  (`cargo check --workspace --all-targets` passes with exit 0). 17
+  crates, trait stubs only, no production logic. Python CLIs are
+  untouched per strangler-fig discipline.
+- Github issues updated mechanically: #3 closed (superseded by
+  ADR-017); #5, #6, #10, #11, #13, #16, #18, #19, #23 cross-ref
+  comments added; eleven new foundation-phase issues #25–#35 filed
+  to track the strangler-fig migration steps.
+- One in-flight correction caught: my initial framing positioned
+  Sigstore-everywhere as the recommendation. The user's question
+  "git signed commits with branch protection — is that not enough?"
+  exposed that I had drifted from the stated UX constraint ("no
+  bespoke key infrastructure"). The MVP scope was rebuilt around
+  that constraint and Sigstore moved to a documented re-openable
+  deferred state. Correction is preserved in ADR-023's alternatives
+  table.
+
+**References:** ADR-016 (updated), ADR-017, ADR-018, ADR-019,
+ADR-020, ADR-021, ADR-022, ADR-023, ADR-024, ADR-027; issues #3
+(closed), #5, #6, #10, #11, #13, #16, #18, #19, #23 (commented);
+new issues #25–#35; Rust workspace scaffold at `crates/` (cargo
+check passes); CI workflow at `.github/workflows/rust.yml`.
+
 ## 2026-05-08 — PR-diff-based policy enforcement, not FE-declared intent
 
 **Context:** review/approval policy needs to distinguish routine binds

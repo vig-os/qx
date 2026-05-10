@@ -1,0 +1,17 @@
+[package]
+name = "part-registry-identity-git-config"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+part-registry-domain = { path = "../domain" }
+part-registry-identity = { path = "../identity" }
+
+[dev-dependencies]
+part-registry-port-tests = { path = "../port_tests" }

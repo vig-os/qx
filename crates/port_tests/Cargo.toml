@@ -1,0 +1,21 @@
+[package]
+name = "part-registry-port-tests"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+# ADR-027 §Consequences: this crate depends only on `domain` and the
+# trait-defining crates. Adapter crates depend on it as a
+# dev-dependency, never the other way around (would be a cycle).
+[dependencies]
+part-registry-domain = { path = "../domain" }
+part-registry-storage = { path = "../storage" }
+part-registry-identity = { path = "../identity" }
+part-registry-transport = { path = "../transport" }
+part-registry-signing = { path = "../signing" }
+serde_json = { workspace = true }

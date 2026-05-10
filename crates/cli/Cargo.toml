@@ -1,0 +1,34 @@
+[package]
+name = "part-registry-cli"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "mint"
+path = "src/bin/mint.rs"
+
+[[bin]]
+name = "label"
+path = "src/bin/label.rs"
+
+[[bin]]
+name = "bind"
+path = "src/bin/bind.rs"
+
+[dependencies]
+part-registry-domain = { path = "../domain" }
+part-registry-config = { path = "../config" }
+part-registry-observability = { path = "../observability" }
+part-registry-storage = { path = "../storage" }
+part-registry-storage-csv-git = { path = "../storage_csv_git" }
+part-registry-identity = { path = "../identity" }
+part-registry-identity-git-config = { path = "../identity_git_config" }
+part-registry-transport = { path = "../transport" }
+part-registry-transport-github-pr = { path = "../transport_github_pr" }
+part-registry-signing = { path = "../signing" }
+part-registry-signing-git-commit = { path = "../signing_git_commit" }
+clap = { workspace = true }
+anyhow = { workspace = true }

@@ -1,0 +1,58 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/domain",
+    "crates/codec",
+    "crates/validators",
+    "crates/storage",
+    "crates/storage_csv_git",
+    "crates/identity",
+    "crates/identity_git_config",
+    "crates/identity_github_oauth",
+    "crates/transport",
+    "crates/transport_github_pr",
+    "crates/signing",
+    "crates/signing_git_commit",
+    "crates/observability",
+    "crates/config",
+    "crates/cli",
+    "crates/wasm",
+    "crates/port_tests",
+]
+
+# Per ADR-017 + ADR-024: workspace pins shared dep versions so every
+# crate compiles against the same minor release; Cargo.lock checked
+# in for reproducible-build discipline.
+[workspace.package]
+edition = "2021"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+figment = { version = "0.10", features = ["toml", "env"] }
+# NOTE: `qrcode` 0.14 is a dormant-but-functional placeholder. ADR-017
+# §References names `qrcode-rust2` as the encoder; swap to it once it
+# is published to crates.io or vendored. Keep the call sites stable
+# behind the `crates/codec/` facade so the swap is local.
+qrcode = "0.14"
+rxing = "0.9"
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"
+clap = { version = "4", features = ["derive"] }
+time = { version = "0.3", features = ["serde", "macros"] }
+uuid = { version = "1", features = ["serde", "v7", "js"] }   # `js` is required for v7 RNG on wasm32-unknown-unknown
+
+# Per ADR-024 §Reproducible builds: deterministic release profile.
+# CI release builds set RUSTFLAGS="--remap-path-prefix=$HOME=. --remap-path-prefix=$CARGO_HOME=.".
+[profile.release]
+codegen-units = 1
+lto = "fat"
+strip = "symbols"
+panic = "abort"
