@@ -1259,4 +1259,24 @@ mod tests {
         let back: AuditEntry = serde_json::from_str(&json).unwrap();
         assert_eq!(e, back);
     }
+
+    #[test]
+    fn audit_entry_roundtrips_with_sigstore_signature() {
+        // ADR-027 §Tier 2 forward-shape on AuditEntry: the audit log must
+        // round-trip a synthetic Sigstore variant today so activating it
+        // later (ADR-023 trigger T2) is an adapter swap, not a schema
+        // migration. Mirrors part_roundtrips_with_sigstore_signature.
+        let sig = Signature::Sigstore {
+            cert: vec![1, 2, 3],
+            sig: vec![4, 5, 6],
+            rekor_proof: RekorProof {
+                uuid: "rekor-uuid".into(),
+                log_index: 42,
+            },
+        };
+        let e = sample_audit_entry(vec![sig]);
+        let json = serde_json::to_string(&e).unwrap();
+        let back: AuditEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(e, back);
+    }
 }
