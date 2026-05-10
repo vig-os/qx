@@ -1,0 +1,7 @@
+# Per ADR-024 §Reproducible builds: pin the toolchain for byte-identical
+# build artifacts across hosts. Bumps are PRs.
+[toolchain]
+channel = "1.85.0"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

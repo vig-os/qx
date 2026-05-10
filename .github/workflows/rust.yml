@@ -1,0 +1,43 @@
+name: rust
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Per ADR-017 §Consequences and ADR-027 §Tier 4: every PR runs check,
+# clippy with -Dwarnings, fmt, full workspace tests, and a wasm build.
+# MSRV is the channel pinned in `rust-toolchain.toml`; this workflow
+# does not matrix multiple Rust versions for the foundation scaffold.
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (from rust-toolchain.toml)
+        run: rustup show
+
+      - name: Install wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: cargo check
+        run: cargo check --workspace --all-targets
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -Dwarnings
+
+      - name: cargo test
+        run: cargo test --workspace
+
+      - name: cargo build (wasm32)
+        run: cargo build --target wasm32-unknown-unknown -p part-registry-wasm

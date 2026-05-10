@@ -1,0 +1,20 @@
+[package]
+name = "part-registry-wasm"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+part-registry-domain = { path = "../domain" }
+part-registry-codec = { path = "../codec" }
+part-registry-validators = { path = "../validators" }
+wasm-bindgen = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

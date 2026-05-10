@@ -1,0 +1,10 @@
+# Workspace-level cargo settings. Per ADR-024 §Reproducible builds the
+# release profile (defined in Cargo.toml) sets codegen-units=1 + lto=fat;
+# CI additionally injects RUSTFLAGS for path remapping.
+
+[build]
+target-dir = "target"
+
+# Place wasm-specific build aliases here once a `wasm-pack`-based flow
+# is wired in (strangler-fig step 8). Today the wasm crate builds via
+# `cargo build --target wasm32-unknown-unknown -p part-registry-wasm`.

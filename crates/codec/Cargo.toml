@@ -1,0 +1,19 @@
+[package]
+name = "part-registry-codec"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+# `qrcode` 0.14 is the dormant-but-functional placeholder per the
+# workspace comment in the root Cargo.toml. Swap to `qrcode-rust2`
+# once published / vendored (ADR-017 §References).
+qrcode = { workspace = true }
+rxing = { workspace = true }
