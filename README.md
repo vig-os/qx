@@ -103,9 +103,32 @@ In-app help (inline help icons, dismissable quickstart panel,
 printer-friendly cheatsheet route inside the SPA) is tracked in
 [issue #8](../../issues/8).
 
+## Dev environment
+
+If you use Nix, one command brings up the full toolchain:
+
+```bash
+nix develop                    # rust 1.85 + wasm-pack + wasm-bindgen-cli +
+                               # node 22 + uv + playwright + gh + actionlint
+direnv allow                   # auto-enter the shell on cd (optional)
+```
+
+Without Nix: rustup honours `rust-toolchain.toml` (1.85); install Node 22
++ npm yourself; the FE's `npm install` pulls Playwright + its driver.
+
 ## Tests
 
 ```bash
+# Rust workspace
+cargo test --workspace
+
+# FE unit + integration
+cd web && npm ci && npm test
+
+# FE end-to-end (headless Playwright, Vite preview build)
+cd web && npm run e2e
+
+# Legacy Python parity suite
 uv sync --group dev
 uv run pytest test_labels.py -v
 ```
@@ -165,6 +188,27 @@ CLI binaries resolve the target data repo from
 vanilla `cargo run` never writes to the audit-of-record registry).
 The clone lives at `$XDG_DATA_HOME/part-registry/<owner>-<repo>/` —
 see `crates/config/src/lib.rs:resolve_data_path`.
+
+### Bootstrapping a new data repo
+
+```bash
+# Idempotent. Creates the repo if missing, writes schema CSVs +
+# README + pages.yml + CONTRIBUTING. Re-running adds only the
+# missing files; pass --force-pages / --force-readme to overwrite.
+tools/bootstrap-data-repo.sh exo-pet/<name> --create
+
+# Dry-run first to inspect what would happen:
+tools/bootstrap-data-repo.sh exo-pet/<name> --create --dry-run
+```
+
+After the data repo exists, tag a release in this code repo
+(`git tag v0.X.Y && git push origin v0.X.Y`) so the data repo's
+`pages.yml` has a frontend bundle to download. Enable Pages in the
+data repo's settings (Source = GitHub Actions) and the FE deploys.
+
+See [`docs/release.md`](docs/release.md) for the release-artifact
+contract and [`tools/data-repo-templates/`](tools/data-repo-templates/)
+for the generated workflow.
 
 ## Files
 

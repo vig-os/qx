@@ -19,3 +19,8 @@ uv.lock
 # Rust
 target/
 **/*.rs.bk
+
+# Nix dev shell (#35 Phase 3 — flake.nix + .envrc)
+.direnv/
+result
+result-*
