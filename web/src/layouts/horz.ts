@@ -1,7 +1,13 @@
 // Horizontal layout: QR left, 4/4 right. 2*size × size.
+//
+// Per foundation issue #33 (ADR-017 step 8): renders via the Rust
+// WASM façade (`crates/wasm/`). The inline TS encoder
+// (`qrcode-generator.ts` + `svg.ts`) has been deleted.
 
 import type { Layout, LayoutDimensions, LayoutOptions } from "../core/types";
-import { qrBlock, svgWrap, textBlock } from "./svg";
+import { renderLabelSync, type WasmFormatId } from "../wasm/loader";
+
+const FORMAT: WasmFormatId = "4/4";
 
 export const horzLayout: Layout = {
   id: "horz",
@@ -11,9 +17,6 @@ export const horzLayout: Layout = {
     return { widthMm: 2 * opts.size, heightMm: opts.size };
   },
   renderSvg(canonical: string, opts: LayoutOptions): string {
-    const s = opts.size;
-    const body =
-      qrBlock(canonical, 0, 0, s) + "\n" + textBlock(canonical, s, 0, s);
-    return svgWrap(2 * s, s, body);
+    return renderLabelSync(canonical, "horz", opts.size, FORMAT);
   },
 };

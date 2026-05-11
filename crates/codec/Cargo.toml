@@ -22,7 +22,20 @@ qrcode = { workspace = true }
 # path is selected when targeting browsers. If a future rxing version
 # regresses on wasm32, gate the decoder module behind
 # `#[cfg(not(target_arch = "wasm32"))]` instead of vendoring around it.
-rxing = { workspace = true, features = ["wasm_support"] }
+#
+# Per foundation issue #33: the decoder is now feature-gated so the
+# wasm-bindgen façade (`crates/wasm/`) can opt out and stay under the
+# 1.5 MB gzipped bundle ceiling. Production FE keeps `zxing-wasm` for
+# scanning per `web/README.md`; the Rust decoder is used by CLI +
+# native tests + the A/B parity harness only.
+rxing = { workspace = true, features = ["wasm_support"], optional = true }
+
+[features]
+default = ["decoder"]
+# Pull rxing + the `qr::decode_qr` entry point. Disable on size-
+# sensitive consumers (FE wasm bundle) — encoder + SVG renderer are
+# unaffected.
+decoder = ["dep:rxing"]
 
 [dev-dependencies]
 # Roundtrip tests rasterise the QR matrix directly to a PNG buffer

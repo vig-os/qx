@@ -14,5 +14,10 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts"],
+    // Per foundation issue #33: load `crates/wasm/` once before any
+    // test module, so the synchronous `renderLabelSync` surface used
+    // by layouts works the same way it does in the browser (where
+    // `main.ts` awaits `loadWasm()` at boot).
+    setupFiles: ["src/wasm/test-setup.ts"],
   },
 });

@@ -1,5 +1,9 @@
 // Flag layout: horz mirrored across a cable wrap zone. Folded around
 // a cable to make a double-sided readable flag.
+//
+// Per foundation issue #33 (ADR-017 step 8): renders via the Rust
+// WASM façade (`crates/wasm/`). The inline TS encoder
+// (`qrcode-generator.ts` + `svg.ts`) has been deleted.
 
 import type {
   Layout,
@@ -7,8 +11,9 @@ import type {
   LayoutOptions,
   LayoutOptionField,
 } from "../core/types";
-import { qrBlock, svgWrap, textBlock } from "./svg";
+import { renderLabelSync, type WasmFormatId } from "../wasm/loader";
 
+const FORMAT: WasmFormatId = "4/4";
 const DEFAULT_CABLE_OD_MM = 6;
 
 function cableOd(opts: LayoutOptions): number {
@@ -28,24 +33,9 @@ export const flagLayout: Layout = {
     return { widthMm: 4 * s + wrap, heightMm: s };
   },
   renderSvg(canonical: string, opts: LayoutOptions): string {
-    const s = opts.size;
-    const od = cableOd(opts);
-    const wrap = Math.PI * od * 1.1;
-    const horzW = 2 * s;
-    const W = 2 * horzW + wrap;
-    const left =
-      qrBlock(canonical, 0, 0, s) + "\n" + textBlock(canonical, s, 0, s);
-    const rx = horzW + wrap;
-    const right =
-      textBlock(canonical, rx, 0, s) +
-      "\n" +
-      qrBlock(canonical, rx + s, 0, s);
-    const wrapZone =
-      `<rect x="${horzW.toFixed(3)}" y="0" width="${wrap.toFixed(3)}" height="${s.toFixed(3)}" ` +
-      `fill="none" stroke="#888" stroke-width="0.1" stroke-dasharray="0.6,0.6"/>\n` +
-      `<text x="${(horzW + wrap / 2).toFixed(3)}" y="${(s / 2 + 0.5).toFixed(3)}" ` +
-      `font-family="Courier, monospace" font-size="1.5" text-anchor="middle" fill="#888">wrap d${od}</text>`;
-    return svgWrap(W, s, [left, wrapZone, right].join("\n"));
+    return renderLabelSync(canonical, "flag", opts.size, FORMAT, {
+      cableOdMm: cableOd(opts),
+    });
   },
   optionFields(): LayoutOptionField[] {
     return [

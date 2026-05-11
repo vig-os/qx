@@ -34,7 +34,9 @@ pub mod qr;
 pub mod svg;
 
 pub use format::{check_format_warning, recommend_format, TextFormat};
-pub use qr::{decode_qr, encode, QrMatrix};
+#[cfg(feature = "decoder")]
+pub use qr::decode_qr;
+pub use qr::{encode, QrMatrix};
 pub use svg::{render, render_flag, render_horz, render_vert, Layout};
 
 /// Errors surfaced by the codec.
