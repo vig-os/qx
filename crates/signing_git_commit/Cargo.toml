@@ -12,6 +12,10 @@ path = "src/lib.rs"
 [dependencies]
 part-registry-domain = { path = "../domain" }
 part-registry-signing = { path = "../signing" }
+thiserror = { workspace = true }
+time = { workspace = true }
 
 [dev-dependencies]
 part-registry-port-tests = { path = "../port_tests" }
+tempfile = { workspace = true }
+time = { workspace = true }

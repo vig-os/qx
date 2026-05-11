@@ -12,6 +12,8 @@ path = "src/lib.rs"
 [dependencies]
 part-registry-domain = { path = "../domain" }
 part-registry-identity = { path = "../identity" }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 part-registry-port-tests = { path = "../port_tests" }
+tempfile = { workspace = true }

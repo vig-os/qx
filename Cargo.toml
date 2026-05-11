@@ -46,13 +46,23 @@ rxing = "0.9"
 wasm-bindgen = "0.2"
 serde-wasm-bindgen = "0.6"
 clap = { version = "4", features = ["derive"] }
-time = { version = "0.3", features = ["serde", "macros", "formatting", "parsing"] }
+time = { version = "0.3", features = ["serde", "macros", "parsing", "formatting"] }
 uuid = { version = "1", features = ["serde", "v7", "js"] }   # `js` is required for v7 RNG on wasm32-unknown-unknown
 
 # Per ADR-018 §"CSV+git substrate" — first storage adapter dependencies.
 csv = "1"
 sha2 = "0.10"
 tempfile = "3"
+
+# Identity / signing MVP adapters (foundation issue #30, ADR-020 + ADR-024).
+# `reqwest` uses `rustls-tls` for reproducible-build hygiene (no OpenSSL on
+# the build host). Blocking client on native so synchronous trait methods
+# (`IdentityProvider::current`) don't need an async runtime. Wasm32 builds
+# of identity_github_oauth fall through to a stub — the FE will use the
+# browser fetch API via the wasm crate boundary.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+mockito = "1"
+dirs = "5"
 
 # Per ADR-024 §Reproducible builds: deterministic release profile.
 # CI release builds set RUSTFLAGS="--remap-path-prefix=$HOME=. --remap-path-prefix=$CARGO_HOME=.".
