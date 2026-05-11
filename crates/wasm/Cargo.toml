@@ -14,6 +14,7 @@ crate-type = ["cdylib", "rlib"]
 part-registry-domain = { path = "../domain" }
 part-registry-codec = { path = "../codec" }
 part-registry-validators = { path = "../validators" }
+part-registry-observability = { path = "../observability" }
 wasm-bindgen = { workspace = true }
 serde-wasm-bindgen = { workspace = true }
 serde = { workspace = true }

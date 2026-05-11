@@ -1618,6 +1618,7 @@ dependencies = [
  "part-registry-storage-csv-git",
  "part-registry-transport",
  "part-registry-transport-github-pr",
+ "tracing",
 ]
 
 [[package]]
@@ -1692,9 +1693,17 @@ dependencies = [
 name = "part-registry-observability"
 version = "0.1.0"
 dependencies = [
+ "part-registry-domain",
+ "part-registry-storage",
+ "part-registry-storage-csv-git",
+ "serde",
+ "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
+ "time",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -1798,6 +1807,7 @@ version = "0.1.0"
 dependencies = [
  "part-registry-codec",
  "part-registry-domain",
+ "part-registry-observability",
  "part-registry-validators",
  "serde",
  "serde-wasm-bindgen",
