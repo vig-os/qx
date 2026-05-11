@@ -434,8 +434,14 @@ This ADR commits the project to:
 - **`snapshot_hash` becomes citable in releases**: per ADR-024, a
   signed release tag includes the `snapshot_hash` of the data repo
   state at the time of release. The CSV+git adapter implements
-  this as the HEAD commit SHA of the data repo's `main`; future
-  adapters compute their own deterministic equivalent.
+  this as a SHA-256 over the canonical concatenation of
+  `registry.csv` + `audit_log.csv` + `print_log.csv` (in that
+  fixed order, each prefixed by its filename + NUL byte) — the
+  original §Consequences wording said "HEAD commit SHA" but that
+  baked in commit metadata (author, timestamp, message) so two
+  fresh clones with identical data would not hash equal, breaking
+  the property the trait actually wants. See §Corrections below.
+  Future adapters compute their own deterministic equivalent.
 
 This ADR does **not** commit the project to:
 
@@ -490,6 +496,38 @@ This ADR does **not** commit the project to:
   the CSV+git adapter; the cost of going `async` now is dragging
   Tokio into every CLI command. Deferred until the first
   network-I/O adapter is on the roadmap.
+
+## Corrections
+
+> **2026-05-11:** original §Consequences bullet (line ~437) said the
+> CSV+git adapter implements `snapshot_hash` as "the HEAD commit
+> SHA of the data repo's `main`". When `crates/storage_csv_git/`
+> landed in PR #41 (merge commit `d25dbec`), the actual choice was
+> a SHA-256 over the canonical concatenation of `registry.csv` +
+> `audit_log.csv` + `print_log.csv` (in that fixed order, each
+> prefixed by its filename + NUL byte). The original wording was
+> incorrect for two reasons:
+>
+> 1. **HEAD-SHA bakes in commit metadata** (author, timestamp,
+>    commit message). Two fresh clones of the same data hash to
+>    different HEAD SHAs even when their CSV contents are
+>    byte-identical, which breaks the "deterministic equivalent"
+>    property the trait actually wants.
+> 2. **HEAD-SHA requires a live `git` invocation per call**.
+>    Reading `snapshot_hash` would shell out to git in every test
+>    that constructs a `CsvGitRepository` with `commit_on_write:
+>    false` (the test-mode default), forcing tests to either spin
+>    up a real git repo or work around the property.
+>
+> The SHA-256 content-hash choice satisfies the trait's
+> "deterministic equivalent across fresh clones of identical data"
+> property AND works without a live git invocation. The
+> §Consequences bullet has been updated to reflect the actual
+> implementation; the original wording is preserved here for
+> audit per METHODOLOGY §Correction protocol.
+>
+> Sources: PR #41 reviewer report (subagent `a0dc046e`,
+> 2026-05-11); follow-up issue #47; merge commit `d25dbec`.
 
 ## References
 
