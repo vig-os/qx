@@ -55,6 +55,8 @@ Foundation set (architectural reset, 2026-05-10 — see [LOG.md](LOG.md)):
 - [ADR-024 — Cryptographic baseline MVP + bolt-on path to full crypto](ADR-024-crypto-baseline-mvp.md)
 - [ADR-025 — Distribution integrity (signed releases, SRI, repro builds, future Cosign)](ADR-025-distribution-integrity.md)
 - [ADR-027 — Port conformance + forward-compatibility test framework](ADR-027-port-conformance-tests.md)
+- [ADR-028 — SOUP validation per IEC 62304 §5.3 + §8.1.2 (Class B; H1–H8 harnesses; surveillance plan)](ADR-028-soup-validation.md)
+- [ADR-029 — Architectural coverage validator (`coverage.toml` + prek/CI tool)](ADR-029-architectural-coverage-validator.md)
 
 Earlier ADRs (still Proposed; ADR-016 updated 2026-05-10 to align with foundation set):
 

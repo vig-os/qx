@@ -3,6 +3,73 @@
 Append-only chronological record of decisions for the parts registry.
 Newest entries first.
 
+## 2026-05-11 — SOUP discipline + architectural coverage validator (ADR-028 + ADR-029)
+
+**Context:** the user surfaced a regulatory gap during the foundation
+phase: the OSS dependencies pulled in by the Rust workspace are SOUP
+per IEC 62304 §5.3 + §8.1.2, but the ADR set named "audit-grade" as a
+property without declaring the software safety class, enumerating the
+SOUP, or specifying per-class validation. Separately, the user asked
+for CI/pre-commit/prek tooling so coverage-of-the-architectural-surface
+cannot silently drift (forgotten crate, forgotten conformance call,
+forgotten SOUP entry, silently-resolved trigger).
+
+Two parallel subagent analyses were commissioned (no code modified by
+the analyses):
+
+- SOUP analysis (agent `a909e6ce`) — produced the Class B (conditional)
+  classification recommendation, the three-tier SOUP scheme (1/2/3
+  proportional to safety contribution), the eight validation harnesses
+  H1–H8 in priority order, and the maintenance plan per §6.1.
+- Coverage-tooling analysis (agent `ae92ea58`) — produced the
+  `coverage.toml` schema, the binary location (`crates/port_tests/`
+  bin target), the prek-vs-pre-commit recommendation (prek primary,
+  canonical pre-commit fallback), the WARN-locally / ERROR-CI split,
+  and the four exit codes (with code 3 reserved for expired
+  exemptions).
+
+**Outcomes:** two new ADRs Accepted.
+
+| ADR | Decision |
+|---|---|
+| 028 | Class B (conditional on downstream device verification); ISO 13485 §7.3 design control entry recorded as 2026-05-10; SOUP inventory at `soup/inventory.toml`; H1–H8 harnesses as ADR-027 Tier 5; quarterly health workflow; release blocking on Tier 5 failure |
+| 029 | Coverage validator binary `part-registry-coverage` inside `crates/port_tests/`; `coverage.toml` at repo root with six dimensions; prek pre-commit + CI workflow; WARN local / ERROR CI; exemption mechanism with expiry; orphan-row detection; degrades to WARN if SOUP file absent so could land before ADR-028 |
+
+**Process notes:**
+
+- The user's prompts ("oss = SOUP", "nano-id collision bench", "Micro
+  QR roundtrip", "prek for coverage") were the right questions caught
+  in the right window — before the five in-flight implementation
+  agents (#26 codec, #27 validators, #29 storage_csv_git, #30
+  identity+signing, #34 observability) had fully landed. SOUP and
+  coverage become *additive* harness work rather than retrofit on
+  merged code.
+- ADRs 012, 014, 015, 018, 019, 020, 021, 022, 025 are still
+  Proposed — the foundation-set sweep on 2026-05-10 flipped 016, 017,
+  023, 024, 027 to Accepted; the SOUP-driven re-review for 028
+  retroactively makes the entry-into-design-control date explicit.
+- Critical gaps surfaced by the SOUP audit that the ADR set did not
+  previously address: (a) IEC 62304 software class not named;
+  (b) ISO 13485 §7.3 design-control entry date implicit; (c) no SOUP
+  inventory; (d) `qrcode 0.14` upstream is dormant — load-bearing
+  Class-3 SOUP with no surveillance owner; (e) ADR-013 "data = git
+  history" does not defend against SOUP-induced on-disk-format drift.
+  All five are addressed in ADR-028 §Decision / §Open questions.
+- The conversation explicitly walked back the earlier framing that
+  consequence tier alone fixes class — ADR-023's "regulatory finding"
+  is a *process* consequence; IEC 62304 §4.3 requires *worst-credible-
+  harm* classification. The two are different.
+
+**Cross-references:** ADR-028, ADR-029, ADR-027 (Tier 5 extension);
+the five in-flight foundation PRs each carry inventory + coverage
+obligations once the seed files land; the coverage tool implementation
+is a follow-up issue (the ADR is the framework).
+
+**References:** ADR-028, ADR-029, ADR-017, ADR-023, ADR-024, ADR-027;
+IEC 62304:2006/AMD1:2015 §4.3, §5.3, §6.1, §8.1.2; ISO 13485:2016
+§7.3.2, §7.3.5; SOUP analysis report (agent a909e6ce);
+coverage-tooling analysis report (agent ae92ea58).
+
 ## 2026-05-10 — Architectural reset: Rust core, ports/adapters, multi-target deploy, audit-grade crypto-MVP
 
 **Context:** the conversation started with a narrow question — "is the
