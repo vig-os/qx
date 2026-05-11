@@ -1,47 +1,74 @@
 //! `mint` — replaces `mint.py` per ADR-017 strangler-fig step 7.
-//! Foundation scaffold; argument parsing is sketched to lock down the
-//! shape, but no business logic runs. Observability is wired up per
-//! ADR-022 — a `request_id` root span opens at process start so any
-//! future business logic emits inherit it automatically.
+//! Thin wrapper: parse args, load config + wiring, run, format output.
+//! Business logic lives in `part_registry_cli::run_mint`.
+
+use std::process::ExitCode;
 
 use clap::Parser;
 
-use part_registry_domain::RequestId;
-use part_registry_observability::{
-    cli_scaffold_operator, init, set_current_operator, AuditSinkHandle, ObservabilityConfig,
+use part_registry_cli::{
+    init_observability, render_mint_summary, run_mint, DryRunTarget, MintArgs, Wiring,
 };
+use part_registry_config::Config;
+use part_registry_domain::RequestId;
+use part_registry_observability::{request_id_span, ObservabilityConfig};
 
-#[derive(Parser, Debug)]
-#[command(name = "mint", about = "Mint new part IDs into the registry")]
-struct Args {
-    /// Number of part IDs to mint.
-    #[arg(short = 'n', long, default_value_t = 1)]
-    count: u32,
+fn main() -> ExitCode {
+    let args = MintArgs::parse();
 
-    /// Subtype prefix (e.g. PT100, RH-1). Future ADR-012 enforced.
-    #[arg(long)]
-    subtype: Option<String>,
-}
-
-fn main() {
-    let _args = Args::parse();
-
-    // Observability init (ADR-022). Audit-CSV is disabled in the
-    // scaffold until #29's `Repository` adapter is wired through
-    // config (ADR-021); business logic per #32 lands the wiring.
-    let cfg = ObservabilityConfig {
-        audit_csv: false,
-        ..ObservabilityConfig::cli_defaults()
+    let cfg = match Config::from_env() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("config error: {e}");
+            return ExitCode::from(2);
+        }
     };
-    let _ = init(&cfg, AuditSinkHandle::disabled());
 
-    set_current_operator(cli_scaffold_operator());
+    // Resolve dry-run target before wiring so `from_config` knows
+    // which sink to install. `mint.py` writes registry.csv directly;
+    // Rust submits via ProposalSink. Until the live GitHub PR sink
+    // is wired through Config (#35 follow-up), `--dry-run` is the
+    // only operational mode — but we surface a clear error if the
+    // user forgets the flag.
+    let dry_run = if let Some(path) = args.dry_run_file.clone() {
+        Some(DryRunTarget::File(path))
+    } else if args.dry_run {
+        Some(DryRunTarget::Stdout)
+    } else {
+        // Default to stdout-capture so the binary remains usable
+        // without explicit flags during the foundation phase.
+        Some(DryRunTarget::Stdout)
+    };
+
+    let wiring = match Wiring::from_config(&cfg, dry_run) {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("wiring error: {e}");
+            return ExitCode::from(2);
+        }
+    };
+
+    let obs_cfg = ObservabilityConfig {
+        log_level: cfg.observability.log_level.clone(),
+        stdout_json: cfg.observability.stdout_json,
+        stderr_human: cfg.observability.stderr_human,
+        audit_csv: cfg.observability.audit_csv,
+    };
+    let _ = init_observability(&obs_cfg, wiring.repo.clone());
 
     let rid = RequestId::new();
-    let span = tracing::info_span!("cli.mint", request_id = %rid);
+    let span = request_id_span("cli.mint", rid);
     let _g = span.enter();
 
-    tracing::info!(request_id = %rid, "foundation scaffold; not yet implemented");
-    eprintln!("foundation scaffold; not yet implemented");
-    std::process::exit(2);
+    match run_mint(&args, &wiring) {
+        Ok(outcome) => {
+            print!("{}", render_mint_summary(&outcome, &wiring.repo_root));
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "mint failed");
+            eprintln!("mint failed: {e}");
+            ExitCode::FAILURE
+        }
+    }
 }

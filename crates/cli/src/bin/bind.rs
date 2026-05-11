@@ -1,41 +1,66 @@
 //! `bind` — replaces `bind.py` per ADR-017 strangler-fig step 7.
-//! Foundation scaffold. Observability wired per ADR-022 — root span
-//! carries a `request_id` so future emits inherit it.
+//! Thin wrapper: parse args, load config + wiring, run, format output.
+//! Business logic lives in `part_registry_cli::run_bind`.
+
+use std::process::ExitCode;
 
 use clap::Parser;
 
-use part_registry_domain::RequestId;
-use part_registry_observability::{
-    cli_scaffold_operator, init, set_current_operator, AuditSinkHandle, ObservabilityConfig,
+use part_registry_cli::{
+    init_observability, render_bind_summary, run_bind, BindArgs, DryRunTarget, Wiring,
 };
+use part_registry_config::Config;
+use part_registry_domain::RequestId;
+use part_registry_observability::{request_id_span, ObservabilityConfig};
 
-#[derive(Parser, Debug)]
-#[command(name = "bind", about = "Bind a part ID to a serial / batch / location")]
-struct Args {
-    /// Canonical part ID to bind.
-    id: String,
+fn main() -> ExitCode {
+    let args = BindArgs::parse();
 
-    /// Free-form binding payload (placeholder until ADR-bind lands).
-    #[arg(long)]
-    to: Option<String>,
-}
-
-fn main() {
-    let _args = Args::parse();
-
-    let cfg = ObservabilityConfig {
-        audit_csv: false,
-        ..ObservabilityConfig::cli_defaults()
+    let cfg = match Config::from_env() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("config error: {e}");
+            return ExitCode::from(2);
+        }
     };
-    let _ = init(&cfg, AuditSinkHandle::disabled());
 
-    set_current_operator(cli_scaffold_operator());
+    let dry_run = if let Some(path) = args.dry_run_file.clone() {
+        Some(DryRunTarget::File(path))
+    } else {
+        Some(DryRunTarget::Stdout)
+    };
+
+    let wiring = match Wiring::from_config(&cfg, dry_run) {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("wiring error: {e}");
+            return ExitCode::from(2);
+        }
+    };
+
+    let obs_cfg = ObservabilityConfig {
+        log_level: cfg.observability.log_level.clone(),
+        stdout_json: cfg.observability.stdout_json,
+        stderr_human: cfg.observability.stderr_human,
+        audit_csv: cfg.observability.audit_csv,
+    };
+    let _ = init_observability(&obs_cfg, wiring.repo.clone());
 
     let rid = RequestId::new();
-    let span = tracing::info_span!("cli.bind", request_id = %rid);
+    let span = request_id_span("cli.bind", rid);
     let _g = span.enter();
 
-    tracing::info!(request_id = %rid, "foundation scaffold; not yet implemented");
-    eprintln!("foundation scaffold; not yet implemented");
-    std::process::exit(2);
+    match run_bind(&args, &wiring) {
+        Ok(outcome) => {
+            print!("{}", render_bind_summary(&outcome));
+            // Per spec: print proposal URL for downstream tooling.
+            println!("{}", outcome.proposal_ref.url);
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "bind failed");
+            eprintln!("bind failed: {e}");
+            ExitCode::FAILURE
+        }
+    }
 }
