@@ -53,6 +53,7 @@ uuid = { version = "1", features = ["serde", "v7", "js"] }   # `js` is required 
 csv = "1"
 sha2 = "0.10"
 tempfile = "3"
+base64 = "0.22"
 
 # Identity / signing MVP adapters (foundation issue #30, ADR-020 + ADR-024).
 # `reqwest` uses `rustls-tls` for reproducible-build hygiene (no OpenSSL on

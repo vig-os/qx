@@ -1768,9 +1768,18 @@ dependencies = [
 name = "part-registry-transport-github-pr"
 version = "0.1.0"
 dependencies = [
+ "base64",
+ "mockito",
  "part-registry-domain",
  "part-registry-port-tests",
  "part-registry-transport",
+ "part-registry-validators",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "time",
+ "uuid",
 ]
 
 [[package]]

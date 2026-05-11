@@ -12,6 +12,20 @@ path = "src/lib.rs"
 [dependencies]
 part-registry-domain = { path = "../domain" }
 part-registry-transport = { path = "../transport" }
+part-registry-validators = { path = "../validators" }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }
+base64 = { workspace = true }
+
+# Native HTTP. `reqwest::blocking` so `ProposalSink::submit` stays
+# synchronous (the trait isn't async). Rustls per ADR-024 §"Reproducible
+# builds" and ADR-028 §H6 — no OpenSSL on the build host.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+reqwest = { workspace = true }
 
 [dev-dependencies]
 part-registry-port-tests = { path = "../port_tests" }
+mockito = { workspace = true }
+uuid = { workspace = true }
