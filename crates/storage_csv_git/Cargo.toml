@@ -14,5 +14,21 @@ part-registry-domain = { path = "../domain" }
 part-registry-storage = { path = "../storage" }
 thiserror = { workspace = true }
 
+# Per ADR-018 — CSV read/write, deterministic snapshot hashing, JSON
+# columns. Filesystem + git-shell paths are wasm32-gated in src/lib.rs.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+csv = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+time = { workspace = true }
+uuid = { workspace = true }
+
 [dev-dependencies]
 part-registry-port-tests = { path = "../port_tests" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tempfile = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }
+uuid = { workspace = true }

@@ -46,8 +46,13 @@ rxing = "0.9"
 wasm-bindgen = "0.2"
 serde-wasm-bindgen = "0.6"
 clap = { version = "4", features = ["derive"] }
-time = { version = "0.3", features = ["serde", "macros"] }
+time = { version = "0.3", features = ["serde", "macros", "formatting", "parsing"] }
 uuid = { version = "1", features = ["serde", "v7", "js"] }   # `js` is required for v7 RNG on wasm32-unknown-unknown
+
+# Per ADR-018 §"CSV+git substrate" — first storage adapter dependencies.
+csv = "1"
+sha2 = "0.10"
+tempfile = "3"
 
 # Per ADR-024 §Reproducible builds: deterministic release profile.
 # CI release builds set RUSTFLAGS="--remap-path-prefix=$HOME=. --remap-path-prefix=$CARGO_HOME=.".

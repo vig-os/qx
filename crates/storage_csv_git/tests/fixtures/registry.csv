@@ -1,0 +1,6 @@
+id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,signatures,chain_hash
+26N4T5BU5FCGAB,bound,2026-05-08T13:00:00Z,B-2026-05-08-sheet-1,2026-05-08T14:00:00Z,PT100,RTD probe,Acme,PT100-A,Lab-1,,,
+2Y5PZVD7PBK9CD,bound,2026-05-08T13:00:00Z,B-2026-05-08-sheet-1,2026-05-08T14:30:00Z,PT100,RTD probe,Acme,PT100-A,Lab-1,,,
+3NYKQ7D2GRX3EF,unbound,2026-05-08T13:00:00Z,B-2026-05-08-sheet-1,,,,,,,,,
+4M4DWPCHD9PTGH,unbound,2026-05-08T13:00:00Z,B-2026-05-08-sheet-2,,,,Beta,WIDGET-B,,,,
+5RHCG9G7CHKMJK,void,2026-05-08T13:00:00Z,B-2026-05-08-sheet-2,2026-05-08T15:00:00Z,Sensor,Decommissioned,Gamma,SENS-C,,decommissioned,,
