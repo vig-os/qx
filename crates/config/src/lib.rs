@@ -44,6 +44,10 @@ use thiserror::Error;
 pub enum ConfigError {
     #[error("config parse error: {0}")]
     Parse(String),
+    #[error("invalid data_repo_url {url:?}: {reason}")]
+    InvalidRepoUrl { url: String, reason: String },
+    #[error("cannot resolve data path: no XDG data dir and no explicit local_clone_path")]
+    NoDataDir,
 }
 
 impl From<figment::Error> for ConfigError {
@@ -70,11 +74,21 @@ pub struct Config {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RepoConfig {
     /// env: `PART_REGISTRY__REPO__DATA_REPO_URL`
+    ///
+    /// Accepts `owner/repo` short form, `https://github.com/owner/repo[.git]`,
+    /// or `git@github.com:owner/repo.git` per [`Config::data_repo_owner_repo`].
     pub data_repo_url: String,
     /// env: `PART_REGISTRY__REPO__CODE_REPO_URL`
     pub code_repo_url: String,
     /// env: `PART_REGISTRY__REPO__LOCAL_CLONE_PATH`
-    pub local_clone_path: PathBuf,
+    ///
+    /// When unset, [`Config::resolve_data_path`] derives the path as
+    /// `$XDG_DATA_HOME/part-registry/<owner>-<repo>/` (Linux) or the
+    /// platform-equivalent under `dirs::data_dir()`. Operators only
+    /// set this for hermetic test environments or shared-storage
+    /// hosts where XDG resolution is wrong.
+    #[serde(default)]
+    pub local_clone_path: Option<PathBuf>,
     /// env: `PART_REGISTRY__REPO__BRANCH` — default `main`
     pub branch: String,
 }
@@ -228,6 +242,110 @@ impl Config {
 
         Ok(figment.extract()?)
     }
+
+    /// Parse `repo.data_repo_url` into `(owner, repo)`.
+    ///
+    /// Accepted forms (matched in order):
+    ///   - `owner/repo`
+    ///   - `https://github.com/owner/repo` (optional `.git` suffix)
+    ///   - `http://github.com/owner/repo` (treated identically)
+    ///   - `git@github.com:owner/repo` (optional `.git` suffix)
+    ///
+    /// Any other shape returns [`ConfigError::InvalidRepoUrl`]. The
+    /// parser is host-agnostic past the `github.com` literal: future
+    /// self-hosted forges go through this same helper once the URL
+    /// pattern matches.
+    pub fn data_repo_owner_repo(&self) -> Result<(String, String), ConfigError> {
+        parse_owner_repo(&self.repo.data_repo_url)
+    }
+
+    /// Resolve the on-disk path the data-repo clone should live at.
+    ///
+    /// Priority:
+    ///   1. `repo.local_clone_path` if the operator set it explicitly.
+    ///   2. `<data_dir>/part-registry/<owner>-<repo>/` where
+    ///      `<data_dir>` is `dirs::data_dir()` — `$XDG_DATA_HOME` on
+    ///      Linux, `~/Library/Application Support` on macOS,
+    ///      `%APPDATA%` on Windows.
+    ///
+    /// Returns [`ConfigError::NoDataDir`] only if there is no explicit
+    /// override AND the host has no resolvable data dir — extremely
+    /// rare in practice (would need `$HOME` unset on every platform).
+    pub fn resolve_data_path(&self) -> Result<PathBuf, ConfigError> {
+        if let Some(p) = &self.repo.local_clone_path {
+            return Ok(p.clone());
+        }
+        let base = dirs::data_dir().ok_or(ConfigError::NoDataDir)?;
+        let (owner, repo) = self.data_repo_owner_repo()?;
+        Ok(base.join("part-registry").join(format!("{owner}-{repo}")))
+    }
+}
+
+/// Free-function form of [`Config::data_repo_owner_repo`] — exposed so
+/// callers that already have a URL string in hand (e.g. test helpers
+/// or bootstrap scripts) don't need to build a full `Config`.
+pub fn parse_owner_repo(url: &str) -> Result<(String, String), ConfigError> {
+    let bad = |reason: &str| ConfigError::InvalidRepoUrl {
+        url: url.to_owned(),
+        reason: reason.to_owned(),
+    };
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err(bad("empty"));
+    }
+
+    // HTTPS / HTTP form first — must be checked before the bare
+    // `owner/repo` heuristic so the URL scheme isn't misread as
+    // an owner literal.
+    let rest = trimmed
+        .strip_prefix("https://")
+        .or_else(|| trimmed.strip_prefix("http://"))
+        .unwrap_or("");
+    if !rest.is_empty() {
+        // Expect `<host>/<owner>/<repo>[.git][/...]`.
+        let mut parts = rest.splitn(2, '/');
+        let _host = parts.next().ok_or_else(|| bad("missing host in URL"))?;
+        let path = parts.next().ok_or_else(|| bad("missing path in URL"))?;
+        return parse_owner_repo_path(path, url);
+    }
+
+    // SSH form: `git@host:owner/repo[.git]`.
+    if let Some(after_at) = trimmed.strip_prefix("git@") {
+        let mut parts = after_at.splitn(2, ':');
+        let _host = parts.next().ok_or_else(|| bad("missing host in SSH URL"))?;
+        let path = parts.next().ok_or_else(|| bad("missing path in SSH URL"))?;
+        return parse_owner_repo_path(path, url);
+    }
+
+    // Bare `owner/repo` form.
+    parse_owner_repo_path(trimmed, url)
+}
+
+/// Helper: split `owner/repo[.git][/...]` after the host has been
+/// stripped. Trims a trailing `.git` and rejects empty components.
+fn parse_owner_repo_path(path: &str, original: &str) -> Result<(String, String), ConfigError> {
+    let bad = |reason: &str| ConfigError::InvalidRepoUrl {
+        url: original.to_owned(),
+        reason: reason.to_owned(),
+    };
+    let path = path.trim_start_matches('/');
+    let mut parts = path.splitn(3, '/');
+    let owner = parts
+        .next()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| bad("missing owner"))?;
+    let mut repo = parts
+        .next()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| bad("missing repo"))?
+        .to_owned();
+    if let Some(stripped) = repo.strip_suffix(".git") {
+        repo = stripped.to_owned();
+    }
+    if repo.is_empty() {
+        return Err(bad("repo name is empty after stripping .git suffix"));
+    }
+    Ok((owner.to_owned(), repo))
 }
 
 /// Transcribe an iterator of `(KEY, VALUE)` env-style pairs into a
@@ -333,9 +451,108 @@ mod tests {
         assert_eq!(cfg.label.default_size_mm, 11.0);
         assert_eq!(cfg.observability.log_level, "info");
         assert_eq!(cfg.repo.branch, "main");
+        // Per #35: bare `cargo run` targets the sandbox, not the
+        // audit-of-record registry. Operators opt into prod via env.
+        assert_eq!(
+            cfg.repo.data_repo_url,
+            "https://github.com/exo-pet/exopet-registry-sandbox"
+        );
+        // local_clone_path is now unset in defaults; resolution falls
+        // through to XDG.
+        assert!(cfg.repo.local_clone_path.is_none());
         // Optional fields have no default in the TOML and become None.
         assert!(cfg.storage.sqlite_path.is_none());
         assert!(cfg.identity.github_client_id.is_none());
+    }
+
+    // -----------------------------------------------------------
+    // parse_owner_repo — accepted URL shapes (#35)
+    // -----------------------------------------------------------
+
+    #[test]
+    fn parse_owner_repo_accepts_short_form() {
+        let (owner, repo) = parse_owner_repo("exo-pet/exopet-registry").unwrap();
+        assert_eq!(owner, "exo-pet");
+        assert_eq!(repo, "exopet-registry");
+    }
+
+    #[test]
+    fn parse_owner_repo_accepts_https_url() {
+        let (owner, repo) = parse_owner_repo("https://github.com/exo-pet/exopet-registry").unwrap();
+        assert_eq!(owner, "exo-pet");
+        assert_eq!(repo, "exopet-registry");
+    }
+
+    #[test]
+    fn parse_owner_repo_accepts_https_url_with_git_suffix() {
+        let (owner, repo) =
+            parse_owner_repo("https://github.com/exo-pet/exopet-registry.git").unwrap();
+        assert_eq!(owner, "exo-pet");
+        assert_eq!(repo, "exopet-registry");
+    }
+
+    #[test]
+    fn parse_owner_repo_accepts_ssh_url() {
+        let (owner, repo) = parse_owner_repo("git@github.com:exo-pet/exopet-registry.git").unwrap();
+        assert_eq!(owner, "exo-pet");
+        assert_eq!(repo, "exopet-registry");
+    }
+
+    #[test]
+    fn parse_owner_repo_rejects_empty() {
+        assert!(matches!(
+            parse_owner_repo(""),
+            Err(ConfigError::InvalidRepoUrl { .. })
+        ));
+    }
+
+    #[test]
+    fn parse_owner_repo_rejects_missing_repo() {
+        assert!(matches!(
+            parse_owner_repo("exo-pet"),
+            Err(ConfigError::InvalidRepoUrl { .. })
+        ));
+        assert!(matches!(
+            parse_owner_repo("exo-pet/"),
+            Err(ConfigError::InvalidRepoUrl { .. })
+        ));
+    }
+
+    #[test]
+    fn parse_owner_repo_rejects_dotgit_only_repo() {
+        assert!(matches!(
+            parse_owner_repo("https://github.com/exo-pet/.git"),
+            Err(ConfigError::InvalidRepoUrl { .. })
+        ));
+    }
+
+    #[test]
+    fn data_repo_owner_repo_reads_through_config() {
+        let c = cfg(&[(
+            "PART_REGISTRY__REPO__DATA_REPO_URL",
+            "https://github.com/exo-pet/exopet-registry",
+        )]);
+        let (owner, repo) = c.data_repo_owner_repo().unwrap();
+        assert_eq!(owner, "exo-pet");
+        assert_eq!(repo, "exopet-registry");
+    }
+
+    #[test]
+    fn resolve_data_path_uses_explicit_override_when_set() {
+        let c = cfg(&[("PART_REGISTRY__REPO__LOCAL_CLONE_PATH", "/tmp/foo")]);
+        assert_eq!(c.resolve_data_path().unwrap(), PathBuf::from("/tmp/foo"));
+    }
+
+    #[test]
+    fn resolve_data_path_falls_back_to_xdg_owner_repo_subdir() {
+        let c = cfg(&[]);
+        let p = c.resolve_data_path().unwrap();
+        // We don't pin the absolute prefix (host-dependent), only the
+        // tail — the XDG layer is `dirs::data_dir()`'s job to test.
+        assert!(
+            p.ends_with("part-registry/exo-pet-exopet-registry-sandbox"),
+            "unexpected resolved path: {p:?}"
+        );
     }
 
     #[test]

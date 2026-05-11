@@ -1647,6 +1647,7 @@ dependencies = [
 name = "part-registry-config"
 version = "0.1.0"
 dependencies = [
+ "dirs",
  "figment",
  "serde",
  "thiserror 2.0.18",

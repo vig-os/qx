@@ -1,10 +1,20 @@
 # web/ — part-registry SPA
 
 Static site that scans QRs, looks up parts, prints labels via the OS
-print dialog, and queues binds for batched PR submission. Deployed to
-GitHub Pages (`https://morepet.github.io/part-registry/`) by the
-[`pages.yml`](../.github/workflows/pages.yml) workflow on every push
-to `main` that touches `web/**` or `registry.csv`.
+print dialog, and queues binds for batched PR submission.
+
+**Deployment** (per #35):
+- The code repo's [`pages.yml`](../.github/workflows/pages.yml) publishes
+  a preview build to `https://morepet.github.io/part-registry/`
+  bundled with the **sandbox** data repo
+  (`exo-pet/exopet-registry-sandbox`) on every push touching `web/**`.
+- Per-registry production deployments live on each data repo's own
+  Pages site (Phase 3 in #35). Each one consumes the released bundle
+  from this code repo and bakes its own `VITE_DATA_REPO` at build time.
+
+The selected data repo is controlled by the `VITE_DATA_REPO` build-time
+env var (defaults to the sandbox so a vanilla `npm run build` never
+accidentally targets the audit-of-record registry).
 
 ## Architecture
 

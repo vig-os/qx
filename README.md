@@ -116,26 +116,25 @@ and size combination. Requires `rsvg-convert` (`brew install librsvg`).
 
 ## Validators
 
-`validators/` is the shared rule set that both CI and the FE (via Pyodide)
-use to gate writes to `registry.csv`. Pure stdlib, no external deps —
-see [ADR-013](decisions/ADR-013-parts-registry-web-app.md) §"Shared
-validation" for why.
+`crates/validators/` is the shared rule set that both CI and the FE
+(via WASM) use to gate writes to the data repo's `registry.csv`. See
+[ADR-013](decisions/ADR-013-parts-registry-web-app.md) §"Shared
+validation" and [ADR-016](decisions/ADR-016-pr-diff-policy-enforcement.md)
+for the policy story.
 
 ```bash
-# Local: validate the working-copy registry
-uv run python -m validators registry.csv
-
-# Local: also enforce the diff-vs-base rules (status transitions, etc.)
-uv run python -m validators registry.csv --base /path/to/main/registry.csv
-
 # Run the rule-set test suite
-uv run pytest validators/test_validators.py -v
+cargo test -p part-registry-validators
+
+# Run the legacy Python validators (still parity-tested)
+uv run python -m validators /path/to/data-repo/registry.csv
+uv run python -m validators /path/to/data-repo/registry.csv --base /path/to/base/registry.csv
 ```
 
 Rules encoded:
 
 - Header schema and per-row schema (required fields, status enum,
-  canonical 12-char ID regex from ADR-012's no-lookalike alphabet).
+  canonical 14-char ID regex from ADR-012's no-lookalike alphabet).
 - Per-status field constraints (`bound` rows must carry `bound_at`;
   `unbound` rows must not carry `type` / `location` / `bound_at`).
 - ID uniqueness and sort stability — re-sorting by `id` ascending must
@@ -144,25 +143,40 @@ Rules encoded:
   `bound → bound` (rebind), `* → void`. No back-transitions, no
   `void → bound`. New rows must be born `unbound` or `bound`.
 
-CI runs the same module on every PR via `.github/workflows/validate.yml`,
-fetching the merge-base copy of `registry.csv` for the diff rules.
+Per #35: the diff-vs-base policy CI lives on the **data** repo
+(`exo-pet/exopet-registry[-sandbox]`), not on this code repo. The code
+repo's `rust.yml` runs unit + conformance tests; the data repo's
+workflow runs the same `crates/validators/` binary against each PR.
+
+## Data repos
+
+Per [ADR-019](decisions/ADR-019-proposal-sink-port.md) and #35, code
+and data live in separate repositories so the code can stay
+open-source while operator data stays scoped to its registry:
+
+| Repo | What | Visibility |
+|---|---|---|
+| `MorePET/part-registry` (this) | Rust + Python + FE source, ADRs, examples | Public |
+| `exo-pet/exopet-registry` | Production registry data (audit-of-record) | Private (planned; currently public until org upgrade) |
+| `exo-pet/exopet-registry-sandbox` | Throwaway sandbox for experimentation | Public |
+
+CLI binaries resolve the target data repo from
+`PART_REGISTRY__REPO__DATA_REPO_URL` (defaults to the sandbox so a
+vanilla `cargo run` never writes to the audit-of-record registry).
+The clone lives at `$XDG_DATA_HOME/part-registry/<owner>-<repo>/` —
+see `crates/config/src/lib.rs:resolve_data_path`.
 
 ## Files
 
-- `mint.py` — generate IDs, append rows. **No SVGs.**
-- `label.py` — render SVG labels for IDs already in the registry.
-  Selectable by `--id`, `--batch`, or `--status`.
-- `bind.py` — flip `unbound → bound`, fill metadata
+- `mint.py` / `label.py` / `bind.py` — legacy Python CLIs. Parity
+  targets for the Rust binaries; deletion gated on operator review.
 - `test_labels.py` — pytest roundtrip suite
-- `validators/` — shared CI + FE registry rule set (stdlib only)
-- `registry.csv` — canonical record (sorted by ID; see ADR-013 for the
-  sort-stability invariant)
-- `print_log.csv` — append-only audit trail of every label print
-  (sorted by `printed_at`; one row per ID per print event; see
-  [ADR-015](decisions/ADR-015-print-event-log.md))
+- `validators/` — legacy Python validators (parity-tested against
+  `crates/validators/`)
+- `crates/` — Rust workspace (see workspace `Cargo.toml`)
+- `web/` — Vite SPA + WASM façade over `crates/codec` + `crates/validators`
 - `decisions/` — ADRs and decision log
-- `examples/` — reference renderings at common sizes
-- `labels/` — generated SVG/PDF labels (gitignored)
+- `examples/` — reference label renderings used by the parity tests
 
 ## Status
 

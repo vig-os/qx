@@ -458,3 +458,20 @@ This ADR does **not** commit the project to:
 - IEC 62304:2006/AMD1:2015 §5.7 — software change-control process
 - `octocrab` — <https://github.com/XAMPPRocky/octocrab>
 - Hexagonal / ports & adapters — Alistair Cockburn, 2005
+
+## Corrections
+
+- **2026-05-12** — #35 names the concrete data repos:
+  `exo-pet/exopet-registry` (production audit-of-record) and
+  `exo-pet/exopet-registry-sandbox` (throwaway sandbox). The
+  `ProposalSink` adapter is built once and targeted per-deployment via
+  `PART_REGISTRY__REPO__DATA_REPO_URL`. The code repo
+  (`MorePET/part-registry`, this) stays open-source. Data repos start
+  public (Pages-on-private requires GitHub Pro; the org upgrade is
+  tracked at `exo-pet/exopet-registry#1`) and migrate to private once
+  branch protection is available. `transport_github_pr`'s
+  `GithubPrProposalSink` does not change — only the target field it's
+  constructed with does. Phase 1 of #35 introduces the
+  `RepoConfig.data_repo_url` field and XDG-based clone-path
+  resolution (`Config::resolve_data_path`); Phases 2 + 3 wire the
+  release artifact and the data-repo Pages workflows.

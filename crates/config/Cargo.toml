@@ -13,3 +13,7 @@ path = "src/lib.rs"
 serde = { workspace = true }
 thiserror = { workspace = true }
 figment = { workspace = true }
+# Per ADR-019 + #35 §"Where the cloned data-repo cache lives":
+# resolve `local_clone_path` via XDG ($XDG_DATA_HOME on Linux,
+# Application Support on macOS) when the operator hasn't set one.
+dirs = { workspace = true }

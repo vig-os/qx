@@ -1,3 +1,8 @@
+# Per #35: this workflow stays as a code-repo preview deploy so the
+# vanilla FE bundle (sandbox-default registry) is available at
+# https://morepet.github.io/part-registry/. Production deployments live
+# on the data repos (exo-pet/exopet-registry[-sandbox]) and consume
+# released bundles from this repo per Phase 2's release.yml.
 name: Deploy web to GitHub Pages
 
 on:
@@ -5,7 +10,6 @@ on:
     branches: [main]
     paths:
       - "web/**"
-      - "registry.csv"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 

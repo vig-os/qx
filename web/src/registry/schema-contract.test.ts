@@ -8,8 +8,13 @@ import { REGISTRY_FIELD_KEYS, STATUSES } from "./schema";
 import contract from "@registry-contract";
 
 function readRegistryHeader(): string[] {
+  // Per #35: the live registry.csv lives in the data repo
+  // (`exo-pet/exopet-registry[-sandbox]`), not this code repo. We
+  // assert the schema contract against a committed header fixture so
+  // the test stays deterministic and the data repo stays the single
+  // source of truth for runtime row contents.
   const csv = readFileSync(
-    resolve(import.meta.dirname, "../../../registry.csv"),
+    resolve(import.meta.dirname, "../../test-fixtures/registry-header.csv"),
     "utf-8",
   );
   return csv.split(/\r?\n/, 1)[0].split(",");

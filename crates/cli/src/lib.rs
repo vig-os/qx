@@ -149,6 +149,8 @@ pub enum CliError {
     Ambiguous(String),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+    #[error("data-repo bootstrap: {0}")]
+    Bootstrap(String),
     #[error("{0}")]
     Other(String),
 }
@@ -477,10 +479,17 @@ impl Wiring {
                 cfg.storage.adapter
             )));
         }
-        let repo_path = cfg.repo.local_clone_path.clone();
+        // Resolve the on-disk clone path (XDG-derived by default per
+        // #35) and bootstrap the data repo into it. Idempotent: clone
+        // if missing, fetch+reset if present. Honours
+        // `PARTREG_OFFLINE=true` for hermetic test/dev runs.
+        let repo_path = cfg.resolve_data_path()?;
+        bootstrap_data_repo(&cfg.repo.data_repo_url, &cfg.repo.branch, &repo_path)?;
         let mut csv_cfg = CsvGitConfig::new(repo_path.clone());
         // For now, the CLI does not commit on audit-append — leave
-        // that to the data-repo automation. (#35 will tighten this.)
+        // that to the data-repo automation (signed commits land via
+        // `transport_github_pr` once the live sink is wired through
+        // Config; see #35 Phase 3).
         csv_cfg.commit_on_write = false;
         let repo = CsvGitRepository::open(repo_path.clone(), csv_cfg)?;
         let repo_arc: Arc<dyn Repository> = Arc::new(repo);
@@ -514,6 +523,134 @@ impl Wiring {
             repo_root: repo_path,
         })
     }
+}
+
+// -------------------------------------------------------------------
+// Data-repo bootstrap (per #35)
+// -------------------------------------------------------------------
+
+/// Ensure the data repo is cloned at `target`, and refresh it to
+/// `branch`.
+///
+/// - If `target` does not exist (or is empty), runs `git clone --branch
+///   <branch> --depth 1 <url> <target>`.
+/// - If `target` is already a git working tree, runs `git fetch
+///   origin <branch>` then `git reset --hard origin/<branch>`. The
+///   reset is load-bearing: the CLI is read-only locally (mutations
+///   route through `ProposalSink`), so any local divergence is
+///   transient state we want to drop.
+///
+/// Honours the `PARTREG_OFFLINE=true` env var: if set, the function
+/// only verifies that `target` exists and looks like a git working
+/// tree, performing no network I/O. Used in CI and in tests that
+/// pre-seed a tempdir via test helpers.
+///
+/// Shells out to the `git` CLI rather than depending on `git2` /
+/// `gitoxide` — the foundation crate set is already heavy, and `git`
+/// is universally available in CI + dev environments.
+pub fn bootstrap_data_repo(url: &str, branch: &str, target: &Path) -> Result<(), CliError> {
+    let offline = std::env::var("PARTREG_OFFLINE")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
+    bootstrap_data_repo_with_options(url, branch, target, offline)
+}
+
+/// Same as [`bootstrap_data_repo`] but with the offline flag passed
+/// in explicitly. Lets tests exercise the offline path without
+/// mutating the process environment (which races under `cargo test`'s
+/// default parallel scheduler).
+pub fn bootstrap_data_repo_with_options(
+    url: &str,
+    branch: &str,
+    target: &Path,
+    offline: bool,
+) -> Result<(), CliError> {
+    if offline {
+        if !target.exists() {
+            return Err(CliError::Bootstrap(format!(
+                "PARTREG_OFFLINE=true but no clone at {target:?} — \
+                 pre-seed the directory or unset PARTREG_OFFLINE"
+            )));
+        }
+        return Ok(());
+    }
+
+    // Treat "no dir" / "empty dir" / "non-git dir" as "needs clone".
+    let needs_clone = match fs::read_dir(target) {
+        Err(_) => true,
+        Ok(mut entries) => entries.next().is_none(),
+    } || !target.join(".git").exists();
+
+    if needs_clone {
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).map_err(|e| {
+                CliError::Bootstrap(format!("creating parent dir {parent:?} for clone: {e}"))
+            })?;
+        }
+        // If the directory exists but is empty / non-git, remove it
+        // first so `git clone` doesn't refuse with "destination path
+        // already exists".
+        if target.exists() {
+            // Best-effort: only delete if we created it as a stub.
+            // `remove_dir_all` is safe for empty/junk dirs but we
+            // guard against eating an unrelated populated dir.
+            if let Ok(mut entries) = fs::read_dir(target) {
+                if entries.next().is_none() {
+                    let _ = fs::remove_dir(target);
+                }
+            }
+        }
+        run_git(
+            &["clone", "--branch", branch, "--depth", "1", url],
+            None,
+            Some(target),
+        )?;
+        return Ok(());
+    }
+
+    // Refresh existing clone. `reset --hard` only touches tracked
+    // files; `clean -fdx` drops untracked + ignored noise so the
+    // working tree is byte-identical to `origin/<branch>` afterwards.
+    // We want this strict equivalence because audit-defensibility
+    // hinges on the CLI seeing the same bytes the upstream policy CI
+    // saw when it accepted the last merged PR.
+    run_git(&["fetch", "origin", branch], Some(target), None)?;
+    run_git(
+        &["reset", "--hard", &format!("origin/{branch}")],
+        Some(target),
+        None,
+    )?;
+    run_git(&["clean", "-fdx"], Some(target), None)?;
+    Ok(())
+}
+
+/// Run `git <args...>` with optional `cwd` and an optional final
+/// positional argument (used for `git clone <url> <dest>` where the
+/// dest is the cwd's *parent*-relative path).
+fn run_git(args: &[&str], cwd: Option<&Path>, clone_dest: Option<&Path>) -> Result<(), CliError> {
+    let mut cmd = std::process::Command::new("git");
+    for a in args {
+        cmd.arg(a);
+    }
+    if let Some(dest) = clone_dest {
+        cmd.arg(dest);
+    }
+    if let Some(d) = cwd {
+        cmd.current_dir(d);
+    }
+    let output = cmd
+        .output()
+        .map_err(|e| CliError::Bootstrap(format!("spawn `git {}`: {e}", args.join(" "))))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(CliError::Bootstrap(format!(
+            "`git {}` failed ({}): {}",
+            args.join(" "),
+            output.status,
+            stderr.trim()
+        )));
+    }
+    Ok(())
 }
 
 // -------------------------------------------------------------------

@@ -9,9 +9,17 @@
 # `Some(...)` at runtime.
 
 [repo]
-data_repo_url = ""
+# Default to the sandbox data repo. Production deployments override
+# this via `PART_REGISTRY__REPO__DATA_REPO_URL=https://github.com/exo-pet/exopet-registry`.
+# The sandbox-default is deliberate: a stock `cargo run` against
+# defaults talks to the throwaway registry, never the audit-of-record
+# one. Per #35.
+data_repo_url = "https://github.com/exo-pet/exopet-registry-sandbox"
 code_repo_url = "https://github.com/MorePET/part-registry"
-local_clone_path = "."
+# `local_clone_path` deliberately omitted: `Config::resolve_data_path`
+# falls back to `<data_dir>/part-registry/<owner>-<repo>/` (XDG on
+# Linux, Application Support on macOS, %APPDATA% on Windows) when
+# this is unset. Operators only set it for hermetic test environments.
 branch = "main"
 
 [storage]
