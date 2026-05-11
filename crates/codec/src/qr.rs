@@ -1,0 +1,115 @@
+//! QR encode + decode.
+//!
+//! Encoder: `qrcode` 0.14 (placeholder for `qrcode-rust2` per ADR-017
+//! §References). Standard QR V1 at EC level M for the 14-char canonical
+//! payload; Micro QR M4 at EC level M for `micro=true`.
+//!
+//! Decoder: `rxing` 0.9 — supports both Standard QR and Micro QR.
+//!
+//! Quiet-zone constants match `label.py:67-70` (Standard: 4 modules,
+//! Micro: 2 modules — both spec minima).
+
+use qrcode::{EcLevel, QrCode, Version};
+
+use crate::CodecError;
+
+/// Quiet-zone width in modules for Standard QR. ISO/IEC 18004 §6.3.8.
+pub const QR_BORDER_STANDARD: usize = 4;
+/// Quiet-zone width in modules for Micro QR. ISO/IEC 18004 §6.3.8.
+pub const QR_BORDER_MICRO: usize = 2;
+
+/// A square QR module matrix. `modules[r * size + c]` is `true` for
+/// dark modules, `false` for light. Quiet-zone modules are *not*
+/// included in `modules`; callers add the quiet zone at render time
+/// based on [`is_micro`](Self::is_micro).
+#[derive(Clone, Debug)]
+pub struct QrMatrix {
+    /// Side length in modules (excluding quiet zone).
+    pub size: usize,
+    /// Row-major module bits, length = `size * size`.
+    pub modules: Vec<bool>,
+    /// True for Micro QR, false for Standard QR. Used by renderers to
+    /// pick the correct quiet-zone width.
+    pub micro: bool,
+}
+
+impl QrMatrix {
+    /// Quiet-zone width (in modules) appropriate for this matrix.
+    pub fn quiet_zone(&self) -> usize {
+        if self.micro {
+            QR_BORDER_MICRO
+        } else {
+            QR_BORDER_STANDARD
+        }
+    }
+
+    /// Total side length including the quiet zone (in modules).
+    pub fn total_modules(&self) -> usize {
+        self.size + 2 * self.quiet_zone()
+    }
+
+    /// Returns the module at `(row, col)` (0-indexed, no quiet zone).
+    pub fn get(&self, row: usize, col: usize) -> bool {
+        self.modules[row * self.size + col]
+    }
+
+    /// View `modules` as nested `Vec<Vec<bool>>` for callers that
+    /// prefer a 2D shape. The flat row-major representation is the
+    /// internal canonical form; this is a convenience.
+    pub fn as_rows(&self) -> Vec<Vec<bool>> {
+        (0..self.size)
+            .map(|r| (0..self.size).map(|c| self.get(r, c)).collect())
+            .collect()
+    }
+}
+
+/// Encode a payload as a Standard QR (V1, EC M) or Micro QR (M4, EC M)
+/// matrix.
+///
+/// Returns the bare module grid; callers (the SVG renderer, the PNG
+/// rasteriser used in tests) handle the quiet zone.
+pub fn encode(payload: &str, micro: bool) -> Result<QrMatrix, CodecError> {
+    let version = if micro {
+        Version::Micro(4)
+    } else {
+        Version::Normal(1)
+    };
+    let code = QrCode::with_version(payload.as_bytes(), version, EcLevel::M)
+        .map_err(|e| CodecError::Encode(format!("{e:?}")))?;
+    let size = code.width();
+    let colors = code.into_colors();
+    // qrcode::Color is `Light` or `Dark`; map to `bool` so consumers
+    // do not have to pull in the `qrcode` types.
+    let modules: Vec<bool> = colors
+        .into_iter()
+        .map(|c| c != qrcode::Color::Light)
+        .collect();
+    Ok(QrMatrix {
+        size,
+        modules,
+        micro,
+    })
+}
+
+/// Decode a PNG image into the embedded QR payload.
+///
+/// Tries Standard QR first, then Micro QR — `rxing`'s
+/// `MultiFormatReader` defaults pick the first decoder that succeeds.
+/// The function deliberately takes PNG bytes (not a pre-decoded
+/// luma buffer) so callers do not have to pull in the `image` crate
+/// to use the decoder.
+pub fn decode_qr(image_png: &[u8]) -> Result<String, CodecError> {
+    use rxing::{BarcodeFormat, DecodeHints};
+    let mut hints = DecodeHints {
+        PossibleFormats: Some(
+            [BarcodeFormat::QR_CODE, BarcodeFormat::MICRO_QR_CODE]
+                .into_iter()
+                .collect(),
+        ),
+        TryHarder: Some(true),
+        ..DecodeHints::default()
+    };
+    let result = rxing::helpers::detect_in_buffer_with_hints(image_png, None, &mut hints)
+        .map_err(|e| CodecError::Decode(format!("rxing: {e:?}")))?;
+    Ok(result.getText().to_string())
+}

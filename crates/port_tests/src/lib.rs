@@ -49,6 +49,29 @@ pub fn proposal_sink_conformance<T: ProposalSink>(_sink: T) {
     // status round-trips a known ref.
 }
 
+/// ADR-027 §Tier 3 — codec roundtrip parity hook.
+///
+/// Stub for the forthcoming cross-encoder/decoder parity suite (lands
+/// alongside ADR-017 step 8's A/B vs `zxing-wasm`, tracked in
+/// issues #27/#33). The body is intentionally empty for the foundation
+/// PR: the codec crate ships its own roundtrip tests in
+/// `crates/codec/src/svg.rs::tests`, so until a second encoder or
+/// decoder adapter exists there is nothing to compare against.
+///
+/// Signatures are pinned so adapter-pair PRs can wire in without
+/// changing this surface.
+pub fn codec_roundtrip_conformance<E, D>(_encode: E, _decode: D)
+where
+    E: Fn(&str, bool) -> Result<Vec<bool>, String>,
+    D: Fn(&[u8]) -> Result<String, String>,
+{
+    // TODO(ADR-027 Tier 3): once a second encoder/decoder adapter
+    // lands, exercise the fixed canonical corpus
+    // (`K7M3PQ9RT5VAXY`, plus generated nanoid IDs from the ADR-012
+    // alphabet) through both adapter pairs and assert
+    // `decode(encode(p)) == p` for every payload.
+}
+
 // -------------------------------------------------------------------
 // Tier 2 — forward-shape tests (ADR-027 §Tier 2)
 // -------------------------------------------------------------------
