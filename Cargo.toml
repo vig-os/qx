@@ -41,7 +41,7 @@ figment = { version = "0.10", features = ["toml", "env"] }
 # §References names `qrcode-rust2` as the encoder; swap to it once it
 # is published to crates.io or vendored. Keep the call sites stable
 # behind the `crates/codec/` facade so the swap is local.
-qrcode = "0.14"
+qrcode = { version = "0.14", default-features = false }
 rxing = "0.9"
 wasm-bindgen = "0.2"
 serde-wasm-bindgen = "0.6"

@@ -16,4 +16,20 @@ serde = { workspace = true }
 # workspace comment in the root Cargo.toml. Swap to `qrcode-rust2`
 # once published / vendored (ADR-017 §References).
 qrcode = { workspace = true }
-rxing = { workspace = true }
+# rxing builds for wasm32 today (verified 2026-05-11 against rxing
+# 0.9), so the decoder is not gated out of the wasm bundle. The
+# `wasm_support` feature is enabled regardless so chrono's wasmbind
+# path is selected when targeting browsers. If a future rxing version
+# regresses on wasm32, gate the decoder module behind
+# `#[cfg(not(target_arch = "wasm32"))]` instead of vendoring around it.
+rxing = { workspace = true, features = ["wasm_support"] }
+
+[dev-dependencies]
+# Roundtrip tests rasterise the QR matrix directly to a PNG buffer
+# (no SVG raster needed) so the rxing decoder verifies the
+# encoder→matrix→decode path end-to-end. `image` is already a
+# transitive dep of `rxing`, so this adds no net build cost.
+image = { version = "0.25", default-features = false, features = ["png"] }
+# Lightweight XML parser used by the layout tests to walk the SVG
+# DOM (element counts, attribute checks).
+roxmltree = "0.20"
