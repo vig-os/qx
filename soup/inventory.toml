@@ -1,0 +1,329 @@
+# SOUP inventory per ADR-028 + IEC 62304 §5.3.2 (Software of Unknown
+# Provenance identification).
+#
+# Every workspace dependency declared in `Cargo.toml` (and per-crate
+# manifests) gets an entry below. Class scheme per ADR-028 §3:
+#   Class 1 = battle-tested foundational; pin + inventory only
+#   Class 2 = specialized/mature; targeted feature-use test +
+#             maintenance signal
+#   Class 3 = directly affects safety-relevant property; full
+#             ADR-027 Tier 5 validation harness + named owner
+#
+# Schema version 1. Edited by humans; consumed by ADR-029 coverage
+# tool. Adding a workspace dep without an entry here is a CI failure
+# once the coverage tool lands.
+#
+# Source: ADR-028, SOUP audit report 2026-05-11 (agent a909e6ce).
+
+schema_version = 1
+last_full_review = "2026-05-11"
+
+# -----------------------------------------------------------------------------
+# Class 1 — battle-tested foundational
+# -----------------------------------------------------------------------------
+
+[[crate]]
+name = "serde"
+version = "=1.0"               # major-pinned; minor/patch upgrade allowed
+class = 1
+role = "(de)serialization derive macros and runtime"
+used_by = ["domain", "config", "storage", "storage_csv_git", "transport", "validators", "observability", "wasm"]
+maintenance_url = "https://github.com/serde-rs/serde"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+notes = "dtolnay, >100M downloads, weekly releases"
+
+[[crate]]
+name = "serde_json"
+version = "=1.0"
+class = 1
+role = "JSON serialization for AuditEntry signature columns + WASM glue"
+used_by = ["domain", "port_tests", "wasm"]
+maintenance_url = "https://github.com/serde-rs/json"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+
+[[crate]]
+name = "thiserror"
+version = "=2.0"
+class = 1
+role = "error-type derive macros"
+used_by = ["all"]
+maintenance_url = "https://github.com/dtolnay/thiserror"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+
+[[crate]]
+name = "anyhow"
+version = "=1.0"
+class = 1
+role = "top-level error context in CLI binaries"
+used_by = ["cli"]
+maintenance_url = "https://github.com/dtolnay/anyhow"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+
+[[crate]]
+name = "clap"
+version = "=4"
+class = 1
+role = "CLI argv parsing"
+used_by = ["cli"]
+maintenance_url = "https://github.com/clap-rs/clap"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+
+[[crate]]
+name = "tempfile"
+version = "=3"
+class = 1
+role = "test-only tempdir helper"
+used_by = ["storage_csv_git", "identity_git_config", "identity_github_oauth", "signing_git_commit"]
+maintenance_url = "https://github.com/Stebalien/tempfile"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+notes = "Dev-dependency only; never in production path"
+
+[[crate]]
+name = "mockito"
+version = "=1"
+class = 1
+role = "test-only HTTP mock server"
+used_by = ["identity_github_oauth", "transport_github_pr"]
+maintenance_url = "https://github.com/lipanski/mockito"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+notes = "Dev-dependency only; never in production path"
+
+[[crate]]
+name = "dirs"
+version = "=5"
+class = 1
+role = "platform config-directory lookup for token cache"
+used_by = ["identity_github_oauth"]
+maintenance_url = "https://github.com/dirs-dev/dirs-rs"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+
+# -----------------------------------------------------------------------------
+# Class 2 — specialized but mature
+# -----------------------------------------------------------------------------
+
+[[crate]]
+name = "tracing"
+version = "=0.1"
+class = 2
+role = "structured event emission for ADR-022 audit trail"
+used_by = ["observability", "cli", "wasm"]
+maintenance_url = "https://github.com/tokio-rs/tracing"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+surveillance_owner = "observability-maintainer"
+notes = "Load-bearing for ADR-022 audit log. Dropped/reordered span = audit traceability gap."
+
+[[crate]]
+name = "tracing-subscriber"
+version = "=0.3"
+class = 2
+role = "tracing event routing + audit-CSV layer host (per ADR-022)"
+used_by = ["observability"]
+maintenance_url = "https://github.com/tokio-rs/tracing"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+revalidation_trigger = "minor-bump"
+surveillance_owner = "observability-maintainer"
+notes = "audit-CSV layer rides this; planned H7 harness exercises load behavior"
+
+[[crate]]
+name = "figment"
+version = "=0.10"
+class = 2
+role = "12-factor layered config loader per ADR-021"
+used_by = ["config"]
+maintenance_url = "https://github.com/SergioBenitez/Figment"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+surveillance_owner = "config-maintainer"
+notes = "Config mis-parse can silently route audit to /dev/null; defaults-precedence is load-bearing"
+
+[[crate]]
+name = "time"
+version = "=0.3"
+class = 2
+role = "Timestamp + duration arithmetic; CSV-stable formatting"
+used_by = ["domain", "config", "storage_csv_git", "validators"]
+maintenance_url = "https://github.com/time-rs/time"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+surveillance_owner = "domain-maintainer"
+notes = "claimed_at/signed_at in ADR-023 offline mode are time-stamped; serialization-format drift = audit drift. Covered by planned H8 harness."
+
+[[crate]]
+name = "uuid"
+version = "=1"
+class = 2
+role = "RequestId (UUIDv7) for ADR-022 cross-surface traceability"
+used_by = ["domain"]
+maintenance_url = "https://github.com/uuid-rs/uuid"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+surveillance_owner = "domain-maintainer"
+notes = "`js` feature required for v7 RNG on wasm32-unknown-unknown. RequestId collisions confuse audit correlation but do not corrupt registry IDs (those are nano-id, separate generator)."
+
+[[crate]]
+name = "wasm-bindgen"
+version = "=0.2"
+class = 2
+role = "Rust↔JS FFI for the FE WASM bundle"
+used_by = ["wasm"]
+maintenance_url = "https://github.com/rustwasm/wasm-bindgen"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+revalidation_trigger = "minor-bump"
+surveillance_owner = "wasm-maintainer"
+notes = "Version pin must match wasm-bindgen-cli per ADR-024 §Reproducible builds. Toolchain bump is a separate PR."
+
+[[crate]]
+name = "serde-wasm-bindgen"
+version = "=0.6"
+class = 2
+role = "serde adapter for wasm-bindgen JS interop"
+used_by = ["wasm"]
+maintenance_url = "https://github.com/RReverser/serde-wasm-bindgen"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+surveillance_owner = "wasm-maintainer"
+
+[[crate]]
+name = "csv"
+version = "=1"
+role = "CSV reader/writer for registry.csv + print_log.csv + audit_log.csv"
+class = 2
+used_by = ["storage_csv_git", "observability"]
+maintenance_url = "https://github.com/BurntSushi/rust-csv"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+surveillance_owner = "storage-maintainer"
+notes = "On-disk-format drift via quoting-policy changes is exactly the failure mode H8 harness defends against."
+
+[[crate]]
+name = "sha2"
+version = "=0.10"
+class = 2
+role = "SHA-256 for snapshot_hash + future signature payloads"
+used_by = ["storage_csv_git"]
+maintenance_url = "https://github.com/RustCrypto/hashes"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+surveillance_owner = "storage-maintainer"
+notes = "Cryptographic primitive; RustCrypto org maintains test vectors against NIST FIPS 180-4."
+
+# -----------------------------------------------------------------------------
+# Class 3 — directly affects safety-relevant property
+# -----------------------------------------------------------------------------
+
+[[crate]]
+name = "qrcode"
+version = "=0.14"
+class = 3
+role = "Standard QR + Micro QR M4 encoder — backs the permanent physical label"
+used_by = ["codec"]
+maintenance_url = "https://github.com/kennytm/qrcode-rust"
+last_release_check = "2026-05-11"
+upstream_status = "dormant"
+validation_harness = "crates/port_tests/src/soup/qr_roundtrip.rs"
+surveillance_owner = "codec-maintainer"
+revalidation_trigger = "any-version-bump"
+notes = """
+**ADR-017 §Open Questions flags upstream dormancy.** Pin held against
+dormant `kennytm/qrcode-rust` until `sorairolake/qrcode-rust2` (active
+fork) publishes to crates.io or this project vendors it. Monthly
+dormancy check via quarterly SOUP-health workflow. ADR-023 trigger R3
+fires if upstream goes >9 months without commits — codec maintainer
+decides between fork-of-fork, vendoring, or migration to a different
+encoder. H2 harness (planned, issue #46) covers matrix-fingerprint
+golden-file regression and cross-decoder agreement.
+"""
+
+[[crate]]
+name = "rxing"
+version = "=0.9"
+class = 3
+role = "QR + Micro QR + DataMatrix decoder — backs scan recovery (ADR-012 failure-mode (a))"
+used_by = ["codec"]
+maintenance_url = "https://github.com/rxing-core/rxing"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+validation_harness = "crates/port_tests/src/soup/qr_roundtrip.rs"
+surveillance_owner = "codec-maintainer"
+revalidation_trigger = "any-version-bump"
+notes = """
+Less battle-tested than zxing-cpp / zxing-wasm per ADR-017 §Consequences.
+Planned H4 harness (issue #46 extension, deferred) compares rxing
+Micro QR decode against zxing-wasm on a real-world photo corpus from
+bootstrap batch B-2026-05-08-sheet-1. Tier 5 cross-decoder agreement
+already covered by H2 on synthetic corpus.
+"""
+
+[[crate]]
+name = "reqwest"
+version = "=0.12"
+class = 3
+role = "HTTPS to GitHub API for identity (OAuth) + transport (PR creation)"
+used_by = ["identity_github_oauth", "transport_github_pr"]
+maintenance_url = "https://github.com/seanmonstar/reqwest"
+last_release_check = "2026-05-11"
+upstream_status = "active"
+validation_harness = "crates/port_tests/src/soup/oauth_tls.rs"
+surveillance_owner = "identity-and-transport-maintainer"
+revalidation_trigger = "any-version-bump"
+notes = """
+Configured with `rustls-tls` + `blocking` + `json`, NO `native-tls`
+per ADR-024 §Reproducible builds (no OS-conditional binaries) and
+ADR-028 SOUP audit guidance. TLS-stack changes are
+release-blocking: any switch back to native-tls re-opens this entry
+and re-runs H6 from scratch. Identity provenance + proposal
+submission both ride this; a TLS misconfiguration silently
+accepting a bad cert is the highest-risk failure mode.
+"""
+
+# Pending entries — added as adapter PRs land Class-3 deps not yet
+# in the workspace. Each entry below is a placeholder for an
+# expected dep that has not yet been pinned; the coverage tool
+# (issue #43) reports a WARN until the entry is filled.
+
+# [[crate]]
+# name = "nanoid"   # or "nano-id" — canonical-ID generator
+# version = "=0.4"
+# class = 3
+# role = "Canonical 14-char ID generator per ADR-012"
+# used_by = ["codec or domain — TBD by H1 harness PR (#45)"]
+# validation_harness = "crates/port_tests/src/soup/id_alphabet.rs"
+# surveillance_owner = "domain-maintainer"
+# revalidation_trigger = "any-version-bump"
+# notes = "PLACEHOLDER — pinned when H1 harness lands. The Python mint.py uses pip nanoid 2.0; the Rust port may use the nanoid crate or implement directly against the ADR-012 alphabet."
+
+# [[crate]]
+# name = "git2"     # if foundation #30 chose libgit2 over git-shell
+# version = "=0.x"
+# class = 3
+# role = "libgit2 binding for signed-commit verification + branch ops"
+# used_by = ["storage_csv_git or signing_git_commit"]
+# validation_harness = "crates/port_tests/src/soup/git_verify.rs"
+# surveillance_owner = "storage-and-signing-maintainer"
+# notes = "PLACEHOLDER — PR #29 chose git-shell over git2 to keep build closure minimal. Re-evaluate if a future PR needs programmatic SHA access or in-process signature verification."
