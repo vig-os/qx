@@ -191,11 +191,14 @@ mod tests {
     /// from the ADR-012 alphabet.
     const FIXED_ID: &str = "K7M3PQ9RT5VAXY";
 
-    use crate::qr::{decode_qr, encode, QrMatrix};
+    #[cfg(feature = "decoder")]
+    use crate::qr::decode_qr;
+    use crate::qr::{encode, QrMatrix};
 
     /// Rasterise a `QrMatrix` to a PNG byte buffer at the given
     /// per-module pixel size. Test-only helper: production code does
     /// not need a raster of the matrix (SVG is the output surface).
+    #[cfg(feature = "decoder")]
     fn rasterise_matrix(matrix: &QrMatrix, module_px: u32) -> Vec<u8> {
         use image::{DynamicImage, ImageBuffer, Luma};
         let qz = matrix.quiet_zone();
@@ -224,6 +227,7 @@ mod tests {
 
     // ---------- 1. QR roundtrip — the cardinal invariant ----------
 
+    #[cfg(feature = "decoder")]
     #[test]
     fn standard_qr_roundtrip() {
         let matrix = encode(FIXED_ID, false).unwrap();
@@ -235,6 +239,7 @@ mod tests {
         assert_eq!(decoded, FIXED_ID);
     }
 
+    #[cfg(feature = "decoder")]
     #[test]
     fn micro_qr_roundtrip() {
         let matrix = encode(FIXED_ID, true).unwrap();

@@ -79,18 +79,50 @@ The overlay badge names the active decoder + version + supported
 formats so a misbehaving scan can be diagnosed quickly:
 `QR + Micro QR (zxing-wasm 3.0.3)`.
 
-## Drift risk: TS port of label.py
+## Label rendering: Rust WASM façade
 
-The SVG layout renderers in [`src/layouts/`](src/layouts/) are a
-TypeScript port of the Python `label.py` in the repo root. Two
-implementations of the same logic mean drift is possible — and the
-test suite (`test_labels.py`) only validates the Python side.
+The SVG layout renderers in [`src/layouts/`](src/layouts/) call into
+[`crates/wasm/`](../crates/wasm/) — a `wasm-bindgen` façade over the
+Rust `codec` + `validators` crates per
+[ADR-017](../decisions/ADR-017-rust-core-ports-adapters.md)
+§"strangler-fig step 8" (foundation issue #33, landed 2026-05-11).
 
-The intended long-term fix per [ADR-013](../decisions/ADR-013-parts-registry-web-app.md):
-load `label.py` via Pyodide so the FE and CLI run literally the same
-code. Until that lands, any edit to a layout in either language must
-be mirrored in the other and verified by re-running the Python
-roundtrip suite. The ADR-014 status section tracks this debt.
+Drift is now structurally impossible: CLI, CI, and FE all link the
+same encoder. The previous TS port (`qrcode-generator.ts` + `svg.ts`)
+has been deleted.
+
+### Bundle cost
+
+| Asset | Raw | Gzipped |
+|---|---|---|
+| `part_registry_wasm_bg.wasm` (encoder + validators + classifier) | 334 KB | 128 KB |
+| wasm-bindgen JS shim | 16 KB | 6 KB |
+
+Comfortably under the 1.5 MB gzipped budget set in foundation issue
+#33. The decoder (`rxing`) is feature-gated *off* in this build —
+the FE keeps `zxing-wasm` for scanning (see §QR/Micro QR scanning
+below); the Rust decoder is used by the CLI + native tests + the
+A/B parity harness only.
+
+### Dev workflow
+
+```bash
+# wasm-pack (or wasm-bindgen + cargo) must be on PATH.
+cargo install wasm-bindgen-cli --version 0.2.121  # rustc ≥ 1.86
+npm run build:wasm                                  # invoked by build/test
+npm run build                                       # full prod build
+```
+
+The `build:wasm` script compiles `crates/wasm/` to wasm32 and runs
+`wasm-bindgen --target web` into `src/wasm/`. Output is gitignored
+(generated artefact); CI regenerates on every build.
+
+### Parity gate
+
+`src/wasm/ab-parity.test.ts` round-trips ≥ 6 canonical IDs through
+the Rust encoder → `zxing-wasm` decoder. The synthetic round-trip
+covers both Standard and Micro QR; the printed-scan corpus is a
+follow-up (see test file for the open TODO).
 
 ## Deployment
 

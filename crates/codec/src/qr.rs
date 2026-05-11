@@ -98,6 +98,12 @@ pub fn encode(payload: &str, micro: bool) -> Result<QrMatrix, CodecError> {
 /// The function deliberately takes PNG bytes (not a pre-decoded
 /// luma buffer) so callers do not have to pull in the `image` crate
 /// to use the decoder.
+///
+/// Gated behind the `decoder` feature (default-on). Disable via
+/// `default-features = false` to drop the ~1.4 MB rxing dependency
+/// from the build — see foundation issue #33 / `crates/wasm/Cargo.toml`
+/// for the size-sensitive consumer that uses this opt-out.
+#[cfg(feature = "decoder")]
 pub fn decode_qr(image_png: &[u8]) -> Result<String, CodecError> {
     use rxing::{BarcodeFormat, DecodeHints};
     let mut hints = DecodeHints {

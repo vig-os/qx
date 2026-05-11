@@ -14,10 +14,17 @@ import { TABS } from "./tabs";
 import { PLUGINS } from "./plugins";
 import { buildPartPath, parseAppPath, type AppPath } from "./routing/route";
 import { el, button } from "./ui/dom";
+import { loadWasm } from "./wasm/loader";
 
 async function main(): Promise<void> {
   const root = document.getElementById("app");
   if (!root) throw new Error("missing #app");
+
+  // Initialise the Rust WASM façade up front so layouts can stay
+  // synchronous in their `renderSvg` interface (ADR-017 strangler-fig
+  // step 8; foundation issue #33). The bundle is ~330 KB raw / ~128 KB
+  // gzipped — within the 1.5 MB ceiling so blocking on boot is fine.
+  await loadWasm();
 
   const registry = createRegistry();
 

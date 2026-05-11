@@ -1,7 +1,14 @@
 // Vertical layout: QR on top, 4/4 below. size × 2*size.
+//
+// Per foundation issue #33 (ADR-017 step 8): renders via the Rust
+// WASM façade (`crates/wasm/`). The inline TS encoder
+// (`qrcode-generator.ts` + `svg.ts`) has been deleted; there is now
+// one canonical encoder/renderer across CLI + FE.
 
 import type { Layout, LayoutDimensions, LayoutOptions } from "../core/types";
-import { qrBlock, svgWrap, textBlock } from "./svg";
+import { renderLabelSync, type WasmFormatId } from "../wasm/loader";
+
+const FORMAT: WasmFormatId = "4/4";
 
 export const vertLayout: Layout = {
   id: "vert",
@@ -11,9 +18,6 @@ export const vertLayout: Layout = {
     return { widthMm: opts.size, heightMm: 2 * opts.size };
   },
   renderSvg(canonical: string, opts: LayoutOptions): string {
-    const s = opts.size;
-    const body =
-      qrBlock(canonical, 0, 0, s) + "\n" + textBlock(canonical, 0, s, s);
-    return svgWrap(s, 2 * s, body);
+    return renderLabelSync(canonical, "vert", opts.size, FORMAT);
   },
 };

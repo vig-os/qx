@@ -12,10 +12,23 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 part-registry-domain = { path = "../domain" }
-part-registry-codec = { path = "../codec" }
+# Encoder + SVG renderer only; the `decoder` feature pulls rxing
+# (~1.4 MB compressed) which we don't need on the FE — production
+# scanning stays on `zxing-wasm` per `web/README.md`. The A/B parity
+# harness runs from the native test target (codec with decoder on),
+# not from this façade. Foundation issue #33 §"Bundle size".
+part-registry-codec = { path = "../codec", default-features = false }
 part-registry-validators = { path = "../validators" }
 part-registry-observability = { path = "../observability" }
 wasm-bindgen = { workspace = true }
 serde-wasm-bindgen = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+# Per ADR-024 + foundation issue #33: tightened release profile for
+# the wasm bundle so the gzipped artifact stays under 1.5 MB. `opt-
+# level = "z"` favours size over speed; the encoder + classifier hot
+# paths still complete in microseconds in-browser. LTO + abort-on-
+# panic shave a further ~10% over the workspace defaults.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
