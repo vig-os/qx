@@ -1240,7 +1240,9 @@ name = "part-registry-validators"
 version = "0.1.0"
 dependencies = [
  "part-registry-domain",
+ "serde_json",
  "thiserror 2.0.18",
+ "time",
 ]
 
 [[package]]

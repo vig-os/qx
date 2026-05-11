@@ -49,6 +49,20 @@ pub fn proposal_sink_conformance<T: ProposalSink>(_sink: T) {
     // status round-trips a known ref.
 }
 
+/// ADR-027 §Tier 1 — pure-function `validators` conformance hook.
+///
+/// Validators are pure (no trait surface to mock) so this entry
+/// point exists for parity with the trait-based conformance helpers
+/// above and as the future home of fixture-driven assertions that
+/// run identically against native + wasm32 builds per
+/// ADR-016 §"FE preflight runs the same engine".
+pub fn validator_conformance() {
+    // TODO(foundation Tier 1): once shared fixture rows live in
+    // tests/fixtures/, exercise schema + FK + sort-stability + policy
+    // engine against them here so each adapter crate doesn't roll its
+    // own fixture loader.
+}
+
 // -------------------------------------------------------------------
 // Tier 2 — forward-shape tests (ADR-027 §Tier 2)
 // -------------------------------------------------------------------
