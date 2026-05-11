@@ -32,3 +32,4 @@ part-registry-signing = { path = "../signing" }
 part-registry-signing-git-commit = { path = "../signing_git_commit" }
 clap = { workspace = true }
 anyhow = { workspace = true }
+tracing = { workspace = true }
