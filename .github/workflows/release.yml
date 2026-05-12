@@ -49,6 +49,18 @@ jobs:
       - name: cargo build wasm32
         run: cargo build --target wasm32-unknown-unknown -p part-registry-wasm --release
 
+      # `npm test` runs `build:wasm` which shells out to
+      # `${WASM_BINDGEN:-$HOME/.cargo/bin/wasm-bindgen}`. Install the
+      # prebuilt CLI so the test job has it on PATH. Same dance as in
+      # the `bundle` job below + .github/workflows/playwright.yml.
+      - uses: cargo-bins/cargo-binstall@main
+      - name: Install wasm-bindgen-cli (prebuilt)
+        # `--force`: Swatinem/rust-cache restores cargo's install
+        # metadata but not the actual binaries, so without --force
+        # binstall short-circuits and wasm-bindgen isn't on PATH.
+        # See playwright.yml for the same workaround.
+        run: cargo binstall --force --no-confirm wasm-bindgen-cli@0.2.121
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -99,7 +111,11 @@ jobs:
       # of recompiling. Same dance as .github/workflows/playwright.yml.
       - uses: cargo-bins/cargo-binstall@main
       - name: Install wasm-bindgen-cli (prebuilt)
-        run: cargo binstall --no-confirm wasm-bindgen-cli@0.2.121
+        # `--force`: Swatinem/rust-cache restores cargo's install
+        # metadata but not the actual binaries, so without --force
+        # binstall short-circuits and wasm-bindgen isn't on PATH.
+        # See playwright.yml for the same workaround.
+        run: cargo binstall --force --no-confirm wasm-bindgen-cli@0.2.121
 
       - name: Build WASM (release)
         run: cargo build --target wasm32-unknown-unknown -p part-registry-wasm --release
