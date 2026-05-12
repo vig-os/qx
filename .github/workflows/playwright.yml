@@ -32,7 +32,11 @@ jobs:
       # this dance goes away.
       - uses: cargo-bins/cargo-binstall@main
       - name: Install wasm-bindgen-cli (prebuilt)
-        run: cargo binstall --no-confirm wasm-bindgen-cli@0.2.121
+        # `--force` because Swatinem/rust-cache restores the cargo
+        # `install.crates2.json` metadata file but NOT the binaries
+        # themselves; without --force, binstall says "already
+        # installed" and the wasm-bindgen executable isn't on PATH.
+        run: cargo binstall --force --no-confirm wasm-bindgen-cli@0.2.121
 
       - uses: actions/setup-node@v4
         with:
