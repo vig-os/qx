@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build:wasm": "cd .. && cargo build --target wasm32-unknown-unknown -p part-registry-wasm --release && \"${WASM_BINDGEN:-$HOME/.cargo/bin/wasm-bindgen}\" --target web --out-dir web/src/wasm --out-name part_registry_wasm target/wasm32-unknown-unknown/release/part_registry_wasm.wasm",
-    "build": "npm run build:wasm && tsc -b && vite build",
+    "build:fe": "tsc -b && vite build",
+    "build": "npm run build:wasm && npm run build:fe",
     "preview": "vite preview",
     "test": "npm run build:wasm && vitest",
     "test:run": "npm run build:wasm && vitest run",

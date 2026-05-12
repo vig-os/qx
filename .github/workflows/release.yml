@@ -197,7 +197,7 @@ jobs:
           \`\`\`yaml
           - run: gh release download ${TAG} --repo ${GITHUB_REPOSITORY} --pattern "frontend-bundle-*.tar.gz"
           - run: tar xzf frontend-bundle-${TAG}.tar.gz
-          - run: cd web && npm install --no-audit --no-fund && VITE_DATA_REPO=<owner>/<repo> npm run build
+          - run: cd web && npm install --no-audit --no-fund && VITE_DATA_REPO=<owner>/<repo> npm run build:fe
           \`\`\`
 
           SHA-256 hashes (per ADR-025 §"Distribution integrity"):

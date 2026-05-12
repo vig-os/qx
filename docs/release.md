@@ -109,12 +109,14 @@ jobs:
         working-directory: web
         run: npm install --no-audit --no-fund
 
-      - name: npm run build
+      # `build:fe` — vite + tsc only. Skip `build:wasm` because the
+      # bundle already ships prebuilt wasm-bindgen artifacts.
+      - name: npm run build:fe
         working-directory: web
         env:
           VITE_DATA_REPO: ${{ env.DATA_REPO_SLUG }}
           VITE_BASE: /${{ github.event.repository.name }}/
-        run: npm run build
+        run: npm run build:fe
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
