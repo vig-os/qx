@@ -1,0 +1,200 @@
+# Tag-triggered release per #35 Phase 2 + ADR-025 distribution
+# integrity. Produces a frontend bundle (web/ source + precompiled
+# WASM artifacts) plus SHA-256 hashes, attached to a GitHub Release.
+# Data repos consume the bundle from their own Pages workflows so they
+# don't need a Rust toolchain on the runner.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (must already exist on the repo)"
+        required: true
+        type: string
+
+permissions:
+  contents: write   # gh release create / upload
+
+jobs:
+  # Mirror of `rust.yml`'s gates — a release must pass the same bar
+  # as a PR. We re-run them here (rather than relying on the tag
+  # being pushed against a green commit) so the release artifact is
+  # provably tied to a passing build, per ADR-025.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Install wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -Dwarnings
+
+      - name: cargo test
+        run: cargo test --workspace
+
+      - name: cargo build wasm32
+        run: cargo build --target wasm32-unknown-unknown -p part-registry-wasm --release
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: npm ci
+        working-directory: web
+        run: npm ci
+
+      - name: npm test
+        working-directory: web
+        run: npm test -- --run
+
+  bundle:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Releasing tag: ${tag}"
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Install wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --version 0.2.121 --locked
+
+      - name: Build WASM (release)
+        run: cargo build --target wasm32-unknown-unknown -p part-registry-wasm --release
+
+      - name: wasm-bindgen → web/src/wasm/
+        run: |
+          wasm-bindgen --target web \
+            --out-dir web/src/wasm \
+            --out-name part_registry_wasm \
+            target/wasm32-unknown-unknown/release/part_registry_wasm.wasm
+
+      - name: Stage bundle contents
+        run: |
+          mkdir -p staging
+          # web/ source tree minus runtime artifacts.
+          rsync -a \
+            --exclude='node_modules' \
+            --exclude='dist' \
+            --exclude='tsconfig.tsbuildinfo' \
+            --exclude='.DS_Store' \
+            --exclude='*.tsbuildinfo' \
+            web/ staging/web/
+          # Shared registry-contract referenced by `web/vite.config.ts`'s
+          # `@registry-contract` alias.
+          mkdir -p staging/schema
+          cp schema/registry-contract.json staging/schema/
+          # Bundle metadata: tag + commit SHA so the data-repo workflow
+          # can record provenance in the deployed audit chain.
+          cat > staging/BUNDLE_METADATA.json <<EOF
+          {
+            "tag": "${{ steps.tag.outputs.tag }}",
+            "commit": "${GITHUB_SHA}",
+            "code_repo": "${GITHUB_REPOSITORY}",
+            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+
+      - name: Tar+gzip bundle
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          tar -czf "frontend-bundle-${TAG}.tar.gz" -C staging .
+
+      - name: Compute SHA-256
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          sha256sum "frontend-bundle-${TAG}.tar.gz" > "sha256sums-${TAG}.txt"
+          cat "sha256sums-${TAG}.txt"
+
+      - name: Upload bundle as workflow artifact (debug aid)
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-bundle
+          path: |
+            frontend-bundle-*.tar.gz
+            sha256sums-*.txt
+          retention-days: 7
+
+      - name: Create / update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          # `release create --notes-file` reads body from a file. We
+          # auto-generate a tiny note summarising what the consumer
+          # needs to do; richer notes are added by hand or by a
+          # release-notes generator in a future pass.
+          cat > release-notes.md <<EOF
+          ## Frontend bundle
+
+          \`frontend-bundle-${TAG}.tar.gz\` contains:
+
+          - \`web/\` — full FE source (TypeScript, Vite config, package.json + lock)
+          - \`web/src/wasm/\` — precompiled wasm-bindgen artifacts (no Rust toolchain needed downstream)
+          - \`schema/registry-contract.json\` — the shared schema contract
+          - \`BUNDLE_METADATA.json\` — tag, commit SHA, build timestamp
+
+          Consumer (data-repo pages.yml):
+
+          \`\`\`yaml
+          - run: gh release download ${TAG} --repo ${GITHUB_REPOSITORY} --pattern "frontend-bundle-*.tar.gz"
+          - run: tar xzf frontend-bundle-${TAG}.tar.gz
+          - run: cd web && npm ci && VITE_DATA_REPO=<owner>/<repo> npm run build
+          \`\`\`
+
+          SHA-256 hashes (per ADR-025 §"Distribution integrity"):
+
+          \`\`\`
+          $(cat sha256sums-${TAG}.txt)
+          \`\`\`
+          EOF
+
+          # Idempotent: if the release already exists (e.g.
+          # workflow_dispatch re-run), upload the assets with --clobber.
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" \
+              "frontend-bundle-${TAG}.tar.gz" \
+              "sha256sums-${TAG}.txt" \
+              --repo "${GITHUB_REPOSITORY}" --clobber
+          else
+            gh release create "${TAG}" \
+              "frontend-bundle-${TAG}.tar.gz" \
+              "sha256sums-${TAG}.txt" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${TAG}" \
+              --notes-file release-notes.md
+          fi
