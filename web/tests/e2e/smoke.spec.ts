@@ -15,6 +15,11 @@ import { expect, test } from "@playwright/test";
 const REGISTRY_HEADER =
   "id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes\n";
 
+const REGISTRY_TWO_ROWS =
+  REGISTRY_HEADER +
+  `ABCDEFGHJKMNPQ,bound,2026-05-08T12:00:00+00:00,B-2026-05-08,2026-05-08T12:30:00+00:00,PT100,Supply temperature sensor,TC Direct,402-141,cooling loop / supply-T,bench fixture\n` +
+  `ABCDEFGHJKMNPR,unbound,2026-05-08T12:00:00+00:00,B-2026-05-08,,,,,,,\n`;
+
 // Intercept the data-repo fetch so the smoke runs offline against a
 // known-empty registry. The real data-repo Pages workflow does the
 // equivalent at deploy time via the GitHub Pages serving layer.
@@ -102,5 +107,49 @@ test.describe("part-registry FE smoke", () => {
     );
     const wasmReq = requests.find((u) => u.endsWith(".wasm"));
     expect(wasmReq, "expected a .wasm request to have happened").toBeTruthy();
+  });
+});
+
+test.describe("Lookup data-grid (#10)", () => {
+  test.beforeEach(async ({ page }) => {
+    // Override the default empty-registry route with a two-row fixture
+    // so the data-grid has something to filter / click on.
+    await page.route("**/registry.csv*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        headers: { "content-type": "text/csv" },
+        body: REGISTRY_TWO_ROWS,
+      });
+    });
+  });
+
+  test("renders all rows, then narrows on status-filter click", async ({ page }) => {
+    await page.goto("/");
+
+    // Two rows visible by default (status filter = all).
+    const allRows = page.locator(".lookup__table tbody tr");
+    await expect(allRows).toHaveCount(2);
+
+    // Click the "unbound" filter chip.
+    await page.locator(".chip--filter", { hasText: /^unbound$/ }).click();
+    const unboundRows = page.locator(".lookup__table tbody tr");
+    await expect(unboundRows).toHaveCount(1);
+    await expect(unboundRows.first()).toHaveAttribute("data-id", "ABCDEFGHJKMNPR");
+  });
+
+  test("fuzzy search narrows on vendor name and row click opens the detail card", async ({ page }) => {
+    await page.goto("/");
+
+    const search = page.locator(".lookup__search");
+    await search.fill("TC Direct");
+
+    const rows = page.locator(".lookup__table tbody tr");
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toHaveAttribute("data-id", "ABCDEFGHJKMNPQ");
+
+    // Row click opens the inline detail card.
+    await rows.first().click();
+    await expect(page.locator(".row-detail")).toBeVisible();
+    await expect(page.locator(".row-detail")).toContainText("PT100");
   });
 });
