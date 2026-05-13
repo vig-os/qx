@@ -169,6 +169,15 @@ export function classifyDiffSync(diff: unknown): Action[] {
   return requireReady().classifyDiff(JSON.stringify(diff)) as Action[];
 }
 
+/** Synchronous `policyDecision`. Requires `await loadWasm()` to have completed. */
+export function policyDecisionSync(input: {
+  diff: unknown;
+  operator: unknown;
+  policy?: unknown;
+}): AuthDecision {
+  return requireReady().policyDecision(JSON.stringify(input)) as AuthDecision;
+}
+
 /**
  * Render an SVG label via the Rust codec.
  *

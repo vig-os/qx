@@ -8,11 +8,13 @@
 // the primary entry point. Manual paste is also supported.
 
 import { ID_REGEX } from "../config";
-import { FIELDS } from "../registry/schema";
+import { FIELDS, type RegistryRow } from "../registry/schema";
+import { runPreflight, type QueueItem } from "../registry/preflight";
 import type { AppContext, Tab } from "../core/types";
 import { el, button, input, formRow } from "../ui/dom";
 import { icon } from "../ui/icons";
 import { openScanner, type ScanStatus } from "../ui/scanner";
+import type { Action, AuthDecision } from "../wasm/loader";
 
 const QUEUE_KEY = "part-registry.bind-queue";
 
@@ -89,11 +91,54 @@ function buildUI(ctx: AppContext): HTMLElement {
   const submitBtn = button({ class: "primary" }, icon("plus"), " Submit batch (stub)");
   const clearBtn = button({}, icon("trash"), " Clear queue");
 
+  // ADR-016 §"FE preflight" + issue #23: every queue mutation re-runs
+  // the same classify + policy engine the CI gate runs, advisory only.
+  const preflightContainer = el("div", { class: "preflight" });
+
   const tableContainer = el("div", {});
+
+  const refreshPreflight = (queue: QueuedBind[]) => {
+    preflightContainer.innerHTML = "";
+    if (queue.length === 0) return;
+    try {
+      const registry = buildRegistryMap(ctx);
+      const items: QueueItem[] = queue.map((q) => ({
+        id: q.id,
+        kind: "bind",
+        fields: {
+          type: q.type,
+          description: q.description,
+          vendor: q.vendor,
+          part_number: q.part_number,
+          location: q.location,
+          notes: q.notes,
+        },
+      }));
+      const result = runPreflight(items, registry);
+      preflightContainer.append(renderPreflight(result));
+      // Block submit on policy block OR unknown-id (FE-local).
+      const blocked =
+        result.decision.kind === "block" ||
+        result.localIssues.some((i) => i.kind === "unknown_id");
+      (submitBtn as HTMLButtonElement).disabled = blocked;
+      submitBtn.setAttribute("data-preflight", blocked ? "blocked" : "ok");
+    } catch (e) {
+      // WASM not ready or shape mismatch — degrade silently with a hint.
+      const msg = (e as Error).message ?? String(e);
+      preflightContainer.append(
+        el(
+          "p",
+          { class: "muted small", "data-preflight": "error" },
+          `Preflight unavailable: ${msg}`,
+        ),
+      );
+    }
+  };
 
   const renderTable = () => {
     tableContainer.innerHTML = "";
     const queue = loadQueue();
+    refreshPreflight(queue);
     const table = el("table", { class: "data" });
     const thead = el("thead");
     const tr = el("tr");
@@ -148,8 +193,95 @@ function buildUI(ctx: AppContext): HTMLElement {
     renderTable();
   });
 
-  root.append(formRow([submitBtn, clearBtn]), tableContainer);
+  root.append(
+    formRow([submitBtn, clearBtn]),
+    preflightContainer,
+    tableContainer,
+  );
   return root;
+}
+
+// ---------------------------------------------------------------------
+// Preflight render (issue #23)
+// ---------------------------------------------------------------------
+
+function buildRegistryMap(ctx: AppContext): Map<string, RegistryRow> {
+  const map = new Map<string, RegistryRow>();
+  for (const row of ctx.registry.all()) {
+    map.set(row.id, row);
+  }
+  return map;
+}
+
+function renderPreflight(result: {
+  actions: Action[];
+  decision: AuthDecision;
+  localIssues: Array<{ kind: string; id: string; message: string }>;
+}): HTMLElement {
+  const wrap = el("div", {
+    class: "preflight-card",
+    "data-preflight-decision": result.decision.kind,
+  });
+  // Banner.
+  const banner = el("div", { class: `preflight-banner kind-${result.decision.kind}` });
+  banner.append(
+    el("strong", {}, decisionLabel(result.decision)),
+    el("span", { class: "muted" }, " — preflight (advisory; CI is authoritative per ADR-016)"),
+  );
+  wrap.append(banner);
+
+  if ("reason" in result.decision && result.decision.reason) {
+    wrap.append(el("p", { class: "muted small" }, result.decision.reason));
+  }
+  if ("approver_role" in result.decision && result.decision.approver_role) {
+    wrap.append(
+      el(
+        "p",
+        { class: "muted small" },
+        `Needs ${result.decision.approver_role} elevation claim.`,
+      ),
+    );
+  }
+
+  // Actions chips.
+  if (result.actions.length > 0) {
+    const chips = el("div", { class: "chips" });
+    for (const a of result.actions) {
+      chips.append(
+        el("span", { class: `chip chip--${a.kind}` }, a.kind),
+      );
+    }
+    wrap.append(chips);
+  }
+
+  // Local issues (unknown-id, duplicate).
+  if (result.localIssues.length > 0) {
+    const ul = el("ul", { class: "preflight-issues" });
+    for (const issue of result.localIssues) {
+      ul.append(
+        el(
+          "li",
+          { class: `issue issue--${issue.kind}` },
+          `${issue.kind}: ${issue.message}`,
+        ),
+      );
+    }
+    wrap.append(ul);
+  }
+  return wrap;
+}
+
+function decisionLabel(d: AuthDecision): string {
+  switch (d.kind) {
+    case "allow":
+      return "Allow";
+    case "warn":
+      return "Warning";
+    case "requires_elevation":
+      return "Requires elevation";
+    case "block":
+      return "Blocked";
+  }
 }
 
 function renderQueueRow(item: QueuedBind, index: number, onChange: () => void): HTMLElement {
