@@ -153,3 +153,48 @@ test.describe("Lookup data-grid (#10)", () => {
     await expect(page.locator(".row-detail")).toContainText("PT100");
   });
 });
+
+test.describe("Lookup inline edit → bind queue (#6)", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route("**/registry.csv*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        headers: { "content-type": "text/csv" },
+        body: REGISTRY_TWO_ROWS,
+      });
+    });
+    // Reset the queue between tests; preview's origin is shared.
+    await page.addInitScript(() => {
+      window.localStorage.removeItem("part-registry.bind-queue");
+    });
+  });
+
+  test("Edit on the detail card flips to a form, queues an edit, and switches to Bind", async ({ page }) => {
+    await page.goto("/");
+
+    // Open the detail card by clicking the bound row.
+    const row = page.locator(".lookup__table tbody tr").first();
+    await row.click();
+    await expect(page.locator(".row-detail")).toBeVisible();
+
+    // Click "Edit" → form appears.
+    await page.locator(".row-detail__edit").click();
+    await expect(page.locator(".row-detail--edit")).toBeVisible();
+
+    // Change vendor.
+    const vendorInput = page.locator(".row-detail__input[data-key='vendor']");
+    await vendorInput.fill("ACME Probes");
+
+    // Save → bind tab opens, edit row visible with before/after diff.
+    await page.locator(".row-detail button", { hasText: "Queue edit" }).click();
+    const tabBar = page.locator("nav.tabs");
+    await expect(tabBar.getByRole("button", { name: "Bind" })).toHaveClass(
+      /\bactive\b/,
+    );
+
+    const editRow = page.locator(".queue-row--edit");
+    await expect(editRow).toHaveCount(1);
+    await expect(editRow).toContainText("ACME Probes");
+    await expect(editRow).toContainText("TC Direct");
+  });
+});

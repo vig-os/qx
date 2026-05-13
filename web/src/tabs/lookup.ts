@@ -14,7 +14,8 @@
 import Fuse from "fuse.js";
 
 import { ID_LENGTH, ID_REGEX } from "../config";
-import { FIELDS, type RegistryRow, type Status } from "../registry/schema";
+import { FIELDS, STATUSES, type RegistryRow, type Status } from "../registry/schema";
+import { appendEdit } from "../registry/queue";
 import type { AppContext, Tab } from "../core/types";
 import { normalizeCanonicalId } from "../routing/route";
 import {
@@ -202,7 +203,7 @@ function buildUI(ctx: AppContext): HTMLElement {
       tr.addEventListener("click", () => {
         ctx.showPart(row.id);
         detailCell.innerHTML = "";
-        detailCell.append(renderRowDetail(row));
+        detailCell.append(renderDetailView(row, ctx));
       });
       tbody.append(tr);
     }
@@ -218,13 +219,26 @@ function buildUI(ctx: AppContext): HTMLElement {
   renderRows();
   if (route.kind === "part") {
     const row = ctx.registry.findById(route.id);
-    if (row) detailCell.append(renderRowDetail(row));
+    if (row) detailCell.append(renderDetailView(row, ctx));
   }
 
   return root;
 }
 
-function renderRowDetail(row: RegistryRow): HTMLElement {
+// Fields the operator can edit from the Lookup detail card.
+// `status` is editable here (not in the bind form) because mid-life
+// status changes ("mark void") are an edit-only operation per #6.
+const EDIT_FIELD_KEYS: (keyof RegistryRow)[] = [
+  "status",
+  "type",
+  "description",
+  "vendor",
+  "part_number",
+  "location",
+  "notes",
+];
+
+function renderDetailView(row: RegistryRow, ctx: AppContext): HTMLElement {
   const wrap = el("div", { class: "row-detail" });
   wrap.append(el("h3", { class: "row-detail__id" }, fmtId(row.id)));
   const dl = el("dl");
@@ -241,6 +255,16 @@ function renderRowDetail(row: RegistryRow): HTMLElement {
   }
   wrap.append(dl);
 
+  const editBtn = button(
+    { class: "secondary row-detail__edit" },
+    icon("plus"),
+    " Edit",
+  );
+  editBtn.addEventListener("click", () => {
+    const replacement = renderDetailEdit(row, ctx);
+    wrap.replaceWith(replacement);
+  });
+
   const reprintBtn = button(
     { class: "primary" },
     icon("reprint"),
@@ -248,9 +272,87 @@ function renderRowDetail(row: RegistryRow): HTMLElement {
   );
   reprintBtn.addEventListener("click", () => {
     events.emit<ReprintRequest>(EVENT_REPRINT_REQUEST, { ids: [row.id] });
-    // No tab switch here — the consumer (table-row click handler)
-    // switches; this is the detail-card secondary action.
   });
-  wrap.append(formRow([reprintBtn]));
+  wrap.append(formRow([editBtn, reprintBtn]));
+  return wrap;
+}
+
+function renderDetailEdit(row: RegistryRow, ctx: AppContext): HTMLElement {
+  const wrap = el("div", { class: "row-detail row-detail--edit" });
+  wrap.append(el("h3", { class: "row-detail__id" }, fmtId(row.id)));
+
+  const form = el("form", { class: "row-detail__form" });
+  const inputs = new Map<keyof RegistryRow, HTMLInputElement | HTMLSelectElement>();
+
+  for (const key of EDIT_FIELD_KEYS) {
+    const fieldDef = FIELDS.find((f) => f.key === key);
+    const label = fieldDef?.label ?? key;
+    const value = (row as unknown as Record<string, string>)[key] ?? "";
+
+    const labelEl = el("label", { class: "row-detail__field" });
+    labelEl.append(el("span", { class: "row-detail__label" }, label));
+
+    let field: HTMLInputElement | HTMLSelectElement;
+    if (key === "status") {
+      const select = document.createElement("select");
+      for (const s of STATUSES) {
+        const opt = document.createElement("option");
+        opt.value = s;
+        opt.textContent = s;
+        if (s === row.status) opt.selected = true;
+        select.append(opt);
+      }
+      field = select;
+    } else {
+      field = input({ type: "text", value });
+    }
+    field.classList.add("row-detail__input");
+    field.dataset.key = key;
+    inputs.set(key, field);
+    labelEl.append(field);
+    form.append(labelEl);
+  }
+  wrap.append(form);
+
+  const errMsg = el("p", { class: "row-detail__error muted small" });
+  wrap.append(errMsg);
+
+  const saveBtn = button({ class: "primary", type: "button" }, icon("plus"), " Queue edit");
+  saveBtn.addEventListener("click", () => {
+    const changes: Partial<RegistryRow> = {};
+    const before: Partial<RegistryRow> = {};
+    for (const key of EDIT_FIELD_KEYS) {
+      const field = inputs.get(key);
+      if (!field) continue;
+      const newVal = field.value;
+      const oldVal = (row as unknown as Record<string, string>)[key] ?? "";
+      if (newVal !== oldVal) {
+        (changes as Record<string, string>)[key] = newVal;
+        (before as Record<string, string>)[key] = oldVal;
+      }
+    }
+    if (Object.keys(changes).length === 0) {
+      errMsg.textContent = "No changes to queue.";
+      return;
+    }
+    // Guardrail per #6: void → bound is a privileged transition.
+    if (row.status === "void" && changes.status && changes.status !== "void") {
+      if (!confirm(
+        `${row.id} is voided. Re-binding a voided ID requires the back-office --force ` +
+          `equivalent (not implemented in the FE). Queue anyway?`,
+      )) {
+        return;
+      }
+    }
+    appendEdit(row.id, before, changes);
+    ctx.showTab("bind");
+  });
+
+  const cancelBtn = button({ type: "button" }, "Cancel");
+  cancelBtn.addEventListener("click", () => {
+    wrap.replaceWith(renderDetailView(row, ctx));
+  });
+
+  wrap.append(formRow([saveBtn, cancelBtn]));
   return wrap;
 }

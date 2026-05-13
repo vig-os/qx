@@ -3,12 +3,41 @@
 // missing-id shows the empty state, search filters the table, status
 // filter narrows the result set, row click navigates.
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AppContext } from "../core/types";
+import { loadQueue } from "../registry/queue";
 import type { Registry, RegistryQuery } from "../registry/registry";
 import type { RegistryRow } from "../registry/schema";
 import { lookupTab } from "./lookup";
+
+// jsdom + Node 24 ship a stub localStorage without `clear` — match
+// the print.test.ts pattern and stub a Map-backed one ourselves.
+function makeLocalStorage() {
+  const store = new Map<string, string>();
+  return {
+    getItem(key: string) {
+      return store.get(key) ?? null;
+    },
+    setItem(key: string, value: string) {
+      store.set(key, value);
+    },
+    removeItem(key: string) {
+      store.delete(key);
+    },
+    clear() {
+      store.clear();
+    },
+  };
+}
+
+beforeEach(() => {
+  vi.stubGlobal("localStorage", makeLocalStorage());
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 const boundRow: RegistryRow = {
   id: "ABCDEFGHJKMNPQ",
@@ -141,5 +170,94 @@ describe("lookupTab data-grid (#10)", () => {
     const rows = container.querySelectorAll("tbody tr");
     expect(rows.length).toBe(1);
     expect((rows[0] as HTMLElement).dataset.id).toBe(boundRow.id);
+  });
+});
+
+describe("lookup detail Edit affordance (#6)", () => {
+  it("Edit button on the detail card flips dl → form", () => {
+    const container = document.createElement("div");
+    lookupTab.mount(
+      container,
+      makeContext([boundRow], () => ({ kind: "part", id: boundRow.id })),
+    );
+
+    // Pre-condition: read-only detail.
+    expect(container.querySelector(".row-detail dl")).toBeTruthy();
+    expect(container.querySelector(".row-detail--edit")).toBeFalsy();
+
+    const editBtn = [...container.querySelectorAll(".row-detail button")]
+      .find((b) => b.textContent?.includes("Edit")) as HTMLButtonElement;
+    editBtn.click();
+
+    expect(container.querySelector(".row-detail--edit")).toBeTruthy();
+    // Status field is a <select> per #6 (mid-life status changes).
+    expect(container.querySelector(".row-detail__form select")).toBeTruthy();
+  });
+
+  it("Cancel button restores the read-only view without queuing anything", () => {
+    const container = document.createElement("div");
+    lookupTab.mount(
+      container,
+      makeContext([boundRow], () => ({ kind: "part", id: boundRow.id })),
+    );
+
+    const editBtn = [...container.querySelectorAll(".row-detail button")]
+      .find((b) => b.textContent?.includes("Edit")) as HTMLButtonElement;
+    editBtn.click();
+
+    const cancelBtn = [...container.querySelectorAll(".row-detail button")]
+      .find((b) => b.textContent === "Cancel") as HTMLButtonElement;
+    cancelBtn.click();
+
+    expect(container.querySelector(".row-detail--edit")).toBeFalsy();
+    expect(container.querySelector(".row-detail dl")).toBeTruthy();
+    expect(loadQueue()).toEqual([]);
+  });
+
+  it("Saving an edit pushes a kind=edit queue item and switches to Bind", () => {
+    const container = document.createElement("div");
+    const ctx = makeContext([boundRow], () => ({ kind: "part", id: boundRow.id }));
+    lookupTab.mount(container, ctx);
+
+    const editBtn = [...container.querySelectorAll(".row-detail button")]
+      .find((b) => b.textContent?.includes("Edit")) as HTMLButtonElement;
+    editBtn.click();
+
+    // Change the vendor field.
+    const vendorInput = [...container.querySelectorAll(".row-detail__input")]
+      .find((i) => (i as HTMLElement).dataset.key === "vendor") as HTMLInputElement;
+    vendorInput.value = "ACME Probes";
+
+    const saveBtn = [...container.querySelectorAll(".row-detail button")]
+      .find((b) => b.textContent?.includes("Queue edit")) as HTMLButtonElement;
+    saveBtn.click();
+
+    expect(ctx.showTab).toHaveBeenCalledWith("bind");
+    const q = loadQueue();
+    expect(q).toHaveLength(1);
+    expect(q[0].kind).toBe("edit");
+    if (q[0].kind === "edit") {
+      expect(q[0].id).toBe(boundRow.id);
+      expect(q[0].changes).toEqual({ vendor: "ACME Probes" });
+      expect(q[0].before).toEqual({ vendor: boundRow.vendor });
+    }
+  });
+
+  it("Save with no changes shows an inline error and queues nothing", () => {
+    const container = document.createElement("div");
+    const ctx = makeContext([boundRow], () => ({ kind: "part", id: boundRow.id }));
+    lookupTab.mount(container, ctx);
+
+    ([...container.querySelectorAll(".row-detail button")]
+      .find((b) => b.textContent?.includes("Edit")) as HTMLButtonElement).click();
+
+    ([...container.querySelectorAll(".row-detail button")]
+      .find((b) => b.textContent?.includes("Queue edit")) as HTMLButtonElement).click();
+
+    expect(container.querySelector(".row-detail__error")?.textContent).toContain(
+      "No changes",
+    );
+    expect(loadQueue()).toEqual([]);
+    expect(ctx.showTab).not.toHaveBeenCalled();
   });
 });

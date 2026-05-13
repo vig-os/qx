@@ -301,3 +301,62 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 .row-detail__id { margin: 0 0 8px; font-family: monospace; }
 .row-detail dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
 .row-detail dt { font-weight: 600; }
+
+/* PR-D: inline edit (#6) — edit form on row detail + edit rows in bind queue */
+.row-detail__form {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 12px;
+  margin: 8px 0 12px;
+}
+.row-detail__field {
+  display: contents;
+}
+.row-detail__label {
+  font-weight: 600;
+  align-self: center;
+}
+.row-detail__input {
+  width: 100%;
+  padding: 4px 6px;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: inherit;
+  box-sizing: border-box;
+}
+.row-detail__error:empty { display: none; }
+.row-detail__error:not(:empty) {
+  color: #c62828;
+  margin: 0 0 8px;
+}
+
+/* Queue row variants */
+.chip--kind { font-size: 11px; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.04em; }
+.chip--kind.chip--bind { background: rgba(31, 111, 235, 0.12); color: #1f6feb; }
+.chip--kind.chip--edit { background: rgba(255, 145, 0, 0.16); color: #b25800; }
+.queue-row--edit { background: rgba(255, 145, 0, 0.04); }
+.queue-row--edit td { font-size: 13px; }
+
+/* Before/after diff in edit queue rows */
+.field-diff {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: monospace;
+  font-size: 12px;
+}
+.field-diff__before {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.field-diff__arrow {
+  color: var(--muted);
+  font-weight: 600;
+}
+.field-diff__after {
+  color: inherit;
+}
+
+.queue-summary { margin-left: 12px; }
