@@ -1,18 +1,52 @@
-// Lookup tab — search by ID/prefix or scan QR, show registry row,
-// reprint via cross-tab event.
+// Lookup tab — searchable data-grid over the registry (issue #10).
 //
-// (A future issue, #10, expands this to a full filterable data-grid
-// with column filters and fuzzy search. For the spike: detail view
-// of a single match.)
+// Per ADR-013 + ADR-014 §Consequences: the Lookup tab is the operator's
+// primary view. This implementation:
+//
+//   - top toolbar with fuzzy search + status filter + scan button
+//   - table view (sticky header) with every part, status-coloured
+//   - row click expands a detail card inline (with Reprint action +
+//     a deep-link via `ctx.showPart`)
+//   - works for the 0-row case (empty registry → friendly empty state)
+//
+// Inline edit ships in PR-D (#6) via the bind queue.
+
+import Fuse from "fuse.js";
 
 import { ID_LENGTH, ID_REGEX } from "../config";
-import { FIELDS, type RegistryRow } from "../registry/schema";
+import { FIELDS, type RegistryRow, type Status } from "../registry/schema";
 import type { AppContext, Tab } from "../core/types";
 import { normalizeCanonicalId } from "../routing/route";
-import { events, EVENT_REPRINT_REQUEST, type ReprintRequest } from "../core/events";
+import {
+  events,
+  EVENT_REPRINT_REQUEST,
+  type ReprintRequest,
+} from "../core/events";
 import { el, button, input, formRow } from "../ui/dom";
 import { icon } from "../ui/icons";
 import { openScanner, type ScanStatus } from "../ui/scanner";
+
+type StatusFilter = "all" | Status;
+
+// Columns surfaced in the table view. Subset of `FIELDS` chosen for
+// at-a-glance density: id + status + the discriminating metadata
+// fields. Edit / Reprint live in the row action cell.
+const COLUMNS: { key: keyof RegistryRow; label: string }[] = [
+  { key: "id", label: "ID" },
+  { key: "status", label: "Status" },
+  { key: "type", label: "Type" },
+  { key: "vendor", label: "Vendor" },
+  { key: "batch", label: "Batch" },
+  { key: "location", label: "Location" },
+];
+
+function fmtId(id: string): string {
+  // 4-4-4 grouping for display; underlying value stays canonical.
+  if (id.length < 12) return id;
+  return `${id.slice(0, 4)}-${id.slice(4, 8)}-${id.slice(8, 12)}${
+    id.length > 12 ? "-" + id.slice(12) : ""
+  }`;
+}
 
 export const lookupTab: Tab = {
   id: "lookup",
@@ -26,143 +60,197 @@ export const lookupTab: Tab = {
 function buildUI(ctx: AppContext): HTMLElement {
   const root = el("div", { class: "tab tab--lookup" });
   const header = el("h2", {}, "Lookup");
+  root.append(header);
 
-  const queryInput = input({
-    type: "text",
-    placeholder: "Scan QR or paste ID (14-char)",
+  // ---------- toolbar ----------
+  const searchInput = input({
+    type: "search",
+    placeholder: "Fuzzy search (id, type, vendor, batch, notes…)",
     autocomplete: "off",
-    autocapitalize: "characters",
+    class: "lookup__search",
   });
 
-  const scanBtn = button({ class: "icon-only", title: "Scan QR with camera" }, icon("camera"));
-  const goBtn = button({ class: "primary" }, icon("search"), " Find");
+  const statusBtns = new Map<StatusFilter, HTMLButtonElement>();
+  let statusFilter: StatusFilter = "all";
+  const statusBar = el("div", { class: "lookup__status-filter" });
+  for (const s of ["all", "unbound", "bound", "void"] as const) {
+    const btn = button({ class: `chip chip--filter ${s === "all" ? "active" : ""}` }, s);
+    btn.addEventListener("click", () => {
+      statusFilter = s;
+      for (const [k, b] of statusBtns) {
+        b.classList.toggle("active", k === s);
+      }
+      renderRows();
+    });
+    statusBtns.set(s, btn);
+    statusBar.append(btn);
+  }
 
-  const result = el("div", { class: "lookup__result" });
-
-  const showInvalidId = (rawSegment: string, normalized: string) => {
-    result.innerHTML = "";
-    result.append(
-      el(
-        "p",
-        { class: "error" },
-        `ID "${rawSegment}" normalizes to "${normalized}" but contains characters outside the canonical alphabet or has the wrong length.`,
-      ),
-    );
-  };
-
-  const onSubmit = () => {
-    result.innerHTML = "";
-    const raw = normalizeCanonicalId(queryInput.value);
-    if (!raw) {
-      result.append(el("p", { class: "muted" }, "Enter or scan an ID."));
-      return;
-    }
-    if (raw.length > ID_LENGTH || (raw.length === ID_LENGTH && !ID_REGEX.test(raw))) {
-      result.append(el("p", { class: "error" }, "ID contains characters outside the canonical alphabet."));
-      return;
-    }
-    const matches = raw.length === ID_LENGTH
-      ? ([ctx.registry.findById(raw)].filter(Boolean) as RegistryRow[])
-      : ctx.registry.find({ prefix: raw });
-    if (matches.length === 0) {
-      result.append(el("p", { class: "warn" }, `No match for "${raw}".`));
-      return;
-    }
-    if (matches.length > 1) {
-      result.append(
-        el("p", { class: "warn" }, `${matches.length} matches for prefix "${raw}":`),
-      );
-      result.append(renderMatchList(matches, ctx));
-      return;
-    }
-    ctx.showPart(matches[0].id);
-    result.append(renderRowDetail(matches[0], ctx));
-  };
-
-  goBtn.addEventListener("click", onSubmit);
-  queryInput.addEventListener("keydown", (e) => {
-    if ((e as KeyboardEvent).key === "Enter") onSubmit();
-  });
+  const scanBtn = button(
+    { class: "icon-only", title: "Scan QR with camera" },
+    icon("camera"),
+  );
   scanBtn.addEventListener("click", async () => {
     try {
       const text = await openScanner({
         multi: true,
-        // Lookup status is just "what does the registry say?" — no
-        // queue concept here. unbound/bound/void map to the visible
-        // palette; void shows as bound-grey since it's not actionable.
         resolveStatus: (canonical): ScanStatus => {
           const row = ctx.registry.findById(canonical);
           if (!row) return "unknown";
           if (row.status === "unbound") return "unbound";
-          // bound or void — both are "already-known" greyed-out.
           return "bound";
         },
       });
-      queryInput.value = text;
-      onSubmit();
+      searchInput.value = text;
+      renderRows();
     } catch {
-      // User cancelled or camera failed — silent for cancel.
+      /* cancelled */
     }
   });
 
-  root.append(header, formRow([queryInput, scanBtn, goBtn]), result);
+  root.append(
+    formRow([searchInput, scanBtn]),
+    statusBar,
+  );
 
+  // ---------- table ----------
+  const tableWrap = el("div", { class: "lookup__table-wrap" });
+  const table = el("table", { class: "data lookup__table" });
+  const thead = el("thead");
+  const headRow = el("tr");
+  for (const col of COLUMNS) headRow.append(el("th", {}, col.label));
+  headRow.append(el("th", { class: "lookup__th-actions" }, ""));
+  thead.append(headRow);
+  table.append(thead);
+  const tbody = el("tbody");
+  table.append(tbody);
+  tableWrap.append(table);
+  root.append(tableWrap);
+
+  const detailCell = el("div", { class: "lookup__detail" });
+  root.append(detailCell);
+
+  // Fuse index is rebuilt whenever the registry slice we're showing
+  // changes — but the registry itself doesn't mutate during a session
+  // (writes go through PR submission), so building once is enough.
+  const all = ctx.registry.all();
+  const fuse = new Fuse(all, {
+    keys: ["id", "type", "vendor", "batch", "location", "notes", "description", "part_number"],
+    threshold: 0.4,
+    ignoreLocation: true,
+  });
+
+  const renderRows = () => {
+    tbody.innerHTML = "";
+    detailCell.innerHTML = "";
+
+    const q = searchInput.value.trim();
+    let rows: RegistryRow[];
+    if (!q) {
+      rows = all;
+    } else {
+      const norm = normalizeCanonicalId(q);
+      const looksLikeId = ID_REGEX.test(norm) && norm.length === ID_LENGTH;
+      if (looksLikeId) {
+        const exact = ctx.registry.findById(norm);
+        rows = exact ? [exact] : [];
+      } else {
+        rows = fuse.search(q).map((r) => r.item);
+      }
+    }
+    if (statusFilter !== "all") {
+      rows = rows.filter((r) => r.status === statusFilter);
+    }
+
+    if (rows.length === 0) {
+      const td = el("td", { colspan: String(COLUMNS.length + 1), class: "muted" });
+      td.append(
+        all.length === 0
+          ? "Registry is empty. Mint some IDs via the CLI first."
+          : "No matches.",
+      );
+      tbody.append(el("tr", {}, td));
+      return;
+    }
+
+    for (const row of rows) {
+      const tr = el("tr", { "data-id": row.id, class: `status-${row.status}` });
+      for (const col of COLUMNS) {
+        const value = row[col.key] ?? "";
+        let cell: HTMLElement;
+        if (col.key === "id") {
+          cell = el("td", { class: "id-cell" });
+          cell.append(fmtId(row.id));
+        } else if (col.key === "status") {
+          cell = el("td");
+          cell.append(el("span", { class: `chip chip--status chip--${row.status}` }, row.status));
+        } else {
+          cell = el("td", {}, value || el("span", { class: "muted" }, "—"));
+        }
+        tr.append(cell);
+      }
+      const reprintBtn = button(
+        { class: "icon-only", title: "Reprint label" },
+        icon("reprint"),
+      );
+      reprintBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        events.emit<ReprintRequest>(EVENT_REPRINT_REQUEST, { ids: [row.id] });
+        ctx.showTab("print");
+      });
+      tr.append(el("td", { class: "row-actions" }, reprintBtn));
+      tr.addEventListener("click", () => {
+        ctx.showPart(row.id);
+        detailCell.innerHTML = "";
+        detailCell.append(renderRowDetail(row));
+      });
+      tbody.append(tr);
+    }
+  };
+
+  searchInput.addEventListener("input", renderRows);
+
+  // Deep-link: if URL is /<ID>, open the detail card directly.
   const route = ctx.getRoute();
   if (route.kind === "part") {
-    queryInput.value = route.id;
-    onSubmit();
-  } else if (route.kind === "invalid-part-id") {
-    queryInput.value = route.rawSegment;
-    showInvalidId(route.rawSegment, route.normalized);
+    searchInput.value = route.id;
+  }
+  renderRows();
+  if (route.kind === "part") {
+    const row = ctx.registry.findById(route.id);
+    if (row) detailCell.append(renderRowDetail(row));
   }
 
   return root;
 }
 
-function renderRowDetail(row: RegistryRow, ctx: AppContext): HTMLElement {
+function renderRowDetail(row: RegistryRow): HTMLElement {
   const wrap = el("div", { class: "row-detail" });
+  wrap.append(el("h3", { class: "row-detail__id" }, fmtId(row.id)));
   const dl = el("dl");
   for (const f of FIELDS) {
-    const value = row[f.key] || "";
+    const value = (row as unknown as Record<string, string>)[f.key] ?? "";
     dl.append(el("dt", {}, f.label));
-    dl.append(el("dd", {}, value || el("span", { class: "muted" }, "—")));
+    dl.append(
+      el(
+        "dd",
+        {},
+        value || el("span", { class: "muted" }, "—"),
+      ),
+    );
   }
   wrap.append(dl);
 
-  const reprintBtn = button({ class: "primary" }, icon("reprint"), " Reprint label");
+  const reprintBtn = button(
+    { class: "primary" },
+    icon("reprint"),
+    " Reprint label",
+  );
   reprintBtn.addEventListener("click", () => {
-    const payload: ReprintRequest = { ids: [row.id] };
-    events.emit(EVENT_REPRINT_REQUEST, payload);
-    ctx.showTab("print");
+    events.emit<ReprintRequest>(EVENT_REPRINT_REQUEST, { ids: [row.id] });
+    // No tab switch here — the consumer (table-row click handler)
+    // switches; this is the detail-card secondary action.
   });
   wrap.append(formRow([reprintBtn]));
   return wrap;
-}
-
-function renderMatchList(rows: RegistryRow[], ctx: AppContext): HTMLElement {
-  const ul = el("ul", { class: "match-list" });
-  for (const row of rows) {
-    const li = el("li", {});
-    const open = button({ class: "linkish", title: `Open ${row.id}` }, row.id);
-    open.addEventListener("click", () => {
-      ctx.showPart(row.id);
-      ctx.showTab("lookup");
-    });
-    const meta = el(
-      "span",
-      { class: "muted" },
-      `  ${row.status}  ${row.type || "(unbound)"}  @ ${row.location || "—"}`,
-    );
-    const reprint = button(
-      { class: "icon-only", title: "Reprint" },
-      icon("reprint"),
-    );
-    reprint.addEventListener("click", () => {
-      events.emit<ReprintRequest>(EVENT_REPRINT_REQUEST, { ids: [row.id] });
-      ctx.showTab("print");
-    });
-    li.append(open, meta, " ", reprint);
-    ul.append(li);
-  }
-  return ul;
 }

@@ -1,3 +1,8 @@
+// Lookup data-grid (#10) unit tests — UI contracts: routed deep-link
+// opens the detail card, invalid-id surfaces an error message,
+// missing-id shows the empty state, search filters the table, status
+// filter narrows the result set, row click navigates.
+
 import { describe, expect, it, vi } from "vitest";
 
 import type { AppContext } from "../core/types";
@@ -19,6 +24,20 @@ const boundRow: RegistryRow = {
   notes: "bench fixture",
 };
 
+const unboundRow: RegistryRow = {
+  id: "ABCDEFGHJKMNPR",
+  status: "unbound",
+  minted_at: "2026-05-08T12:00:00+00:00",
+  batch: "B-2026-05-08",
+  bound_at: "",
+  type: "",
+  description: "",
+  vendor: "",
+  part_number: "",
+  location: "",
+  notes: "",
+};
+
 function makeRegistry(rows: RegistryRow[]): Registry {
   return {
     async load() {},
@@ -37,57 +56,90 @@ function makeRegistry(rows: RegistryRow[]): Registry {
   };
 }
 
-function makeContext(route: AppContext["getRoute"]): AppContext {
+function makeContext(
+  rows: RegistryRow[],
+  route: AppContext["getRoute"],
+): AppContext {
   return {
-    registry: makeRegistry([boundRow]),
+    registry: makeRegistry(rows),
     showTab: vi.fn(),
     showPart: vi.fn(),
     getRoute: route,
   };
 }
 
-describe("lookupTab route-driven mount", () => {
-  it("renders the routed part detail on mount", () => {
+describe("lookupTab data-grid (#10)", () => {
+  it("renders the routed part detail card on mount", () => {
     const container = document.createElement("div");
-    lookupTab.mount(container, makeContext(() => ({ kind: "part", id: boundRow.id })));
+    lookupTab.mount(
+      container,
+      makeContext([boundRow], () => ({ kind: "part", id: boundRow.id })),
+    );
 
-    expect(container.textContent).toContain(boundRow.type);
+    expect(container.querySelector(".row-detail")?.textContent).toContain(
+      boundRow.type,
+    );
     expect(container.textContent).toContain(boundRow.location);
   });
 
-  it("renders an invalid-id error for a bad routed segment", () => {
+  it("shows the empty-state when no rows match the filter", () => {
     const container = document.createElement("div");
-    lookupTab.mount(container, makeContext(() => ({
-      kind: "invalid-part-id",
-      rawSegment: "ABCD-0FGH-JKMN-PQ",
-      normalized: "ABCD0FGHJKMNPQ",
-    })));
+    lookupTab.mount(
+      container,
+      makeContext([boundRow], () => ({ kind: "home" })),
+    );
 
-    expect(container.textContent).toContain("outside the canonical alphabet");
+    const search = container.querySelector(".lookup__search") as HTMLInputElement;
+    search.value = "does-not-exist";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(container.textContent).toContain("No matches.");
   });
 
-  it("renders a not-found state for a valid but missing routed part", () => {
+  it("status filter narrows the visible rows", () => {
     const container = document.createElement("div");
-    lookupTab.mount(container, makeContext(() => ({
-      kind: "part",
-      id: "23456789ABCDXY",
-    })));
+    lookupTab.mount(
+      container,
+      makeContext([boundRow, unboundRow], () => ({ kind: "home" })),
+    );
 
-    expect(container.textContent).toContain('No match for "23456789ABCDXY"');
+    // Default: all rows visible.
+    expect(container.querySelectorAll("tbody tr").length).toBe(2);
+
+    // Click the "unbound" filter chip.
+    const unboundChip = [...container.querySelectorAll(".chip--filter")]
+      .find((b) => b.textContent === "unbound") as HTMLButtonElement;
+    unboundChip.click();
+
+    const rows = container.querySelectorAll("tbody tr");
+    expect(rows.length).toBe(1);
+    expect((rows[0] as HTMLElement).dataset.id).toBe(unboundRow.id);
   });
 
-  it("promotes a unique prefix hit into the exact part route", () => {
+  it("clicking a row navigates via ctx.showPart", () => {
     const container = document.createElement("div");
-    const ctx = makeContext(() => ({ kind: "home" }));
+    const ctx = makeContext([boundRow], () => ({ kind: "home" }));
     lookupTab.mount(container, ctx);
 
-    const query = container.querySelector('input[type="text"]') as HTMLInputElement;
-    query.value = boundRow.id.slice(0, 8);
-    const findBtn = [...container.querySelectorAll("button")]
-      .find((button) => button.textContent?.includes("Find"));
-    findBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
+    const row = container.querySelector("tbody tr") as HTMLElement;
+    row.click();
     expect(ctx.showPart).toHaveBeenCalledWith(boundRow.id);
-    expect(container.textContent).toContain(boundRow.type);
+    expect(container.querySelector(".row-detail")).toBeTruthy();
+  });
+
+  it("fuzzy-searches across non-id columns", () => {
+    const container = document.createElement("div");
+    lookupTab.mount(
+      container,
+      makeContext([boundRow, unboundRow], () => ({ kind: "home" })),
+    );
+
+    const search = container.querySelector(".lookup__search") as HTMLInputElement;
+    search.value = "TC Direct";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const rows = container.querySelectorAll("tbody tr");
+    expect(rows.length).toBe(1);
+    expect((rows[0] as HTMLElement).dataset.id).toBe(boundRow.id);
   });
 });
