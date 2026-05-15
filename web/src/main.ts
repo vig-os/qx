@@ -1,6 +1,7 @@
 // Bootstrap — wire registry, tabs, plugins. Everything else is plug-in.
 
 import "./style.css";
+import { registerSW } from "virtual:pwa-register";
 
 import { REPO_SLUG } from "./config";
 import { createRegistry } from "./registry/registry";
@@ -160,3 +161,20 @@ function installPlugins(toolbar: HTMLElement, ctx: AppContext, plugins: Plugin[]
 }
 
 void main();
+
+// Register the service worker (ADR-013 §"PWA installability is
+// mandatory for the lab-floor UX"). `registerType: 'autoUpdate'` in
+// vite.config.ts means the SW will silently fetch new bundles and
+// swap on the next reload — no operator action required.
+registerSW({
+  immediate: true,
+  onRegisteredSW(_swUrl, registration) {
+    // Best-effort: re-check for updates every hour while the tab is
+    // open. Workbox handles cache versioning; this just keeps long-
+    // running tabs (operator on the lab floor) from getting stuck
+    // on an old build.
+    if (registration) {
+      setInterval(() => void registration.update().catch(() => {}), 60 * 60 * 1000);
+    }
+  },
+});

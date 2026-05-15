@@ -117,6 +117,46 @@ test.describe("part-registry FE smoke", () => {
     await expect(submitBtn).toHaveAttribute("data-preflight", "blocked");
   });
 
+  test("PWA: manifest is reachable and ServiceWorker registers", async ({ page }) => {
+    await page.goto("/");
+
+    // Manifest link tag injected by vite-plugin-pwa.
+    const manifestHref = await page.locator('link[rel="manifest"]').getAttribute("href");
+    expect(manifestHref, "manifest <link> must be present").toBeTruthy();
+
+    // The icon link we added in index.html.
+    await expect(page.locator('link[rel="icon"][type="image/svg+xml"]')).toHaveAttribute(
+      "href",
+      /icon\.svg/,
+    );
+
+    // Manifest body parses + has the expected fields.
+    const manifest = await page.evaluate(async (href) => {
+      const res = await fetch(href as string);
+      return res.json();
+    }, manifestHref);
+    expect(manifest.name).toBe("part-registry");
+    expect(manifest.display).toBe("standalone");
+    expect(manifest.icons.length).toBeGreaterThan(0);
+
+    // The SW should register (autoUpdate strategy). Give it a beat to
+    // finish since registerSW runs after main() resolves.
+    await page.waitForFunction(
+      () => navigator.serviceWorker?.controller !== null
+        || (navigator.serviceWorker?.getRegistration().then((r) => !!r) as unknown as boolean),
+      undefined,
+      { timeout: 10_000 },
+    ).catch(() => {
+      // Firefox doesn't set `controller` until next navigation; falling
+      // through to the explicit getRegistration check below.
+    });
+
+    const swReg = await page.evaluate(() =>
+      navigator.serviceWorker?.getRegistration().then((r) => Boolean(r)),
+    );
+    expect(swReg, "ServiceWorker registration must exist").toBe(true);
+  });
+
   test("WASM façade is reachable on window for diagnostics", async ({ page }) => {
     await page.goto("/");
     // The loader assigns module exports to `window.__partRegistryWasm`
