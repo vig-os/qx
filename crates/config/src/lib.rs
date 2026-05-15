@@ -686,7 +686,7 @@ mod tests {
         // Override TOML sets sqlite; env var changes it again to duckdb.
         let c = Config::from_layers(
             Some("[storage]\nadapter = \"sqlite\"\n"),
-            [("PART_REGISTRY__STORAGE__ADAPTER", "duckdb")]
+            [("PART_REGISTRY__STORAGE__ADAPTER", "duck_db")]
                 .iter()
                 .map(|(k, v)| (*k, *v)),
         )
