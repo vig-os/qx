@@ -62,6 +62,13 @@ fn bind_unbound_part_via_full_id_succeeds() {
     assert_eq!(p.diff.edits.len(), 1);
     assert!(p.diff.adds.is_empty());
 
+    // bound_by is populated with the operator ID (#18).
+    let bound_by = p.diff.edits[0]
+        .after
+        .get("bound_by")
+        .expect("bound_by must be set in diff after");
+    assert_eq!(bound_by, "test:tester", "bound_by must match operator id");
+
     // change_classification = RowBind (status unbound -> bound).
     assert_eq!(p.change_classification.len(), 1);
     assert_eq!(p.change_classification[0].kind(), ActionKind::RowBind);

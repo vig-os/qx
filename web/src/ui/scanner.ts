@@ -47,6 +47,22 @@
 import { el, button } from "./dom";
 import { icon } from "./icons";
 
+// ---- Pure ID helpers (exported for testing) ----
+
+/** Strip dashes and uppercase a raw QR payload to produce the
+ *  canonical registry ID. Idempotent. */
+export function canonicalizeId(raw: string): string {
+  return raw.toUpperCase().replace(/-/g, "");
+}
+
+/** Format a canonical ID for human display: groups of 4 separated by
+ *  dashes (e.g. "K7M3-PQ9R-T5VA-XY"). Short IDs (< 12 chars) are
+ *  returned as-is. */
+export function formatIdDashed(canonical: string): string {
+  if (canonical.length < 12) return canonical;
+  return `${canonical.slice(0, 4)}-${canonical.slice(4, 8)}-${canonical.slice(8, 12)}${canonical.length > 12 ? "-" + canonical.slice(12) : ""}`;
+}
+
 interface ScanResult {
   payload: string;
   format: string;
@@ -217,7 +233,7 @@ async function openScannerWithDecoder(
         if (hit && !opts.multi) {
           // Legacy single-pick: take the first decode and exit.
           finish(null, {
-            payload: hit.rawValue.toUpperCase(),
+            payload: canonicalizeId(hit.rawValue),
             format: hit.format,
           });
           return;
@@ -284,7 +300,7 @@ async function openScannerWithDecoder(
       // Render polygons over the still.
       ui.renderSnapshotMatches(canvas, matches, opts.resolveStatus, (m) => {
         finish(null, {
-          payload: m.rawValue.toUpperCase(),
+          payload: canonicalizeId(m.rawValue),
           format: m.format,
         });
       });
@@ -334,10 +350,7 @@ async function openScannerMultiPick(
         ? opts.resolveStatus(id)
         : "unbound";
       const chip = el("span", { class: `scan-chip scan-chip--${status}` });
-      const label =
-        id.length >= 12
-          ? `${id.slice(0, 4)}-${id.slice(4, 8)}-${id.slice(8, 12)}${id.length > 12 ? "-" + id.slice(12) : ""}`
-          : id;
+      const label = formatIdDashed(id);
       chip.append(document.createTextNode(label));
       const removeBtn = button({ class: "scan-chip__remove", title: "Remove" }, icon("x", { size: 12 }));
       removeBtn.addEventListener("click", (e) => {
@@ -450,7 +463,7 @@ async function openScannerMultiPick(
       // Render polygons — tap toggles selection instead of resolving.
       polygonGroups = [];
       ui.renderSnapshotMatches(canvas, matches, opts.resolveStatus, (m) => {
-        const canonical = m.rawValue.toUpperCase().replace(/-/g, "");
+        const canonical = canonicalizeId(m.rawValue);
         if (selected.has(canonical)) {
           selected.delete(canonical);
         } else {
@@ -468,7 +481,7 @@ async function openScannerMultiPick(
         const groups = svg.querySelectorAll(".scan-hit");
         let i = 0;
         for (const m of matches) {
-          const canonical = m.rawValue.toUpperCase().replace(/-/g, "");
+          const canonical = canonicalizeId(m.rawValue);
           const g = groups[i] as SVGGElement | undefined;
           if (g) {
             polygonGroups.push({ canonical, group: g });
@@ -615,7 +628,7 @@ function makeOverlay(badgeText: string, multi: boolean): OverlayHandle {
     svg.setAttribute("preserveAspectRatio", "none");
 
     for (const m of matches) {
-      const canonical = m.rawValue.toUpperCase().replace(/-/g, "");
+      const canonical = canonicalizeId(m.rawValue);
       const status: ScanStatus = resolveStatus
         ? resolveStatus(canonical)
         : "unbound";
@@ -637,10 +650,7 @@ function makeOverlay(badgeText: string, multi: boolean): OverlayHandle {
 
       // Caption near the top of the polygon: 4-4-4 dashed canonical ID
       // if it matches our ID shape; raw value otherwise.
-      const caption =
-        canonical.length >= 12
-          ? `${canonical.slice(0, 4)}-${canonical.slice(4, 8)}-${canonical.slice(8, 12)}${canonical.length > 12 ? '-' + canonical.slice(12) : ''}`
-          : canonical || m.rawValue;
+      const caption = formatIdDashed(canonical) || m.rawValue;
       const tx =
         m.cornerPoints.reduce((s, p) => s + p.x, 0) / m.cornerPoints.length;
       const tyTop = Math.min(...m.cornerPoints.map((p) => p.y));

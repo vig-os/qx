@@ -886,7 +886,7 @@ pub fn run_mint(args: &MintArgs, wiring: &Wiring) -> Result<MintOutcome, CliErro
     }
 
     // Build the Diff (N RowAdds).
-    let diff = build_mint_diff(&new_ids, &batch, minted_at)?;
+    let diff = build_mint_diff(&new_ids, &batch, minted_at, &operator)?;
     let request_id = RequestId::new();
     let proposal = Proposal {
         diff: diff.clone(),
@@ -965,6 +965,7 @@ fn build_mint_diff(
     new_ids: &[PartId],
     batch: &str,
     minted_at: OffsetDateTime,
+    operator: &Operator,
 ) -> Result<Diff, CliError> {
     let ts = minted_at
         .format(&Rfc3339)
@@ -975,6 +976,7 @@ fn build_mint_diff(
         fields.insert("status".into(), "unbound".into());
         fields.insert("minted_at".into(), ts.clone());
         fields.insert("batch".into(), batch.to_owned());
+        fields.insert("minted_by".into(), operator.id.0.clone());
         adds.push(DiffRow {
             id: Some(id.clone()),
             fields,
@@ -1364,7 +1366,7 @@ pub fn run_bind(args: &BindArgs, wiring: &Wiring) -> Result<BindOutcome, CliErro
         )));
     }
 
-    let (before, after) = build_bind_fields(&target, args, &now_iso);
+    let (before, after) = build_bind_fields(&target, args, &now_iso, &operator);
     let (proposal_ref, request_id) = submit_bind(wiring, &operator, &target, &before, &after)?;
 
     let extra = json!({
@@ -1435,6 +1437,7 @@ fn build_bind_fields(
     target: &Part,
     args: &BindArgs,
     now_iso: &str,
+    operator: &Operator,
 ) -> (BTreeMap<String, String>, BTreeMap<String, String>) {
     let mut before = BTreeMap::new();
     before.insert("status".into(), target.status.to_string());
@@ -1460,6 +1463,7 @@ fn build_bind_fields(
     let mut after = BTreeMap::new();
     after.insert("status".into(), "bound".into());
     after.insert("bound_at".into(), now_iso.into());
+    after.insert("bound_by".into(), operator.id.0.clone());
     let pick = |new: &Option<String>, old: &Option<String>| -> Option<String> {
         new.clone().or_else(|| old.clone())
     };

@@ -101,7 +101,7 @@ async function ghFetch(
 /** Parse CSV text into header + rows. Lightweight — no need for
  *  papaparse here since we're working with a well-formed registry CSV
  *  that we control. We do need to preserve the exact header line. */
-function parseCsv(text: string): { header: string; rows: Map<string, string> } {
+export function parseCsv(text: string): { header: string; rows: Map<string, string> } {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   const header = lines[0] ?? "";
   const rows = new Map<string, string>();
@@ -116,7 +116,7 @@ function parseCsv(text: string): { header: string; rows: Map<string, string> } {
 }
 
 /** Re-serialise the header + rows back to CSV text. */
-function serialiseCsv(header: string, rows: Map<string, string>): string {
+export function serialiseCsv(header: string, rows: Map<string, string>): string {
   const lines = [header, ...rows.values()];
   // Ensure trailing newline.
   return lines.join("\n") + "\n";
@@ -162,7 +162,7 @@ function escapeCsvField(val: string): string {
 }
 
 /** Split a CSV line respecting quoted fields. */
-function splitCsvLine(line: string): string[] {
+export function splitCsvLine(line: string): string[] {
   const fields: string[] = [];
   let current = "";
   let inQuotes = false;
@@ -194,7 +194,7 @@ function splitCsvLine(line: string): string[] {
   return fields;
 }
 
-function applyBind(
+export function applyBind(
   headerCols: string[],
   rows: Map<string, string>,
   bind: QueuedBind,
@@ -214,7 +214,7 @@ function applyBind(
   rows.set(bind.id, rowToLine(headerCols, obj));
 }
 
-function applyEdit(
+export function applyEdit(
   headerCols: string[],
   rows: Map<string, string>,
   edit: QueuedEdit,

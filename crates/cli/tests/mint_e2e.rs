@@ -48,6 +48,12 @@ fn mint_three_ids_produces_diff_and_audit_entries() {
     assert!(p.diff.header_changes.is_empty());
     assert_eq!(p.batch_label.as_deref(), Some("B-test-001"));
 
+    // minted_by is populated with the operator ID (#18).
+    for add in &p.diff.adds {
+        let minted_by = add.fields.get("minted_by").expect("minted_by must be set");
+        assert_eq!(minted_by, "test:tester", "minted_by must match operator id");
+    }
+
     // change_classification matches Diff::classify().
     assert_eq!(p.change_classification.len(), 3);
     for a in &p.change_classification {
