@@ -77,12 +77,6 @@ use part_registry_domain::{
 use part_registry_storage::{RepoError, Repository};
 
 // -------------------------------------------------------------------
-// Re-exports
-// -------------------------------------------------------------------
-
-pub use part_registry_domain::RequestId as DomainRequestId;
-
-// -------------------------------------------------------------------
 // Errors
 // -------------------------------------------------------------------
 
@@ -101,60 +95,14 @@ pub enum InitError {
 }
 
 // -------------------------------------------------------------------
-// Config
+// Config — re-exported from the config crate (single source of truth)
 // -------------------------------------------------------------------
 
-/// Observability layer configuration.
-///
-/// Per ADR-021 the log level is a string (e.g. `info`, `debug`,
-/// `part_registry=trace`). The parser is `tracing_subscriber::EnvFilter`
-/// at init time.
-#[derive(Debug, Clone)]
-pub struct ObservabilityConfig {
-    pub log_level: String,
-    pub stdout_json: bool,
-    pub stderr_human: bool,
-    pub audit_csv: bool,
-}
-
-impl Default for ObservabilityConfig {
-    /// Read-only / library defaults: stderr human on, stdout JSON off,
-    /// audit-CSV off. Suitable for tests and the WASM façade.
-    fn default() -> Self {
-        Self {
-            log_level: "info".into(),
-            stdout_json: false,
-            stderr_human: true,
-            audit_csv: false,
-        }
-    }
-}
-
-impl ObservabilityConfig {
-    /// Defaults for a mutating CLI binary (`mint`, `bind`, `label`):
-    /// stderr human + audit-CSV on, stdout JSON off by default.
-    /// Per ADR-022: mutating processes MUST enable the audit-CSV layer.
-    pub fn cli_defaults() -> Self {
-        Self {
-            log_level: "info".into(),
-            stdout_json: false,
-            stderr_human: true,
-            audit_csv: true,
-        }
-    }
-
-    /// Defaults for CI runs: stdout JSON on (machine-parseable
-    /// contract), stderr human off, audit-CSV gated on the workflow's
-    /// `Repository` wiring.
-    pub fn ci_defaults() -> Self {
-        Self {
-            log_level: "info".into(),
-            stdout_json: true,
-            stderr_human: false,
-            audit_csv: true,
-        }
-    }
-}
+/// Re-exported from [`part_registry_config::ObservabilityConfig`] so
+/// consumers that already depend on this crate don't need a separate
+/// `part_registry_config` import. The config crate owns the shape;
+/// this crate consumes it. See ADR-021 §Corrections and issue #38.
+pub use part_registry_config::ObservabilityConfig;
 
 // -------------------------------------------------------------------
 // AuditSinkHandle

@@ -450,3 +450,47 @@ provider merged last.
   non-configurable `QR_BORDER_*` constants)
 - Source files audited for hardcoded values:
   `label.py:33-81`, `web/src/config.ts:1-42`
+
+## Corrections
+
+### 2026-05-15 — Env-var nested-key separator is double-underscore
+
+The "Config crate shape" section above (lines 136-167) specifies
+single-underscore composite env-var names (e.g.
+`PART_REGISTRY_STORAGE_SQLITE_PATH`). The implementation in PR #37
+uses **double-underscore** (`PART_REGISTRY__STORAGE__SQLITE_PATH`) as
+the nested-key separator. This is necessary because field names like
+`default_size_mm` contain underscores; a single-underscore separator
+would make `PART_REGISTRY_LABEL_DEFAULT_SIZE_MM` ambiguous between
+`label.default_size_mm` and `label.default.size.mm`.
+
+The double-underscore convention is documented in
+`crates/config/src/lib.rs` (§"Env var convention") and implemented via
+the `ENV_SEPARATOR` constant. The prefix remains `PART_REGISTRY_`
+(with a trailing single underscore); the first `__` after stripping
+the prefix marks the section boundary.
+
+Per the project's METHODOLOGY correction protocol this note is
+appended rather than silently revising the body above, so the original
+rationale and the corrected convention are both visible in review.
+
+### 2026-05-15 — Adapter selection as flat enum, not tagged enum
+
+The "Config crate shape" section specifies `StorageAdapterChoice` as a
+`#[serde(tag = "kind")]` enum carrying associated data inside variants
+(e.g. `Sqlite { path: PathBuf }`). The implementation uses flat
+`#[serde(rename_all = "snake_case")]` enums for adapter selection
+(e.g. `StorageAdapterChoice::CsvGit`) with associated config fields as
+sibling `Option<T>` fields on the parent struct (e.g.
+`StorageConfig::sqlite_path`).
+
+This is pragmatic for figment env-var binding: figment's `Env` provider
+cannot populate a `#[serde(tag = "kind")]` enum from a single env var.
+The flat enum preserves the type-level exhaustiveness guarantee (a
+`match` on the enum covers all known adapters) while keeping env-var
+override ergonomics. Adapter+field consistency (e.g. "if sqlite then
+`sqlite_path` must be set") is validated at startup in the adapter
+constructor, not at deserialization time.
+
+Applies to `StorageAdapterChoice`, `IdentityAdapterChoice`,
+`TransportAdapterChoice`, and `SigningAdapterChoice`.

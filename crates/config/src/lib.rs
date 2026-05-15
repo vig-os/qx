@@ -93,23 +93,48 @@ pub struct RepoConfig {
     pub branch: String,
 }
 
+/// Adapter selection for the storage port (ADR-018).
+///
+/// Flat enum rather than `#[serde(tag)]` tagged enum — see ADR-021
+/// §Corrections for rationale. Associated config (e.g. `sqlite_path`)
+/// lives as sibling `Option<T>` fields on [`StorageConfig`]; adapters
+/// validate required fields at construction time.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StorageAdapterChoice {
+    CsvGit,
+    Sqlite,
+    DuckDb,
+    Dolt,
+    FilePerEntry,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StorageConfig {
     /// env: `PART_REGISTRY__STORAGE__ADAPTER`
-    /// — `csv_git` | `sqlite` | `duckdb` | `dolt` | `file_per_entry`
-    pub adapter: String,
+    pub adapter: StorageAdapterChoice,
     /// env: `PART_REGISTRY__STORAGE__SQLITE_PATH` — when adapter=sqlite
     pub sqlite_path: Option<PathBuf>,
     /// env: `PART_REGISTRY__STORAGE__DUCKDB_PATH` — when adapter=duckdb
     pub duckdb_path: Option<PathBuf>,
 }
 
+/// Adapter selection for the identity port (ADR-020).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum IdentityAdapterChoice {
+    GitConfig,
+    GithubOauth,
+    EnvUser,
+    OidcGeneric,
+    MtlsCert,
+    SigstoreKeyless,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct IdentityConfig {
     /// env: `PART_REGISTRY__IDENTITY__ADAPTER`
-    /// — `git_config` | `github_oauth` | `env_user` | `oidc_generic`
-    ///   | `mtls_cert` | `sigstore_keyless`
-    pub adapter: String,
+    pub adapter: IdentityAdapterChoice,
     /// env: `PART_REGISTRY__IDENTITY__VERIFIED_AT_WINDOW_SECS`
     pub verified_at_window_secs: u64,
     /// env: `PART_REGISTRY__IDENTITY__GITHUB_CLIENT_ID`
@@ -124,22 +149,40 @@ pub struct IdentityConfig {
     pub allow_dev_identity: bool,
 }
 
+/// Adapter selection for the transport / proposal-sink port (ADR-019).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TransportAdapterChoice {
+    GithubPr,
+    LocalBranch,
+    Webhook,
+    Filesystem,
+    Dolt,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TransportConfig {
     /// env: `PART_REGISTRY__TRANSPORT__ADAPTER`
-    /// — `github_pr` | `local_branch` | `webhook` | `filesystem` | `dolt`
-    pub adapter: String,
+    pub adapter: TransportAdapterChoice,
     /// env: `PART_REGISTRY__TRANSPORT__GITHUB_TOKEN`
     pub github_token: Option<String>,
     /// env: `PART_REGISTRY__TRANSPORT__DEPOSIT_PATH`
     pub deposit_path: Option<PathBuf>,
 }
 
+/// Adapter selection for the signing port (ADR-024).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SigningAdapterChoice {
+    GitCommit,
+    Sigstore,
+    None,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SigningConfig {
     /// env: `PART_REGISTRY__SIGNING__ADAPTER`
-    /// — `git_commit` | `sigstore` | `none`
-    pub adapter: String,
+    pub adapter: SigningAdapterChoice,
     /// env: `PART_REGISTRY__SIGNING__FULCIO_URL` — when adapter=sigstore
     pub fulcio_url: Option<String>,
     /// env: `PART_REGISTRY__SIGNING__REKOR_URL` — when adapter=sigstore
@@ -168,6 +211,48 @@ pub struct ObservabilityConfig {
     pub stderr_human: bool,
     /// env: `PART_REGISTRY__OBSERVABILITY__AUDIT_CSV`
     pub audit_csv: bool,
+}
+
+impl Default for ObservabilityConfig {
+    /// Read-only / library defaults: stderr human on, stdout JSON off,
+    /// audit-CSV off. Suitable for tests and the WASM facade.
+    fn default() -> Self {
+        Self {
+            log_level: "info".into(),
+            audit_log_path: PathBuf::from("./audit_log.csv"),
+            stdout_json: false,
+            stderr_human: true,
+            audit_csv: false,
+        }
+    }
+}
+
+impl ObservabilityConfig {
+    /// Defaults for a mutating CLI binary (`mint`, `bind`, `label`):
+    /// stderr human + audit-CSV on, stdout JSON off by default.
+    /// Per ADR-022: mutating processes MUST enable the audit-CSV layer.
+    pub fn cli_defaults() -> Self {
+        Self {
+            log_level: "info".into(),
+            audit_log_path: PathBuf::from("./audit_log.csv"),
+            stdout_json: false,
+            stderr_human: true,
+            audit_csv: true,
+        }
+    }
+
+    /// Defaults for CI runs: stdout JSON on (machine-parseable
+    /// contract), stderr human off, audit-CSV gated on the workflow's
+    /// `Repository` wiring.
+    pub fn ci_defaults() -> Self {
+        Self {
+            log_level: "info".into(),
+            audit_log_path: PathBuf::from("./audit_log.csv"),
+            stdout_json: true,
+            stderr_human: false,
+            audit_csv: true,
+        }
+    }
 }
 
 const DEFAULTS_TOML: &str = include_str!("../defaults.toml");
@@ -444,10 +529,10 @@ mod tests {
     fn from_env_with_no_overrides_returns_defaults() {
         let cfg = cfg(&[]);
         // Spot-check defaults to prove the bundled file loads.
-        assert_eq!(cfg.storage.adapter, "csv_git");
-        assert_eq!(cfg.identity.adapter, "git_config");
-        assert_eq!(cfg.transport.adapter, "github_pr");
-        assert_eq!(cfg.signing.adapter, "git_commit");
+        assert_eq!(cfg.storage.adapter, StorageAdapterChoice::CsvGit);
+        assert_eq!(cfg.identity.adapter, IdentityAdapterChoice::GitConfig);
+        assert_eq!(cfg.transport.adapter, TransportAdapterChoice::GithubPr);
+        assert_eq!(cfg.signing.adapter, SigningAdapterChoice::GitCommit);
         assert_eq!(cfg.label.default_size_mm, 11.0);
         assert_eq!(cfg.observability.log_level, "info");
         assert_eq!(cfg.repo.branch, "main");
@@ -558,7 +643,7 @@ mod tests {
     #[test]
     fn env_var_overrides_storage_adapter() {
         let c = cfg(&[("PART_REGISTRY__STORAGE__ADAPTER", "sqlite")]);
-        assert_eq!(c.storage.adapter, "sqlite");
+        assert_eq!(c.storage.adapter, StorageAdapterChoice::Sqlite);
     }
 
     #[test]
@@ -607,7 +692,7 @@ mod tests {
         )
         .expect("layered parse");
         // Env wins per ADR-021 §"Layered precedence".
-        assert_eq!(c.storage.adapter, "duckdb");
+        assert_eq!(c.storage.adapter, StorageAdapterChoice::DuckDb);
     }
 
     #[test]
@@ -616,7 +701,7 @@ mod tests {
         // valid Config with no env help.
         let c = Config::from_layers(Some(""), std::iter::empty::<(String, String)>())
             .expect("empty override layer is fine");
-        assert_eq!(c.storage.adapter, "csv_git");
+        assert_eq!(c.storage.adapter, StorageAdapterChoice::CsvGit);
     }
 
     // -----------------------------------------------------------

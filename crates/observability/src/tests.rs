@@ -202,6 +202,7 @@ fn config_ci_defaults_emit_json() {
 fn init_rejects_audit_csv_without_sink() {
     let cfg = ObservabilityConfig {
         log_level: "info".into(),
+        audit_log_path: std::path::PathBuf::from("./audit_log.csv"),
         stdout_json: false,
         stderr_human: false,
         audit_csv: true,
@@ -214,6 +215,7 @@ fn init_rejects_audit_csv_without_sink() {
 fn init_rejects_bad_log_level() {
     let cfg = ObservabilityConfig {
         log_level: "not-a-level=trace=oops".into(),
+        audit_log_path: std::path::PathBuf::from("./audit_log.csv"),
         stdout_json: false,
         stderr_human: false,
         audit_csv: false,
