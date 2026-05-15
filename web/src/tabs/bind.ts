@@ -1,5 +1,5 @@
-// Bind tab — queue binds + edits locally as a table; submit-as-PR is
-// stubbed (issue #5).
+// Bind tab — queue binds + edits locally as a table; submit creates a
+// PR against the data repo via the GitHub REST API (issue #5).
 //
 // UX shape: a table where each row is either
 //   - a queued bind: fully inline-editable (type / description /
@@ -28,8 +28,16 @@ import {
 import type { AppContext, Tab } from "../core/types";
 import { el, button, input, formRow } from "../ui/dom";
 import { icon } from "../ui/icons";
-import { openScanner, type ScanStatus } from "../ui/scanner";
+import { openScannerMulti, type ScanStatus } from "../ui/scanner";
 import type { Action, AuthDecision } from "../wasm/loader";
+import {
+  submitBatch,
+  promptForToken,
+  getStoredToken,
+  clearToken,
+  SubmitError,
+} from "../registry/submit";
+import { DATA_REPO_SLUG } from "../config";
 
 function emptyBindFields(): Pick<
   QueuedBind,
@@ -71,11 +79,11 @@ function buildUI(ctx: AppContext): HTMLElement {
       { class: "muted" },
       "Scan a QR (camera icon in the empty row) or paste an ID to queue a new bind. " +
         "Edits arrive from the Lookup tab — click any row's Edit button there to queue an edit. " +
-        "Submit-as-PR is stubbed for the spike (issue #5); the queue is real and persists across reloads.",
+        "Submit creates a PR against the data repo; you'll need a GitHub PAT on first submit.",
     ),
   );
 
-  const submitBtn = button({ class: "primary" }, icon("plus"), " Submit batch (stub)");
+  const submitBtn = button({ class: "primary" }, icon("plus"), " Submit batch");
   const clearBtn = button({}, icon("trash"), " Clear queue");
   const summaryEl = el("span", { class: "queue-summary muted small" });
 
@@ -175,19 +183,57 @@ function buildUI(ctx: AppContext): HTMLElement {
 
   renderTable();
 
-  submitBtn.addEventListener("click", () => {
+  submitBtn.addEventListener("click", async () => {
     const q = loadQueue();
     if (q.length === 0) {
       alert("Queue is empty.");
       return;
     }
+
+    // Ensure we have a PAT.
+    let token = getStoredToken();
+    if (!token) {
+      token = promptForToken();
+      if (!token) return; // cancelled
+    }
+
     const summary = summarizeQueue(q);
-    // STUB — real GitHub OAuth + REST API path is issue #5.
-    console.log(`Pending ${summary.label} batch (would be one PR):`, q);
-    alert(
-      `${summary.total} item(s) (${summary.binds} bind, ${summary.edits} edit) ` +
-        `would be submitted as one ${summary.label} PR.\n\nSee issue #5 for the OAuth + REST integration.`,
-    );
+    if (
+      !confirm(
+        `Submit ${summary.total} item(s) (${summary.binds} bind, ${summary.edits} edit) ` +
+          `as a PR to ${DATA_REPO_SLUG}?`,
+      )
+    ) {
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Submitting\u2026";
+
+    try {
+      const result = await submitBatch(q, token, DATA_REPO_SLUG);
+      clearQueue();
+      renderTable();
+      alert(`PR #${result.prNumber} created.\n\n${result.prUrl}`);
+    } catch (e) {
+      const msg = e instanceof SubmitError
+        ? `Submit failed at step "${e.step}": ${e.message}`
+        : `Submit failed: ${(e as Error).message}`;
+      console.error("Submit error:", e);
+
+      // If 401/403, the token is probably bad — offer to re-enter.
+      if (e instanceof SubmitError && (e.status === 401 || e.status === 403)) {
+        if (confirm(`${msg}\n\nThe token may be invalid. Clear it and enter a new one?`)) {
+          clearToken();
+        }
+      } else {
+        alert(msg);
+      }
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "";
+      submitBtn.append(icon("plus"), " Submit batch");
+    }
   });
 
   clearBtn.addEventListener("click", () => {
@@ -395,8 +441,7 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
       // (so the operator can see at a glance which on-bench parts
       // are still un-queued) and reds out IDs not in the registry.
       const queuedIds = new Set(loadQueue().map((q) => q.id));
-      const v = await openScanner({
-        multi: true,
+      const ids = await openScannerMulti({
         resolveStatus: (canonical): ScanStatus => {
           if (queuedIds.has(canonical)) return "queued";
           const row = ctx.registry.findById(canonical);
@@ -405,8 +450,21 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
           return "bound";
         },
       });
-      idInput.value = v.toUpperCase().replace(/-/g, "");
-      idInput.focus();
+      if (ids.length === 0) return;
+      if (ids.length === 1) {
+        // Single pick: populate the entry row so the operator can
+        // fill metadata fields before queuing.
+        idInput.value = ids[0];
+        idInput.focus();
+      } else {
+        // Multi-pick: auto-queue all selected IDs with empty
+        // metadata (operator can edit inline in the table).
+        for (const id of ids) {
+          if (queuedIds.has(id)) continue; // skip duplicates
+          appendBind({ id, ...emptyBindFields() });
+        }
+        onAdd();
+      }
     } catch {
       /* user cancelled */
     }

@@ -100,9 +100,27 @@ export async function openScanner(opts: ScanOptions = {}): Promise<string> {
   return result.payload;
 }
 
+/** Open the scanner in multi-pick mode. The operator captures a
+ *  snapshot, taps polygons to select/deselect, and hits "Done" to
+ *  commit the selection. Returns canonical IDs of all selected codes.
+ *
+ *  Throws `ScanUnsupportedError` if camera / WASM unavailable.
+ *  Throws a generic Error if the user cancels. */
+export async function openScannerMulti(
+  opts: Omit<ScanOptions, "multi"> = {},
+): Promise<string[]> {
+  const decoder = await ensureDecoder();
+  return openScannerMultiPick(decoder, { ...opts, multi: true });
+}
+
 export async function openScannerWithDetail(
   opts: ScanOptions = {},
 ): Promise<ScanResult> {
+  const decoder = await ensureDecoder();
+  return openScannerWithDecoder(decoder, opts);
+}
+
+async function ensureDecoder(): Promise<DecoderHandle> {
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
     showUnsupported(
       "This browser doesn't expose a camera API.",
@@ -110,17 +128,13 @@ export async function openScannerWithDetail(
     );
     throw new ScanUnsupportedError("getUserMedia unavailable");
   }
-
-  let decoder: DecoderHandle;
   try {
-    decoder = await loadDecoder();
+    return await loadDecoder();
   } catch (e) {
     const msg = (e as Error)?.message ?? String(e);
     showUnsupported("The QR decoder failed to load.", `Detail: ${msg}`);
     throw new ScanUnsupportedError("decoder load failed: " + msg);
   }
-
-  return openScannerWithDecoder(decoder, opts);
 }
 
 // ---------- Decoder loader ----------
@@ -288,6 +302,195 @@ async function openScannerWithDecoder(
   });
 }
 
+// ---------- Multi-pick scanner ----------
+//
+// Same capture-snapshot UX, but tapping a polygon toggles selection
+// instead of immediately resolving. A chip tray shows selected IDs,
+// each removable. "Done" commits the selection.
+
+async function openScannerMultiPick(
+  decoder: DecoderHandle,
+  opts: ScanOptions,
+): Promise<string[]> {
+  const ui = makeOverlay(decoder.badge, true);
+
+  // Selection state: canonical ID -> DetectorMatch (for re-rendering).
+  const selected = new Map<string, DetectorMatch>();
+
+  // Chip tray: sits between the snapshot and the action bar.
+  const chipTray = el("div", { class: "scan-overlay__chips" });
+  // Insert before actions bar.
+  ui.chipsSlot.append(chipTray);
+
+  // Done button — disabled until at least one code is selected.
+  const doneBtn = button({ class: "scan-overlay__done primary" }, icon("plus"), " Done");
+  doneBtn.disabled = true;
+  ui.actionsSlot.prepend(doneBtn);
+
+  const renderChips = () => {
+    chipTray.innerHTML = "";
+    for (const [id, _m] of selected) {
+      const status: ScanStatus = opts.resolveStatus
+        ? opts.resolveStatus(id)
+        : "unbound";
+      const chip = el("span", { class: `scan-chip scan-chip--${status}` });
+      const label =
+        id.length >= 12
+          ? `${id.slice(0, 4)}-${id.slice(4, 8)}-${id.slice(8, 12)}${id.length > 12 ? "-" + id.slice(12) : ""}`
+          : id;
+      chip.append(document.createTextNode(label));
+      const removeBtn = button({ class: "scan-chip__remove", title: "Remove" }, icon("x", { size: 12 }));
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        selected.delete(id);
+        renderChips();
+        // Re-render polygon selection state.
+        updatePolygonSelection();
+      });
+      chip.append(removeBtn);
+      chipTray.append(chip);
+    }
+    doneBtn.disabled = selected.size === 0;
+  };
+
+  // Track all polygon groups so we can toggle their selected class.
+  let polygonGroups: Array<{ canonical: string; group: SVGGElement }> = [];
+
+  const updatePolygonSelection = () => {
+    for (const pg of polygonGroups) {
+      if (selected.has(pg.canonical)) {
+        pg.group.classList.add("scan-hit--selected");
+      } else {
+        pg.group.classList.remove("scan-hit--selected");
+      }
+    }
+  };
+
+  let stream: MediaStream | undefined;
+  return new Promise<string[]>((resolve, reject) => {
+    let resolved = false;
+    let raf = 0;
+    let mode: "live" | "snapshot" = "live";
+
+    const stopStream = () => {
+      stream?.getTracks().forEach((t) => t.stop());
+      stream = undefined;
+    };
+    const finish = (err: Error | null, value?: string[]) => {
+      if (resolved) return;
+      resolved = true;
+      cancelAnimationFrame(raf);
+      stopStream();
+      ui.close();
+      if (err) reject(err);
+      else resolve(value ?? []);
+    };
+
+    ui.cancel.addEventListener("click", () => finish(new Error("scan cancelled")));
+    doneBtn.addEventListener("click", () => {
+      finish(null, [...selected.keys()]);
+    });
+
+    const tick = async () => {
+      if (resolved || mode !== "live") return;
+      try {
+        // In multi-pick live mode, just keep the stream running — no
+        // auto-pick. The operator explicitly captures.
+        await decoder.detect(ui.video);
+      } catch {
+        // ignore
+      }
+      raf = requestAnimationFrame(tick);
+    };
+
+    const startLive = () => {
+      mode = "live";
+      ui.showLive();
+      polygonGroups = [];
+      navigator.mediaDevices
+        .getUserMedia({ video: { facingMode: "environment" } })
+        .then((s) => {
+          stream = s;
+          ui.video.srcObject = s;
+          ui.video.onloadedmetadata = () => {
+            void ui.video.play();
+            raf = requestAnimationFrame(tick);
+          };
+        })
+        .catch((e) => finish(e as Error));
+    };
+
+    const onCapture = async () => {
+      if (mode !== "live") return;
+      const vw = ui.video.videoWidth;
+      const vh = ui.video.videoHeight;
+      if (!vw || !vh) return;
+      const longEdge = Math.max(vw, vh);
+      const scale = longEdge > SNAPSHOT_MAX_PX ? SNAPSHOT_MAX_PX / longEdge : 1;
+      const cw = Math.round(vw * scale);
+      const ch = Math.round(vh * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = cw;
+      canvas.height = ch;
+      const cx = canvas.getContext("2d");
+      if (!cx) return;
+      cx.drawImage(ui.video, 0, 0, cw, ch);
+      cancelAnimationFrame(raf);
+      stopStream();
+      mode = "snapshot";
+      ui.showSnapshot(canvas);
+
+      let matches: DetectorMatch[] = [];
+      try {
+        matches = await decoder.detect(canvas);
+      } catch {
+        matches = [];
+      }
+
+      // Render polygons — tap toggles selection instead of resolving.
+      polygonGroups = [];
+      ui.renderSnapshotMatches(canvas, matches, opts.resolveStatus, (m) => {
+        const canonical = m.rawValue.toUpperCase().replace(/-/g, "");
+        if (selected.has(canonical)) {
+          selected.delete(canonical);
+        } else {
+          selected.set(canonical, m);
+        }
+        renderChips();
+        updatePolygonSelection();
+      });
+
+      // Build the polygon group index for selection state tracking.
+      // The SVG groups were just appended by renderSnapshotMatches;
+      // query them from the DOM.
+      const svg = ui.snapshotStill.querySelector(".scan-overlay__hits");
+      if (svg) {
+        const groups = svg.querySelectorAll(".scan-hit");
+        let i = 0;
+        for (const m of matches) {
+          const canonical = m.rawValue.toUpperCase().replace(/-/g, "");
+          const g = groups[i] as SVGGElement | undefined;
+          if (g) {
+            polygonGroups.push({ canonical, group: g });
+          }
+          i++;
+        }
+      }
+      // Apply initial selection state (IDs may have been selected from
+      // a previous capture in the same session).
+      updatePolygonSelection();
+    };
+
+    ui.capture?.addEventListener("click", () => void onCapture());
+    ui.retake?.addEventListener("click", () => {
+      if (mode !== "snapshot") return;
+      startLive();
+    });
+
+    startLive();
+  });
+}
+
 // ---------- Overlay UI ----------
 
 interface OverlayHandle {
@@ -297,6 +500,12 @@ interface OverlayHandle {
   /** Snapshot mode only. */
   capture?: HTMLButtonElement;
   retake?: HTMLButtonElement;
+  /** Container where multi-pick chips are inserted. */
+  chipsSlot: HTMLElement;
+  /** Container for action buttons (Done can be prepended here). */
+  actionsSlot: HTMLElement;
+  /** The still-image wrapper (for querying SVG groups). */
+  snapshotStill: HTMLElement;
   /** Show live-preview chrome (video, capture button); hide snapshot. */
   showLive: () => void;
   /** Switch to snapshot view, drawing the canvas as the background. */
@@ -360,7 +569,11 @@ function makeOverlay(badgeText: string, multi: boolean): OverlayHandle {
     actions.append(cancel);
   }
 
-  overlay.append(video, snapshotWrap, badge, actions);
+  // Chips slot: sits between the snapshot and the action bar in
+  // multi-pick mode. The multi-pick caller inserts its chip tray here.
+  const chipsSlot = el("div", { class: "scan-overlay__chips-slot" });
+
+  overlay.append(video, snapshotWrap, chipsSlot, badge, actions);
   document.body.append(overlay);
 
   const showLive = () => {
@@ -453,6 +666,9 @@ function makeOverlay(badgeText: string, multi: boolean): OverlayHandle {
     cancel,
     capture,
     retake,
+    chipsSlot,
+    actionsSlot: actions,
+    snapshotStill: snapshotImgWrap,
     showLive,
     showSnapshot,
     renderSnapshotMatches,

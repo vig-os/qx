@@ -240,6 +240,39 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 .scan-hit--unknown { --scan-stroke: var(--scan-status-unknown); --scan-fill: var(--scan-status-unknown); }
 .scan-hit--unknown .scan-hit__poly { stroke-dasharray: 6 4; fill: rgba(var(--scan-status-unknown), 0.15); }
 
+/* Multi-pick: selected polygon state — thicker stroke + brighter fill */
+.scan-hit--selected .scan-hit__poly {
+  stroke-width: 5;
+  fill: rgba(var(--scan-fill, 60, 170, 80), 0.5);
+}
+
+/* Multi-pick chip tray */
+.scan-overlay__chips-slot { width: 90%; max-width: 720px; }
+.scan-overlay__chips {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin: 8px 0; max-height: 120px; overflow-y: auto;
+}
+.scan-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: 12px;
+  font: 600 12px ui-monospace, monospace;
+  color: #fff; background: rgba(255,255,255,0.15);
+  border: 1.5px solid rgba(255,255,255,0.3);
+}
+.scan-chip--unbound { border-color: rgb(var(--scan-status-unbound)); background: rgba(var(--scan-status-unbound), 0.25); }
+.scan-chip--bound   { border-color: rgb(var(--scan-status-bound));   background: rgba(var(--scan-status-bound), 0.25); }
+.scan-chip--queued  { border-color: rgb(var(--scan-status-queued));  background: rgba(var(--scan-status-queued), 0.25); opacity: 0.6; }
+.scan-chip--unknown { border-color: rgb(var(--scan-status-unknown)); background: rgba(var(--scan-status-unknown), 0.25); }
+.scan-chip__remove {
+  all: unset; cursor: pointer; display: inline-flex;
+  padding: 0 2px; opacity: 0.7;
+}
+.scan-chip__remove:hover { opacity: 1; }
+
+/* Done button in multi-pick */
+.scan-overlay__done { margin-right: 8px; }
+.scan-overlay__done:disabled { opacity: 0.4; pointer-events: none; }
+
 .scan-overlay__hint {
   margin-top: 12px;
   padding: 8px 12px;
