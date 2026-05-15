@@ -258,3 +258,36 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 .scan-overlay__headline { margin: 0; color: var(--error); }
 .scan-overlay__card p { margin: 0; }
 .scan-overlay__card .primary { align-self: flex-end; }
+
+/* Bind preflight (issue #23) — advisory result of classify + policy */
+.preflight { margin: 12px 0; }
+.preflight-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--bg-elev);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.preflight-banner { font-weight: 600; }
+.preflight-banner.kind-allow { color: var(--ok, #2e7d32); }
+.preflight-banner.kind-warn { color: var(--warn, #ed6c02); }
+.preflight-banner.kind-requires_elevation { color: var(--warn, #ed6c02); }
+.preflight-banner.kind-block { color: var(--error, #c62828); }
+
+.preflight-card .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.preflight-card .chip {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--border);
+}
+.preflight-card .chip--row_void { background: rgba(198, 40, 40, 0.08); border-color: rgba(198, 40, 40, 0.25); }
+.preflight-card .chip--row_delete { background: rgba(198, 40, 40, 0.15); border-color: rgba(198, 40, 40, 0.35); }
+.preflight-card .chip--header_change { background: rgba(237, 108, 2, 0.12); border-color: rgba(237, 108, 2, 0.3); }
+
+.preflight-issues { margin: 0; padding-left: 18px; }
+.preflight-issues .issue--unknown_id { color: var(--error, #c62828); }
+.preflight-issues .issue--duplicate_in_queue { color: var(--warn, #ed6c02); }

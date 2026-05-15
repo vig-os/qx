@@ -85,6 +85,38 @@ test.describe("part-registry FE smoke", () => {
     expect(errors, `pageerrors: ${errors.join("\n")}`).toEqual([]);
   });
 
+  test("Bind preflight (#23): renders banner + chips + local-issue when queuing an unknown ID", async ({ page }) => {
+    // The bind entry row uses confirm()/alert() for unknown-registry
+    // + sanity checks; auto-accept so the queue commit goes through.
+    page.on("dialog", (dialog) => dialog.accept());
+
+    await page.goto("/");
+
+    const tabBar = page.locator("nav.tabs");
+    await tabBar.getByRole("button", { name: "Bind" }).click();
+
+    // Fill the ID input in the entry row, then click "Queue this bind".
+    const entryRow = page.locator(".entry-row");
+    await entryRow.waitFor({ state: "visible" });
+    const idInput = entryRow.locator('input[placeholder*="ID" i]').first();
+    await idInput.fill("ABCDEFGHJKMNPQ");
+    await entryRow.locator('button[title="Queue this bind"]').click();
+
+    // Preflight card renders with the policy decision attribute.
+    const card = page.locator(".preflight-card");
+    await expect(card).toBeVisible({ timeout: 5_000 });
+    await expect(card).toHaveAttribute("data-preflight-decision", /allow|warn|block|requires_elevation/);
+
+    // row_bind chip rendered (zero rows would actually classify; with
+    // an unknown id the diff has no edits so actions may be empty —
+    // assert only the card + local issue surface).
+    await expect(page.locator(".issue--unknown_id")).toBeVisible();
+
+    // Submit button is data-preflight=blocked when unknown_id fires.
+    const submitBtn = page.getByRole("button", { name: /Submit batch/ });
+    await expect(submitBtn).toHaveAttribute("data-preflight", "blocked");
+  });
+
   test("WASM façade is reachable on window for diagnostics", async ({ page }) => {
     await page.goto("/");
     // The loader assigns module exports to `window.__partRegistryWasm`
