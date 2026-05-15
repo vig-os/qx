@@ -642,7 +642,7 @@ where
     // that want lossless fidelity use [`emit_audit`] with a pre-built
     // payload instead.
     let action_str = v.action.as_deref()?;
-    let action = action_from_kind_str(action_str)?;
+    let action = action_from_kind_str(action_str, v.target_value.as_deref())?;
 
     // target: from `target_kind` + `target_value` per the ADR macro.
     let target = match v.target_kind.as_deref() {
@@ -692,25 +692,28 @@ where
     })
 }
 
-fn action_from_kind_str(s: &str) -> Option<Action> {
+fn action_from_kind_str(s: &str, target_value: Option<&str>) -> Option<Action> {
     use part_registry_domain::PartId;
-    // Placeholder PartId/maps for payload — discrete macro form is lossy.
-    let placeholder_id = PartId::new("23456789ABCDEF").ok()?;
+    // Try to use the real target value as the PartId; fall back to a
+    // placeholder when the value is missing or fails validation.
+    let part_id = target_value
+        .and_then(|v| PartId::new(v.to_string()).ok())
+        .or_else(|| PartId::new("23456789ABCDEF").ok())?;
     Some(match s {
         "row_add" | "mint" | "add" => Action::RowAdd {
             row: serde_json::Value::Object(serde_json::Map::new()),
         },
-        "row_delete" | "delete" => Action::RowDelete { id: placeholder_id },
+        "row_delete" | "delete" => Action::RowDelete { id: part_id },
         "row_void" | "void" => Action::RowVoid {
-            id: placeholder_id,
+            id: part_id,
             reason: "discrete-form void".into(),
         },
         "row_bind" | "bind" => Action::RowBind {
-            id: placeholder_id,
+            id: part_id,
             fields: std::collections::BTreeMap::new(),
         },
         "row_edit" | "edit" => Action::RowEdit {
-            id: placeholder_id,
+            id: part_id,
             before: std::collections::BTreeMap::new(),
             after: std::collections::BTreeMap::new(),
         },

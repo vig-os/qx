@@ -731,3 +731,69 @@ fn request_id_span_macro_compiles_and_runs() {
     let span = request_id_span!("cli.macro", rid);
     let _g = span.enter();
 }
+
+// -----------------------------------------------------------------
+// 13. action_from_kind_str uses real PartId (#53)
+// -----------------------------------------------------------------
+
+#[test]
+fn action_from_kind_str_uses_real_part_id() {
+    let action = action_from_kind_str("bind", Some("ABCDEFGHJKMNPQ")).unwrap();
+    match action {
+        Action::RowBind { id, .. } => assert_eq!(id.as_str(), "ABCDEFGHJKMNPQ"),
+        other => panic!("expected RowBind, got {other:?}"),
+    }
+}
+
+#[test]
+fn action_from_kind_str_falls_back_to_placeholder_on_missing_target() {
+    let action = action_from_kind_str("delete", None).unwrap();
+    match action {
+        Action::RowDelete { id } => assert_eq!(id.as_str(), "23456789ABCDEF"),
+        other => panic!("expected RowDelete, got {other:?}"),
+    }
+}
+
+#[test]
+fn action_from_kind_str_falls_back_to_placeholder_on_invalid_target() {
+    // "!!!" is not a valid PartId
+    let action = action_from_kind_str("void", Some("!!!")).unwrap();
+    match action {
+        Action::RowVoid { id, .. } => assert_eq!(id.as_str(), "23456789ABCDEF"),
+        other => panic!("expected RowVoid, got {other:?}"),
+    }
+}
+
+#[test]
+fn discrete_form_carries_real_part_id_in_action() {
+    let (handle, audit, _) = make_handle();
+    let subscriber = make_test_subscriber(handle);
+    set_current_operator(sample_operator());
+    let rid = RequestId::new();
+
+    tracing::subscriber::with_default(subscriber, || {
+        let span = request_id_span("cli.test", rid);
+        let _g = span.enter();
+        tracing::info!(
+            audit = true,
+            action = "bind",
+            target_kind = "part_id",
+            target_value = "ABCDEFGHJKMNPQ",
+            "bound part"
+        );
+    });
+
+    clear_current_operator();
+    let captured = audit.lock().unwrap().clone();
+    assert_eq!(captured.len(), 1);
+    match &captured[0].action {
+        Action::RowBind { id, .. } => {
+            assert_eq!(
+                id.as_str(),
+                "ABCDEFGHJKMNPQ",
+                "action should carry the real PartId, not the placeholder"
+            );
+        }
+        other => panic!("expected RowBind, got {other:?}"),
+    }
+}
