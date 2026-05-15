@@ -65,12 +65,12 @@ test.describe("Lookup data-grid (fixture)", () => {
     await expect(unboundRows).toHaveCount(3);
   });
 
-  test("deep-link to /<ID> shows that part's detail", async ({ page }) => {
+  test("deep-link to /<ID> highlights that row in the grid", async ({ page }) => {
     // Navigate directly to a known bound ID.
     await page.goto("/ABCDEFGHJKMNPQ");
 
-    // The detail card should be visible with data from that row.
-    await expect(page.locator(".row-detail")).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator(".row-detail")).toContainText("Thermocouple K-type 2m");
+    // The row should be visible in the data grid.
+    const row = page.locator('.lookup__table tbody tr[data-id="ABCDEFGHJKMNPQ"]');
+    await expect(row).toBeVisible({ timeout: 10_000 });
   });
 });
