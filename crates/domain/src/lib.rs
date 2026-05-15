@@ -690,6 +690,10 @@ pub struct Part {
     pub part_number: Option<String>,
     pub location: Option<String>,
     pub notes: Option<String>,
+    pub minted_by: Option<String>,
+    pub bound_by: Option<String>,
+    pub last_edited_at: Option<String>,
+    pub last_edited_by: Option<String>,
     /// ADR-023 forward-compat. Default `vec![]` round-trips correctly.
     #[serde(default)]
     pub signatures: Vec<Signature>,
@@ -1178,6 +1182,10 @@ mod tests {
             part_number: None,
             location: None,
             notes: None,
+            minted_by: None,
+            bound_by: None,
+            last_edited_at: None,
+            last_edited_by: None,
             signatures,
             chain_hash: None,
         }

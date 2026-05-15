@@ -1295,11 +1295,13 @@ pub struct BindOutcome {
 ///    `ProposalSink`.
 /// 4. Emit an `AuditEntry` via the observability layer.
 pub fn run_bind(args: &BindArgs, wiring: &Wiring) -> Result<BindOutcome, CliError> {
-    if args.void && (args.type_.is_some() || args.vendor.is_some()) {
+    if args.void && (args.type_.is_some() || args.vendor.is_some() || args.notes.is_some()) {
         // Parity with bind.py — silently ignore metadata on --void;
         // the Python CLI tolerates this. We surface a warning via
-        // tracing but proceed.
-        tracing::warn!("--void ignores metadata flags");
+        // tracing but proceed. Per issue #56, notes is also ignored
+        // (Python appends the void marker to existing notes, ignoring
+        // --notes).
+        tracing::warn!("--void ignores metadata flags (type, vendor, notes)");
     }
 
     let operator = wiring.identity.current()?;
@@ -1314,10 +1316,10 @@ pub fn run_bind(args: &BindArgs, wiring: &Wiring) -> Result<BindOutcome, CliErro
         .map_err(|e| CliError::Other(format!("format now: {e}")))?;
 
     if args.void {
-        let reason = match &args.notes {
-            Some(n) => format!("{n} [voided {now_iso}]"),
-            None => format!("[voided {now_iso}]"),
-        };
+        // Parity with bind.py:98 — append `[voided <ts>]` to existing
+        // notes; ignore `args.notes` (see issue #56).
+        let existing_notes = target.notes.clone().unwrap_or_default();
+        let reason = format!("{existing_notes} [voided {now_iso}]");
         let (proposal_ref, request_id) =
             submit_void(wiring, &operator, &target, &reason, now_iso.clone())?;
         let extra = json!({

@@ -481,7 +481,8 @@ mod tests {
         let input: ValidateInput = serde_json::from_value(serde_json::json!({
             "registry_header": [
                 "id", "status", "minted_at", "batch", "bound_at", "type",
-                "description", "vendor", "part_number", "location", "notes"
+                "description", "vendor", "part_number", "location", "notes",
+                "minted_by", "bound_by", "last_edited_at", "last_edited_by"
             ],
             "print_log_header": [
                 "id", "printed_at", "printed_by", "layout", "size_mm",

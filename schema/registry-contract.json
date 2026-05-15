@@ -17,6 +17,10 @@
     { "key": "vendor", "label": "Vendor", "editable": true, "meaningfulFrom": "bound" },
     { "key": "part_number", "label": "Part number", "editable": true, "meaningfulFrom": "bound" },
     { "key": "location", "label": "Location", "editable": true, "meaningfulFrom": "bound" },
-    { "key": "notes", "label": "Notes", "editable": true }
+    { "key": "notes", "label": "Notes", "editable": true },
+    { "key": "minted_by", "label": "Minted by", "editable": false },
+    { "key": "bound_by", "label": "Bound by", "editable": false, "meaningfulFrom": "bound" },
+    { "key": "last_edited_at", "label": "Last edited at", "editable": false },
+    { "key": "last_edited_by", "label": "Last edited by", "editable": false }
   ]
 }

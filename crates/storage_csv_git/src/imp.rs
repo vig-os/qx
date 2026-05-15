@@ -420,7 +420,7 @@ fn status_order(s: PartStatus) -> u8 {
 // reviewable per ADR-018.
 
 // --- registry.csv ---
-// header: id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,signatures,chain_hash
+// header: id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,minted_by,bound_by,last_edited_at,last_edited_by,signatures,chain_hash
 
 #[derive(Debug, Serialize, Deserialize)]
 struct PartRow {
@@ -436,6 +436,14 @@ struct PartRow {
     part_number: String,
     location: String,
     notes: String,
+    #[serde(default)]
+    minted_by: String,
+    #[serde(default)]
+    bound_by: String,
+    #[serde(default)]
+    last_edited_at: String,
+    #[serde(default)]
+    last_edited_by: String,
     // ADR-023 forward-compat. Optional in the CSV header so the
     // existing on-disk `registry.csv` (which predates this ADR)
     // continues to deserialise without these columns.
@@ -486,6 +494,10 @@ impl PartRow {
             part_number: opt(self.part_number),
             location: opt(self.location),
             notes: opt(self.notes),
+            minted_by: opt(self.minted_by),
+            bound_by: opt(self.bound_by),
+            last_edited_at: opt(self.last_edited_at),
+            last_edited_by: opt(self.last_edited_by),
             signatures,
             chain_hash,
         })
@@ -508,6 +520,10 @@ impl PartRow {
             part_number: p.part_number.clone().unwrap_or_default(),
             location: p.location.clone().unwrap_or_default(),
             notes: p.notes.clone().unwrap_or_default(),
+            minted_by: p.minted_by.clone().unwrap_or_default(),
+            bound_by: p.bound_by.clone().unwrap_or_default(),
+            last_edited_at: p.last_edited_at.clone().unwrap_or_default(),
+            last_edited_by: p.last_edited_by.clone().unwrap_or_default(),
             signatures: if p.signatures.is_empty() {
                 String::new()
             } else {

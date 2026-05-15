@@ -21,6 +21,10 @@ export interface RegistryRow {
   part_number: string;
   location: string;
   notes: string;
+  minted_by: string;
+  bound_by: string;
+  last_edited_at: string;
+  last_edited_by: string;
 }
 
 // Field display metadata — shared by table view and bind form, so
