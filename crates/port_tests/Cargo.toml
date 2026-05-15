@@ -19,3 +19,12 @@ part-registry-identity = { path = "../identity" }
 part-registry-transport = { path = "../transport" }
 part-registry-signing = { path = "../signing" }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+# H1: collision + uniformity harness
+rand = "0.8"
+# H2: QR roundtrip + golden-hash harness
+part-registry-codec = { path = "../codec", features = ["decoder"] }
+sha2 = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png"] }
+hex = "0.4"
