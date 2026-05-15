@@ -1736,7 +1736,9 @@ dependencies = [
  "part-registry-signing",
  "part-registry-storage",
  "part-registry-transport",
+ "part-registry-validators",
  "rand 0.8.6",
+ "serde",
  "serde_json",
  "sha2",
 ]

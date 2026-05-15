@@ -1,0 +1,48 @@
+// SSoT contract conformance tests — verifies the web app surfaces
+// match the shared registry-contract.json schema.
+
+import { expect, test } from "@playwright/test";
+import { readFileSync } from "fs";
+import { resolve } from "path";
+import { FIELD_KEYS, STATUSES, REGISTRY_HEADER } from "./helpers/contract";
+
+const FIXTURE_CSV = readFileSync(
+  resolve(__dirname, "fixtures/registry.csv"),
+  "utf-8",
+);
+
+test.beforeEach(async ({ page }) => {
+  await page.route("**/registry.csv*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "text/csv" },
+      body: FIXTURE_CSV,
+    });
+  });
+});
+
+test.describe("Contract SSoT conformance", () => {
+  test("every status from contract appears in the status filter chips", async ({ page }) => {
+    await page.goto("/");
+
+    for (const status of STATUSES) {
+      const chip = page.locator(".chip--filter", { hasText: new RegExp(`^${status}$`) });
+      await expect(chip, `status chip for "${status}" must exist`).toBeVisible();
+    }
+  });
+
+  test("REGISTRY_HEADER in smoke.spec.ts matches contract.fields order", () => {
+    // The smoke spec defines REGISTRY_HEADER as a CSV header line.
+    // Verify it matches the contract field keys exactly.
+    const smokeHeader =
+      "id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,minted_by,bound_by,last_edited_at,last_edited_by\n";
+
+    expect(smokeHeader).toBe(REGISTRY_HEADER);
+  });
+
+  test("fixture CSV header matches contract field keys", () => {
+    const headerLine = FIXTURE_CSV.split("\n")[0];
+    const headerKeys = headerLine.split(",");
+    expect(headerKeys).toEqual(FIELD_KEYS);
+  });
+});

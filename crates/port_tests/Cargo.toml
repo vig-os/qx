@@ -21,6 +21,9 @@ part-registry-signing = { path = "../signing" }
 serde_json = { workspace = true }
 
 [dev-dependencies]
+# SSoT enforcement (ssot_contract.rs)
+serde = { workspace = true, features = ["derive"] }
+part-registry-validators = { path = "../validators" }
 # H1: collision + uniformity harness
 rand = "0.8"
 # H2: QR roundtrip + golden-hash harness
