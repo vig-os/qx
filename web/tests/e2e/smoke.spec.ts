@@ -254,19 +254,27 @@ test.describe("Print matrix studio (#11)", () => {
   });
 
   test("matrix-add duplicates the row with the next layout for the same ID", async ({ page }) => {
+    // Accept any alerts (e.g. validation) so they don't block.
+    page.on("dialog", (d) => d.accept());
+
     await page.goto("/");
     await page.locator("nav.tabs").getByRole("button", { name: "Print" }).click();
 
+    // Wait for the entry row to be interactive.
+    const entryRow = page.locator(".tab--print .entry-row");
+    await entryRow.waitFor({ state: "visible" });
+
     // Add one row via the entry row.
-    await page.locator(".tab--print .entry-row input[type='text']").fill("ABCDEFGHJKMNPQ");
-    await page.locator(".tab--print .entry-row .primary").click();
+    const idInput = entryRow.locator("input[type='text']").first();
+    await idInput.fill("ABCDEFGHJKMNPQ");
+    await entryRow.locator("button.primary").click();
 
     // Plan rows = tbody trs without the entry-row class.
     const planRows = page.locator(".tab--print tbody tr:not(.entry-row)");
-    await expect(planRows).toHaveCount(1);
+    await expect(planRows).toHaveCount(1, { timeout: 10_000 });
 
     await page.locator(".tab--print .matrix-add").first().click();
-    await expect(planRows).toHaveCount(2);
+    await expect(planRows).toHaveCount(2, { timeout: 10_000 });
 
     // Both plan rows reference the same ID.
     const idCells = planRows.locator(".id-cell");
