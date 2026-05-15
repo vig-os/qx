@@ -17,7 +17,7 @@ use image::{DynamicImage, ImageBuffer, Luma};
 use sha2::{Digest, Sha256};
 
 use part_registry_codec::qr::{encode, QrMatrix};
-use part_registry_codec::svg::{render_vert, Layout};
+use part_registry_codec::svg::Layout;
 use part_registry_codec::{decode_qr, render, TextFormat};
 
 /// Fixed corpus of 5 canonical IDs drawn from the ADR-012 alphabet.
