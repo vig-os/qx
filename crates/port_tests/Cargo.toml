@@ -9,6 +9,10 @@ publish.workspace = true
 [lib]
 path = "src/lib.rs"
 
+[[bin]]
+name = "coverage"
+path = "src/bin/coverage.rs"
+
 # ADR-027 §Consequences: this crate depends only on `domain` and the
 # trait-defining crates. Adapter crates depend on it as a
 # dev-dependency, never the other way around (would be a cycle).
@@ -19,6 +23,9 @@ part-registry-identity = { path = "../identity" }
 part-registry-transport = { path = "../transport" }
 part-registry-signing = { path = "../signing" }
 serde_json = { workspace = true }
+toml = "0.8"
+serde = { workspace = true }
+glob = "0.3"
 
 [dev-dependencies]
 # SSoT enforcement (ssot_contract.rs)
