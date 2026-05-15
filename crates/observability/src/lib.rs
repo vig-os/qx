@@ -228,13 +228,54 @@ thread_local! {
 /// Per ADR-022 §"audit_csv_layer is the bridge": the layer reads the
 /// active `Operator` from a thread-local. The identity port (ADR-020)
 /// sets it before any audit-emitting code runs.
+///
+/// **Prefer [`OperatorGuard`]** for scoped usage — it clears the slot
+/// automatically on drop, even if the guarded code panics.
 pub fn set_current_operator(op: Operator) {
     CURRENT_OPERATOR.with(|slot| *slot.borrow_mut() = Some(op));
 }
 
 /// Clear the active operator (test convenience + identity port teardown).
+///
+/// **Prefer [`OperatorGuard`]** for scoped usage — it clears the slot
+/// automatically on drop, even if the guarded code panics.
 pub fn clear_current_operator() {
     CURRENT_OPERATOR.with(|slot| *slot.borrow_mut() = None);
+}
+
+/// RAII guard that sets the thread-local [`Operator`] on construction
+/// and clears it on drop — including during stack unwinding (panics).
+///
+/// ```no_run
+/// # use part_registry_observability::OperatorGuard;
+/// # use part_registry_domain::{Operator, OperatorId, IdentitySource};
+/// let op = Operator {
+///     id: OperatorId("git:user".into()),
+///     display_name: "user".into(),
+///     source: IdentitySource::GitConfig,
+///     verified_at: None,
+///     claims: Default::default(),
+///     pubkey: None,
+/// };
+/// let _guard = OperatorGuard::new(op);
+/// // … business code — operator is active here …
+/// // guard dropped here (or on panic) → slot cleared
+/// ```
+pub struct OperatorGuard(());
+
+impl OperatorGuard {
+    /// Set the thread-local operator and return a guard that will clear
+    /// it when dropped.
+    pub fn new(op: Operator) -> Self {
+        set_current_operator(op);
+        Self(())
+    }
+}
+
+impl Drop for OperatorGuard {
+    fn drop(&mut self) {
+        clear_current_operator();
+    }
 }
 
 /// Snapshot of the active operator, if any.

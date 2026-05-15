@@ -56,8 +56,8 @@ use part_registry_domain::{
 use part_registry_identity::IdentityProvider;
 use part_registry_identity_git_config::GitConfigIdentity;
 use part_registry_observability::{
-    bind_audit_entry, emit_audit, init, mint_audit_entry, request_id_span, set_current_operator,
-    void_audit_entry, AuditSinkHandle, ObservabilityConfig,
+    bind_audit_entry, emit_audit, init, mint_audit_entry, request_id_span, void_audit_entry,
+    AuditSinkHandle, ObservabilityConfig, OperatorGuard,
 };
 use part_registry_storage::{PartFilter, Repository};
 use part_registry_storage_csv_git::{CsvGitConfig, CsvGitRepository};
@@ -860,7 +860,7 @@ pub fn run_mint(args: &MintArgs, wiring: &Wiring) -> Result<MintOutcome, CliErro
     }
 
     let operator = wiring.identity.current()?;
-    set_current_operator(operator.clone());
+    let _op_guard = OperatorGuard::new(operator.clone());
 
     let now = OffsetDateTime::now_utc();
     let batch = args
@@ -1057,9 +1057,7 @@ pub fn run_label(args: &LabelArgs, wiring: &Wiring) -> Result<LabelOutcome, CliE
     }
 
     let identity = wiring.identity.current().ok();
-    if let Some(op) = identity.as_ref() {
-        set_current_operator(op.clone());
-    }
+    let _op_guard = identity.as_ref().map(|op| OperatorGuard::new(op.clone()));
 
     // Selection.
     let all_parts = wiring.repo.list_parts(&PartFilter::default())?;
@@ -1305,7 +1303,7 @@ pub fn run_bind(args: &BindArgs, wiring: &Wiring) -> Result<BindOutcome, CliErro
     }
 
     let operator = wiring.identity.current()?;
-    set_current_operator(operator.clone());
+    let _op_guard = OperatorGuard::new(operator.clone());
 
     let all_parts = wiring.repo.list_parts(&PartFilter::default())?;
     let target = resolve_part(&all_parts, &args.id)?;

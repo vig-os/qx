@@ -612,6 +612,30 @@ fn thread_local_operator_set_and_clear() {
     assert!(current_operator().is_none());
 }
 
+#[test]
+fn operator_guard_clears_on_drop() {
+    {
+        let _guard = OperatorGuard::new(sample_operator());
+        assert!(current_operator().is_some());
+    }
+    assert!(current_operator().is_none());
+}
+
+#[test]
+fn operator_guard_clears_on_panic() {
+    // Catch a panic inside a guarded scope and verify the slot is clean.
+    let result = std::panic::catch_unwind(|| {
+        let _guard = OperatorGuard::new(sample_operator());
+        assert!(current_operator().is_some());
+        panic!("intentional panic inside guard scope");
+    });
+    assert!(result.is_err());
+    assert!(
+        current_operator().is_none(),
+        "operator slot must be cleared even after a panic"
+    );
+}
+
 // -----------------------------------------------------------------
 // 9. Integration with CsvGitRepository via tempfile — proves the
 //    full audit-CSV path writes a real CSV file on disk that
