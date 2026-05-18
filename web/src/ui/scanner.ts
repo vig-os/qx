@@ -144,6 +144,11 @@ async function ensureDecoder(): Promise<DecoderHandle> {
     );
     throw new ScanUnsupportedError("getUserMedia unavailable");
   }
+  return ensureDecoderOnly();
+}
+
+/** Load the decoder without requiring camera access (for image upload). */
+async function ensureDecoderOnly(): Promise<DecoderHandle> {
   try {
     return await loadDecoder();
   } catch (e) {
@@ -684,6 +689,445 @@ function makeOverlay(badgeText: string, multi: boolean): OverlayHandle {
     renderSnapshotMatches,
     close: () => overlay.remove(),
   };
+}
+
+// ---------- Image upload batch scan (#99) ----------
+//
+// Opens a modal with a drag-and-drop / file-input zone. The operator
+// uploads a photo, we run detect() on it, render polygons over the
+// decoded QR codes (green = decoded, red = failed), and let the
+// operator select which IDs to commit. Returns canonical IDs.
+
+export interface ImageScanOptions {
+  resolveStatus?: (canonical: string) => ScanStatus;
+}
+
+export async function openImageScan(
+  opts: ImageScanOptions = {},
+): Promise<string[]> {
+  const decoder = await ensureDecoderOnly();
+  return openImageScanWithDecoder(decoder, opts);
+}
+
+async function openImageScanWithDecoder(
+  decoder: DecoderHandle,
+  opts: ImageScanOptions,
+): Promise<string[]> {
+  return new Promise<string[]>((resolve, reject) => {
+    let resolved = false;
+
+    // Selection state.
+    const selected = new Map<string, DetectorMatch>();
+
+    // Build the overlay.
+    const overlay = el(
+      "div",
+      { class: "scan-overlay scan-overlay--image" },
+    );
+
+    // Drop zone (shown initially).
+    const dropZone = el("div", { class: "image-scan__dropzone" });
+    const dropLabel = el("p", { class: "image-scan__drop-label" }, "Drop a photo here");
+    const dropHint = el("p", { class: "muted small" }, "or click below to choose a file");
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = "image/*";
+    fileInput.style.display = "none";
+    const chooseBtn = button({ class: "primary" }, icon("upload"), " Choose image");
+    chooseBtn.addEventListener("click", () => fileInput.click());
+    dropZone.append(dropLabel, dropHint, chooseBtn, fileInput);
+
+    // Image display area (hidden until an image is loaded).
+    const imageWrap = el("div", { class: "image-scan__preview" });
+    const stillWrap = el("div", { class: "scan-overlay__still" });
+    const noCodesHint = el(
+      "div",
+      { class: "scan-overlay__hint" },
+      "No QR codes detected in this image.",
+    );
+    noCodesHint.style.display = "none";
+    imageWrap.append(stillWrap, noCodesHint);
+    imageWrap.style.display = "none";
+
+    // Chip tray.
+    const chipTray = el("div", { class: "scan-overlay__chips" });
+
+    // Action bar.
+    const actions = el("div", { class: "scan-overlay__actions" });
+    const cancelBtn = button({ class: "scan-overlay__cancel" }, icon("x"), " Cancel");
+    const doneBtn = button({ class: "scan-overlay__done primary" }, icon("plus"), " Add all to queue");
+    doneBtn.disabled = true;
+    const retakeBtn = button({}, icon("upload"), " Choose another");
+    retakeBtn.style.display = "none";
+    // Manual ID entry.
+    const manualBtn = button({}, icon("edit"), " Add unrecognized");
+    manualBtn.style.display = "none";
+    actions.append(doneBtn, manualBtn, retakeBtn, cancelBtn);
+
+    // Badge.
+    const badge = el("div", { class: "scan-overlay__badge" }, decoder.badge);
+
+    overlay.append(dropZone, imageWrap, el("div", { class: "scan-overlay__chips-slot" }, chipTray), badge, actions);
+    document.body.append(overlay);
+
+    const finish = (err: Error | null, value?: string[]) => {
+      if (resolved) return;
+      resolved = true;
+      overlay.remove();
+      if (err) reject(err);
+      else resolve(value ?? []);
+    };
+
+    cancelBtn.addEventListener("click", () => finish(new Error("scan cancelled")));
+    doneBtn.addEventListener("click", () => finish(null, [...selected.keys()]));
+
+    // Track polygon groups for selection toggling.
+    let polygonGroups: Array<{ canonical: string; group: SVGGElement }> = [];
+
+    const updatePolygonSelection = () => {
+      for (const pg of polygonGroups) {
+        pg.group.classList.toggle("scan-hit--selected", selected.has(pg.canonical));
+      }
+    };
+
+    const renderChips = () => {
+      chipTray.innerHTML = "";
+      for (const [id] of selected) {
+        const status: ScanStatus = opts.resolveStatus
+          ? opts.resolveStatus(id)
+          : "unbound";
+        const chip = el("span", { class: `scan-chip scan-chip--${status}` });
+        chip.append(document.createTextNode(formatIdDashed(id)));
+        const removeBtn = button(
+          { class: "scan-chip__remove", title: "Remove" },
+          icon("x", { size: 12 }),
+        );
+        removeBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          selected.delete(id);
+          renderChips();
+          updatePolygonSelection();
+        });
+        chip.append(removeBtn);
+        chipTray.append(chip);
+      }
+      doneBtn.disabled = selected.size === 0;
+      doneBtn.textContent = "";
+      doneBtn.append(
+        icon("plus"),
+        ` Add ${selected.size || "all"} to queue`,
+      );
+    };
+
+    // Manual entry button.
+    manualBtn.addEventListener("click", () => {
+      const raw = prompt("Enter an ID manually:");
+      if (!raw) return;
+      const canonical = canonicalizeId(raw);
+      if (!canonical) return;
+      selected.set(canonical, { rawValue: raw, format: "manual", cornerPoints: [] });
+      renderChips();
+    });
+
+    // Process an image file.
+    const processFile = async (file: File) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.src = url;
+      await new Promise<void>((res, rej) => {
+        img.onload = () => res();
+        img.onerror = () => rej(new Error("Failed to load image"));
+      });
+
+      // Draw to canvas (scale down for decoder speed).
+      const longEdge = Math.max(img.naturalWidth, img.naturalHeight);
+      const scale = longEdge > SNAPSHOT_MAX_PX ? SNAPSHOT_MAX_PX / longEdge : 1;
+      const cw = Math.round(img.naturalWidth * scale);
+      const ch = Math.round(img.naturalHeight * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = cw;
+      canvas.height = ch;
+      const cx = canvas.getContext("2d");
+      if (!cx) return;
+      cx.drawImage(img, 0, 0, cw, ch);
+      URL.revokeObjectURL(url);
+
+      // Switch from drop zone to preview.
+      dropZone.style.display = "none";
+      imageWrap.style.display = "";
+      retakeBtn.style.display = "";
+      manualBtn.style.display = "";
+
+      // Show the still while decoding.
+      stillWrap.innerHTML = "";
+      canvas.classList.add("scan-overlay__still-canvas");
+      stillWrap.append(canvas);
+
+      let matches: DetectorMatch[] = [];
+      try {
+        matches = await decoder.detect(canvas);
+      } catch {
+        matches = [];
+      }
+
+      if (matches.length === 0) {
+        noCodesHint.style.display = "";
+      } else {
+        noCodesHint.style.display = "none";
+      }
+
+      // Auto-select all decoded IDs.
+      for (const m of matches) {
+        if (m.rawValue) {
+          const canonical = canonicalizeId(m.rawValue);
+          selected.set(canonical, m);
+        }
+      }
+      renderChips();
+
+      // Render SVG polygons.
+      polygonGroups = [];
+      if (matches.length > 0) {
+        const svg = document.createElementNS(SVG_NS, "svg");
+        svg.setAttribute("class", "scan-overlay__hits");
+        svg.setAttribute("viewBox", `0 0 ${canvas.width} ${canvas.height}`);
+        svg.setAttribute("preserveAspectRatio", "none");
+
+        for (const m of matches) {
+          const canonical = m.rawValue ? canonicalizeId(m.rawValue) : "";
+          const decoded = !!m.rawValue;
+          const status: ScanStatus = decoded
+            ? (opts.resolveStatus ? opts.resolveStatus(canonical) : "unbound")
+            : "unknown";
+          const points = m.cornerPoints
+            .map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+            .join(" ");
+
+          const group = document.createElementNS(SVG_NS, "g");
+          group.setAttribute("class", `scan-hit scan-hit--${status}`);
+          group.style.cursor = "pointer";
+
+          if (decoded) {
+            group.addEventListener("click", () => {
+              if (selected.has(canonical)) {
+                selected.delete(canonical);
+              } else {
+                selected.set(canonical, m);
+              }
+              renderChips();
+              updatePolygonSelection();
+            });
+          }
+
+          if (points) {
+            const poly = document.createElementNS(SVG_NS, "polygon");
+            poly.setAttribute("points", points);
+            poly.setAttribute("class", "scan-hit__poly");
+            group.append(poly);
+          }
+
+          const caption = decoded
+            ? formatIdDashed(canonical) || m.rawValue
+            : "???";
+          if (m.cornerPoints.length > 0) {
+            const tx =
+              m.cornerPoints.reduce((s, p) => s + p.x, 0) / m.cornerPoints.length;
+            const tyTop = Math.min(...m.cornerPoints.map((p) => p.y));
+            const ty = tyTop > canvas.height * 0.1 ? tyTop - 10 : tyTop + 24;
+            const text = document.createElementNS(SVG_NS, "text");
+            text.setAttribute("x", tx.toFixed(1));
+            text.setAttribute("y", ty.toFixed(1));
+            text.setAttribute("class", "scan-hit__caption");
+            text.setAttribute("text-anchor", "middle");
+            text.textContent = caption;
+            group.append(text);
+          }
+
+          svg.append(group);
+          if (decoded) {
+            polygonGroups.push({ canonical, group });
+          }
+        }
+        stillWrap.append(svg);
+      }
+      updatePolygonSelection();
+    };
+
+    // File input handler.
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files?.[0];
+      if (file) void processFile(file);
+    });
+
+    // Retake: reset to drop zone.
+    retakeBtn.addEventListener("click", () => {
+      imageWrap.style.display = "none";
+      dropZone.style.display = "";
+      retakeBtn.style.display = "none";
+      manualBtn.style.display = "none";
+      stillWrap.innerHTML = "";
+      noCodesHint.style.display = "none";
+      selected.clear();
+      polygonGroups = [];
+      renderChips();
+      fileInput.value = "";
+    });
+
+    // Drag and drop.
+    dropZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropZone.classList.add("image-scan__dropzone--active");
+    });
+    dropZone.addEventListener("dragleave", () => {
+      dropZone.classList.remove("image-scan__dropzone--active");
+    });
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("image-scan__dropzone--active");
+      const file = e.dataTransfer?.files[0];
+      if (file && file.type.startsWith("image/")) {
+        void processFile(file);
+      }
+    });
+  });
+}
+
+// ---------- Continuous rolling scanner (#100) ----------
+//
+// Like the existing scanner but accumulates all detected IDs instead
+// of resolving on first hit. Shows a running chip tray and a count
+// badge. "Done" commits the accumulated set.
+
+export interface RollingScanOptions {
+  resolveStatus?: (canonical: string) => ScanStatus;
+}
+
+export async function openScannerRolling(
+  opts: RollingScanOptions = {},
+): Promise<string[]> {
+  const decoder = await ensureDecoder();
+  return openScannerRollingWithDecoder(decoder, opts);
+}
+
+/** Duration (ms) for the "newly detected" flash highlight. */
+const ROLLING_FLASH_MS = 800;
+
+async function openScannerRollingWithDecoder(
+  decoder: DecoderHandle,
+  opts: RollingScanOptions,
+): Promise<string[]> {
+  const ui = makeOverlay(decoder.badge, false);
+  // Repurpose the overlay for rolling mode.
+  (ui.video.parentElement as HTMLElement)?.classList.add("scan-overlay--rolling");
+
+  // Accumulated IDs.
+  const accumulated = new Map<string, DetectorMatch>();
+  // Recently-flashed IDs (for blue highlight).
+  const recentFlash = new Set<string>();
+
+  // Chip tray.
+  const chipTray = el("div", { class: "scan-overlay__chips" });
+  ui.chipsSlot.append(chipTray);
+
+  // Count badge.
+  const countBadge = el("div", { class: "rolling-scan__count" }, "0 scanned");
+  ui.chipsSlot.append(countBadge);
+
+  // Done button.
+  const doneBtn = button({ class: "scan-overlay__done primary" }, icon("check"), " Done (0)");
+  doneBtn.disabled = true;
+  ui.actionsSlot.prepend(doneBtn);
+
+  const renderChips = () => {
+    chipTray.innerHTML = "";
+    for (const [id] of accumulated) {
+      const status: ScanStatus = opts.resolveStatus
+        ? opts.resolveStatus(id)
+        : "unbound";
+      const isRecent = recentFlash.has(id);
+      const chip = el("span", {
+        class: `scan-chip scan-chip--${isRecent ? "queued" : status}${isRecent ? " scan-chip--flash" : ""}`,
+      });
+      chip.append(document.createTextNode(formatIdDashed(id)));
+      const removeBtn = button(
+        { class: "scan-chip__remove", title: "Remove" },
+        icon("x", { size: 12 }),
+      );
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        accumulated.delete(id);
+        renderChips();
+      });
+      chip.append(removeBtn);
+      chipTray.append(chip);
+    }
+    countBadge.textContent = `${accumulated.size} scanned`;
+    doneBtn.disabled = accumulated.size === 0;
+    doneBtn.textContent = "";
+    doneBtn.append(icon("check"), ` Done (${accumulated.size})`);
+  };
+
+  let stream: MediaStream | undefined;
+  return new Promise<string[]>((resolve, reject) => {
+    let resolved = false;
+    let raf = 0;
+
+    const stopStream = () => {
+      stream?.getTracks().forEach((t) => t.stop());
+      stream = undefined;
+    };
+    const finish = (err: Error | null, value?: string[]) => {
+      if (resolved) return;
+      resolved = true;
+      cancelAnimationFrame(raf);
+      stopStream();
+      ui.close();
+      if (err) reject(err);
+      else resolve(value ?? []);
+    };
+
+    ui.cancel.addEventListener("click", () => finish(new Error("scan cancelled")));
+    doneBtn.addEventListener("click", () => finish(null, [...accumulated.keys()]));
+
+    // Continuous polling tick — accumulate instead of resolve.
+    const tick = async () => {
+      if (resolved) return;
+      try {
+        const matches = await decoder.detect(ui.video);
+        let changed = false;
+        for (const m of matches) {
+          if (!m.rawValue) continue;
+          const canonical = canonicalizeId(m.rawValue);
+          if (accumulated.has(canonical)) continue;
+          // New detection!
+          accumulated.set(canonical, m);
+          changed = true;
+          // Flash highlight.
+          recentFlash.add(canonical);
+          setTimeout(() => {
+            recentFlash.delete(canonical);
+            if (!resolved) renderChips();
+          }, ROLLING_FLASH_MS);
+        }
+        if (changed) renderChips();
+      } catch {
+        // Decoder throws on partial frames; keep polling.
+      }
+      raf = requestAnimationFrame(tick);
+    };
+
+    navigator.mediaDevices
+      .getUserMedia({ video: { facingMode: "environment" } })
+      .then((s) => {
+        stream = s;
+        ui.video.srcObject = s;
+        ui.video.onloadedmetadata = () => {
+          void ui.video.play();
+          raf = requestAnimationFrame(tick);
+        };
+      })
+      .catch((e) => finish(e as Error));
+  });
 }
 
 function showUnsupported(headline: string, hint: string): void {

@@ -28,7 +28,12 @@ import {
 import type { AppContext, Tab } from "../core/types";
 import { el, button, input, formRow } from "../ui/dom";
 import { icon } from "../ui/icons";
-import { openScannerMulti, type ScanStatus } from "../ui/scanner";
+import {
+  openScannerMulti,
+  openImageScan,
+  openScannerRolling,
+  type ScanStatus,
+} from "../ui/scanner";
 import type { Action, AuthDecision } from "../wasm/loader";
 import {
   submitBatch,
@@ -243,8 +248,56 @@ function buildUI(ctx: AppContext): HTMLElement {
     renderTable();
   });
 
+  // ---- Batch scan buttons (image upload #99, rolling scan #100) ----
+
+  const makeResolveStatus = (): ((canonical: string) => ScanStatus) => {
+    const queuedIds = new Set(loadQueue().map((q) => q.id));
+    return (canonical): ScanStatus => {
+      if (queuedIds.has(canonical)) return "queued";
+      const row = ctx.registry.findById(canonical);
+      if (!row) return "unknown";
+      if (row.status === "unbound") return "unbound";
+      return "bound";
+    };
+  };
+
+  const addScannedIds = (ids: string[]) => {
+    if (ids.length === 0) return;
+    const queuedIds = new Set(loadQueue().map((q) => q.id));
+    for (const id of ids) {
+      if (queuedIds.has(id)) continue;
+      appendBind({ id, ...emptyBindFields() });
+    }
+    renderTable();
+  };
+
+  const uploadBtn = button({}, icon("upload"), " Upload image");
+  uploadBtn.addEventListener("click", async () => {
+    try {
+      const ids = await openImageScan({
+        resolveStatus: makeResolveStatus(),
+      });
+      addScannedIds(ids);
+    } catch {
+      /* user cancelled */
+    }
+  });
+
+  const rollingBtn = button({}, icon("list-checks"), " Rolling scan");
+  rollingBtn.addEventListener("click", async () => {
+    try {
+      const ids = await openScannerRolling({
+        resolveStatus: makeResolveStatus(),
+      });
+      addScannedIds(ids);
+    } catch {
+      /* user cancelled */
+    }
+  });
+
   root.append(
     formRow([submitBtn, clearBtn, summaryEl]),
+    formRow([uploadBtn, rollingBtn]),
     preflightContainer,
     tableContainer,
   );
