@@ -189,7 +189,7 @@ function buildUI(ctx: AppContext): HTMLElement {
     icon("reprint"),
     " Reprint selected",
   );
-  const exportCsvBtn = button({}, icon("download"), " Export CSV");
+  const exportCsvBtn = button({ class: "outline" }, icon("download"), " Export CSV");
 
   // #93: structured filter dropdowns
   const filterBar = el("div", { class: "lookup__filter-bar" });
@@ -217,7 +217,7 @@ function buildUI(ctx: AppContext): HTMLElement {
     filterSelects.set(fk, sel);
     filterBar.append(sel);
   }
-  const clearFiltersBtn = button({ class: "small" }, "Clear filters");
+  const clearFiltersBtn = button({ class: "outline small" }, "Clear filters");
   clearFiltersBtn.addEventListener("click", () => {
     for (const fk of FILTER_KEYS) {
       columnFilters[fk] = "";
@@ -378,13 +378,27 @@ function buildUI(ctx: AppContext): HTMLElement {
     updateReprintBtn();
 
     if (rows.length === 0) {
-      const td = el("td", { colspan: String(COLUMNS.length + 2), class: "muted" });
-      td.append(
-        all.length === 0
-          ? "Registry is empty. Mint some IDs via the CLI first."
-          : "No matches.",
-      );
-      tbody.append(el("tr", {}, td));
+      if (all.length === 0) {
+        // Full empty state — no parts at all
+        const emptyWrap = el("tr");
+        const emptyTd = el("td", { colspan: String(COLUMNS.length + 2) });
+        const emptyState = el("div", { class: "empty-state" });
+        emptyState.append(
+          el("div", { class: "empty-state__icon" }, "📦"),
+          el("h3", { class: "empty-state__title" }, "No parts registered yet"),
+          el("p", { class: "empty-state__hint muted" }, "Generate your first IDs in the Mint tab, then bind them here."),
+        );
+        const mintBtn = button({ class: "primary" }, "Go to Mint");
+        mintBtn.addEventListener("click", () => ctx.showTab("mint"));
+        emptyState.append(mintBtn);
+        emptyTd.append(emptyState);
+        emptyWrap.append(emptyTd);
+        tbody.append(emptyWrap);
+      } else {
+        const td = el("td", { colspan: String(COLUMNS.length + 2), class: "muted" });
+        td.append("No matches.");
+        tbody.append(el("tr", {}, td));
+      }
       return;
     }
 

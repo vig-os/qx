@@ -63,18 +63,25 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
 .shell__status { padding: 8px 16px; border-top: 1px solid var(--border); font-size: 12px; }
 .shell__status.error { color: var(--error); }
 
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 16px; padding: 0; list-style: none; }
+.tabs ul { display: flex; gap: 0; padding: 0; margin: 0; list-style: none; }
+.tabs li { margin-bottom: -2px; }
 .tab-btn {
-  background: transparent;
+  background: none;
   border: none;
-  border-bottom: 2px solid transparent;
-  padding: 8px 16px;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  padding: 10px 20px;
   cursor: pointer;
   font: inherit;
+  font-size: 15px;
   color: var(--muted);
+  box-shadow: none;
+  outline: none;
+  transition: color 0.15s, border-bottom-color 0.15s;
 }
-.tab-btn:hover { color: var(--fg); }
-.tab-btn.active { color: var(--fg); border-bottom-color: var(--accent); }
+.tab-btn:hover:not(.active) { color: var(--fg); background: none; filter: none; }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; background: none; }
 
 .toolbar-btn { background: transparent; border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 10px; cursor: pointer; font: inherit; color: var(--fg); display: inline-flex; align-items: center; gap: 6px; }
 .toolbar-btn:hover { background: var(--bg-elev); }
@@ -87,15 +94,32 @@ button {
   display: inline-flex; align-items: center; gap: 6px;
 }
 button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+button.secondary, button.outline {
+  background: transparent; color: var(--fg); border: 1px solid var(--border);
+}
+button.secondary:hover, button.outline:hover {
+  background: var(--bg-elev); border-color: var(--muted);
+}
+button.destructive {
+  background: transparent; color: var(--error); border: 1px solid var(--error);
+}
+button.destructive:hover {
+  background: var(--error); color: #fff;
+}
+button.small { padding: 3px 10px; font-size: 12px; }
 button:hover { filter: brightness(1.05); }
-button.icon-only { padding: 6px; }
+button:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+button.icon-only { padding: 6px; background: transparent; border-color: transparent; }
+button.icon-only:hover { border-color: var(--border); }
 button .icon { width: 16px; height: 16px; }
 
 input[type=text], input[type=number], select {
   font: inherit; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--bg-elev); color: var(--fg);
+  width: auto; margin-bottom: 0;
 }
 input[type=text] { min-width: 220px; }
+input[type=search] { width: auto; margin-bottom: 0; }
 
 table.data {
   width: 100%; border-collapse: collapse; font-size: 13px;
@@ -498,7 +522,10 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
   background: var(--bg-elev);
   color: var(--fg);
   font-size: 13px;
-  min-width: 120px;
+  min-width: 0;
+  width: auto;
+  flex: 0 0 auto;
+  margin-bottom: 0;
 }
 
 /* Issue #93: sortable column headers */
@@ -628,4 +655,22 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
   min-width: 70px;
   text-align: right;
   white-space: nowrap;
+}
+
+/* Empty state */
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
+}
+.empty-state__icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+.empty-state__title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+}
+.empty-state__hint {
+  margin: 0 0 16px;
 }

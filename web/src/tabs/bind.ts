@@ -89,7 +89,7 @@ function buildUI(ctx: AppContext): HTMLElement {
   );
 
   const submitBtn = button({ class: "primary" }, icon("plus"), " Submit batch");
-  const clearBtn = button({}, icon("trash"), " Clear queue");
+  const clearBtn = button({ class: "destructive" }, icon("trash"), " Clear queue");
   const summaryEl = el("span", { class: "queue-summary muted small" });
 
   // ADR-016 §"FE preflight" + issue #23: every queue mutation re-runs
@@ -271,7 +271,7 @@ function buildUI(ctx: AppContext): HTMLElement {
     renderTable();
   };
 
-  const uploadBtn = button({}, icon("upload"), " Upload image");
+  const uploadBtn = button({ class: "secondary" }, icon("upload"), " Upload image");
   uploadBtn.addEventListener("click", async () => {
     try {
       const ids = await openImageScan({
@@ -283,7 +283,7 @@ function buildUI(ctx: AppContext): HTMLElement {
     }
   });
 
-  const rollingBtn = button({}, icon("list-checks"), " Rolling scan");
+  const rollingBtn = button({ class: "secondary" }, icon("list-checks"), " Rolling scan");
   rollingBtn.addEventListener("click", async () => {
     try {
       const ids = await openScannerRolling({

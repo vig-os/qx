@@ -344,7 +344,7 @@ function buildUI(ctx: AppContext): HTMLElement {
   renderModeOpts();
 
   // Bulk-add from a registry batch.
-  const bulkBtn = button({}, icon("plus"), " Bulk add from batch…");
+  const bulkBtn = button({ class: "secondary" }, icon("plus"), " Bulk add from batch…");
   bulkBtn.addEventListener("click", () => {
     const wrap = el("div", { class: "bulk-add" });
     const batchSel = select([
@@ -469,7 +469,7 @@ function buildUI(ctx: AppContext): HTMLElement {
     root.insertBefore(wrap, tableWrap);
   });
 
-  const clearBtn = button({}, icon("trash"), " Clear plan");
+  const clearBtn = button({ class: "destructive" }, icon("trash"), " Clear plan");
   clearBtn.addEventListener("click", () => {
     if (loadPlan().length === 0) return;
     if (!confirm("Clear the print plan?")) return;
@@ -477,7 +477,7 @@ function buildUI(ctx: AppContext): HTMLElement {
     renderPlan();
   });
 
-  const previewBtn = button({}, icon("search"), " Preview");
+  const previewBtn = button({ class: "outline" }, icon("search"), " Preview");
   const printBtn = button({ class: "primary" }, icon("printer"), " Print");
 
   previewBtn.addEventListener("click", refreshPreview);

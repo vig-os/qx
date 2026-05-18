@@ -24,6 +24,9 @@ import {
   Copy,
   RotateCw,
   Download,
+  Upload,
+  ListChecks,
+  Check,
   type IconNode,
 } from "lucide";
 
@@ -42,6 +45,9 @@ const ICONS: Record<string, IconNode> = {
   copy: Copy,
   reprint: RotateCw,
   download: Download,
+  upload: Upload,
+  "list-checks": ListChecks,
+  check: Check,
 };
 
 export type IconName = keyof typeof ICONS;
