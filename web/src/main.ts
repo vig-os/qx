@@ -1,5 +1,6 @@
 // Bootstrap — wire registry, tabs, plugins. Everything else is plug-in.
 
+import "@picocss/pico/css/pico.min.css";
 import "./style.css";
 import { registerSW } from "virtual:pwa-register";
 
@@ -67,18 +68,22 @@ async function main(): Promise<void> {
   }
 
   const tabBar = el("nav", { class: "tabs" });
+  const tabList = el("ul", {});
+  tabBar.append(tabList);
   const panel = el("section", { class: "tab-panel" });
   layout.main.append(tabBar, panel);
 
-  const tabButtons = new Map<string, HTMLButtonElement>();
+  const tabEntries = new Map<string, { li: HTMLElement; btn: HTMLButtonElement }>();
   let activeTabId = route.kind === "home" ? TABS[0]?.id : "lookup";
 
   const showTab = async (id: string) => {
     const tab = TABS.find((t) => t.id === id);
     if (!tab) return;
     activeTabId = id;
-    for (const [k, btn] of tabButtons) {
-      btn.classList.toggle("active", k === id);
+    for (const [k, entry] of tabEntries) {
+      const isActive = k === id;
+      entry.li.classList.toggle("active", isActive);
+      entry.btn.classList.toggle("active", isActive);
     }
     await tab.mount(panel, ctx);
   };
@@ -87,8 +92,9 @@ async function main(): Promise<void> {
   for (const tab of TABS) {
     const btn = button({ class: "tab-btn" }, tab.label);
     btn.addEventListener("click", () => void showTab(tab.id));
-    tabButtons.set(tab.id, btn);
-    tabBar.append(btn);
+    const li = el("li", { class: "tab-item" }, btn);
+    tabEntries.set(tab.id, { li, btn });
+    tabList.append(li);
   }
 
   window.addEventListener("popstate", () => {
@@ -113,7 +119,7 @@ function syncCanonicalPath(route: AppPath): void {
 }
 
 function renderLayout() {
-  const shell = el("div", { class: "shell" });
+  const shell = el("main", { class: "container shell" });
   const header = el("header", { class: "shell__header" });
   const title = el("h1", { class: "shell__title" }, "part-registry");
   const repoLink = el("a", {
@@ -125,7 +131,7 @@ function renderLayout() {
   const toolbar = el("div", { class: "shell__toolbar" });
   header.append(title, repoLink, toolbar);
 
-  const main = el("main", { class: "shell__main" });
+  const main = el("section", { class: "shell__main" });
   const statusBar = el("div", { class: "shell__status muted" });
 
   shell.append(header, main, statusBar);

@@ -5,5 +5,6 @@ import type { Tab } from "../core/types";
 import { lookupTab } from "./lookup";
 import { printTab } from "./print";
 import { bindTab } from "./bind";
+import { mintTab } from "./mint";
 
-export const TABS: Tab[] = [lookupTab, printTab, bindTab];
+export const TABS: Tab[] = [lookupTab, printTab, bindTab, mintTab];
