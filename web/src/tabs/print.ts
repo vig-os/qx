@@ -42,7 +42,7 @@ import {
 } from "../ui/dom";
 import { icon } from "../ui/icons";
 import { openScanner } from "../ui/scanner";
-import { isWasmReady, renderLabelSync } from "../wasm/loader";
+import { isWasmReady } from "../wasm/loader";
 
 export interface JobItem {
   id: string;

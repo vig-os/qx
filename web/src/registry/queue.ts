@@ -4,7 +4,7 @@
 // than building a separate submit pipeline. Both produce CSV-row
 // changes; the queue + submit doesn't care about origin.
 
-import type { RegistryRow } from "./schema";
+import type { RegistryRow, Status } from "./schema";
 import { events, EVENT_QUEUE_CHANGED } from "../core/events";
 
 const QUEUE_KEY = "part-registry.bind-queue";
@@ -120,6 +120,22 @@ export function removeAt(index: number): void {
 
 export function clearQueue(): void {
   saveQueue([]);
+}
+
+export function appendVoid(id: string, reason: string): void {
+  const ts = new Date().toISOString();
+  const q = loadQueue();
+  q.push({
+    kind: "edit",
+    id,
+    queued_at: ts,
+    before: { status: undefined as unknown as Status, notes: "" },
+    changes: {
+      status: "void" as Status,
+      notes: `[voided ${ts}] ${reason}`,
+    },
+  });
+  saveQueue(q);
 }
 
 export function summarizeQueue(q: QueueItem[]): {

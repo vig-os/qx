@@ -1,13 +1,18 @@
 // Lookup tab — searchable data-grid over the registry (issue #10).
 //
-// Per ADR-013 + ADR-014 §Consequences: the Lookup tab is the operator's
+// Per ADR-013 + ADR-014 Consequences: the Lookup tab is the operator's
 // primary view. This implementation:
 //
 //   - top toolbar with fuzzy search + status filter + scan button
+//   - structured column filters (vendor, location, type, batch) #93
+//   - sortable column headers #93
+//   - filter deep-link via URL params #93
+//   - table / dashboard view toggle #98
+//   - void workflow from detail card #96
 //   - table view (sticky header) with every part, status-coloured
 //   - row click expands a detail card inline (with Reprint action +
 //     a deep-link via `ctx.showPart`)
-//   - works for the 0-row case (empty registry → friendly empty state)
+//   - works for the 0-row case (empty registry -> friendly empty state)
 //
 // Inline edit ships in PR-D (#6) via the bind queue.
 
@@ -15,7 +20,7 @@ import Fuse from "fuse.js";
 
 import { ID_LENGTH, ID_REGEX, DATA_REPO_SLUG, DEFAULT_BRANCH, DEFAULT_SIZE_MM } from "../config";
 import { FIELDS, STATUSES, REGISTRY_FIELD_KEYS, type RegistryRow, type Status } from "../registry/schema";
-import { appendEdit } from "../registry/queue";
+import { appendEdit, appendVoid } from "../registry/queue";
 import type { AppContext, Tab } from "../core/types";
 import { normalizeCanonicalId } from "../routing/route";
 import {
@@ -42,12 +47,68 @@ const COLUMNS: { key: keyof RegistryRow; label: string }[] = [
   { key: "location", label: "Location" },
 ];
 
+// #93: sortable columns
+type SortDir = "asc" | "desc" | "none";
+interface SortState {
+  key: keyof RegistryRow;
+  dir: SortDir;
+}
+
+// #93: structured filter keys
+const FILTER_KEYS = ["vendor", "location", "type", "batch"] as const;
+type FilterKey = (typeof FILTER_KEYS)[number];
+
 function fmtId(id: string): string {
   // 4-4-4 grouping for display; underlying value stays canonical.
   if (id.length < 12) return id;
   return `${id.slice(0, 4)}-${id.slice(4, 8)}-${id.slice(8, 12)}${
     id.length > 12 ? "-" + id.slice(12) : ""
   }`;
+}
+
+// #93: read filter state from URL search params
+function readFilterParams(): {
+  q: string;
+  status: StatusFilter;
+  filters: Record<FilterKey, string>;
+} {
+  const params = new URLSearchParams(window.location.search);
+  const filters = {} as Record<FilterKey, string>;
+  for (const k of FILTER_KEYS) {
+    filters[k] = params.get(k) ?? "";
+  }
+  return {
+    q: params.get("q") ?? "",
+    status: (params.get("status") as StatusFilter) || "all",
+    filters,
+  };
+}
+
+// #93: write filter state to URL without navigation
+function writeFilterParams(
+  q: string,
+  status: StatusFilter,
+  filters: Record<FilterKey, string>,
+): void {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (status !== "all") params.set("status", status);
+  for (const k of FILTER_KEYS) {
+    if (filters[k]) params.set(k, filters[k]);
+  }
+  const qs = params.toString();
+  const url = window.location.pathname + (qs ? `?${qs}` : "");
+  history.replaceState(null, "", url);
+}
+
+// #93: unique non-empty values for a field across the registry
+function uniqueValues(rows: RegistryRow[], key: keyof RegistryRow): string[] {
+  const set = new Set<string>();
+  for (const r of rows) {
+    const v = (r as unknown as Record<string, string>)[key];
+    if (v) set.add(v);
+  }
+  return [...set].sort();
 }
 
 export const lookupTab: Tab = {
@@ -64,25 +125,37 @@ function buildUI(ctx: AppContext): HTMLElement {
   const header = el("h2", {}, "Lookup");
   root.append(header);
 
+  const all = ctx.registry.all();
+
+  // ---------- state ----------
+  const savedParams = readFilterParams();
+  let statusFilter: StatusFilter = savedParams.status;
+  const columnFilters: Record<FilterKey, string> = { ...savedParams.filters };
+  let sortState: SortState = { key: "id", dir: "none" };
+  let viewMode: "table" | "dashboard" = "table";
+
   // ---------- toolbar ----------
   const searchInput = input({
     type: "search",
-    placeholder: "Fuzzy search (id, type, vendor, batch, notes…)",
+    placeholder: "Fuzzy search (id, type, vendor, batch, notes...)",
     autocomplete: "off",
     class: "lookup__search",
   });
+  if (savedParams.q) searchInput.value = savedParams.q;
 
   const statusBtns = new Map<StatusFilter, HTMLButtonElement>();
-  let statusFilter: StatusFilter = "all";
   const statusBar = el("div", { class: "lookup__status-filter" });
   for (const s of ["all", "unbound", "bound", "void"] as const) {
-    const btn = button({ class: `chip chip--filter ${s === "all" ? "active" : ""}` }, s);
+    const btn = button(
+      { class: `chip chip--filter ${s === statusFilter ? "active" : ""}` },
+      s,
+    );
     btn.addEventListener("click", () => {
       statusFilter = s;
       for (const [k, b] of statusBtns) {
         b.classList.toggle("active", k === s);
       }
-      renderRows();
+      renderView();
     });
     statusBtns.set(s, btn);
     statusBar.append(btn);
@@ -104,7 +177,7 @@ function buildUI(ctx: AppContext): HTMLElement {
         },
       });
       searchInput.value = text;
-      renderRows();
+      renderView();
     } catch {
       /* cancelled */
     }
@@ -118,42 +191,80 @@ function buildUI(ctx: AppContext): HTMLElement {
   );
   const exportCsvBtn = button({}, icon("download"), " Export CSV");
 
+  // #93: structured filter dropdowns
+  const filterBar = el("div", { class: "lookup__filter-bar" });
+  const filterSelects = new Map<FilterKey, HTMLSelectElement>();
+  for (const fk of FILTER_KEYS) {
+    const label = fk.charAt(0).toUpperCase() + fk.slice(1);
+    const sel = document.createElement("select");
+    sel.className = "lookup__filter-select";
+    sel.title = `Filter by ${label}`;
+    const defaultOpt = document.createElement("option");
+    defaultOpt.value = "";
+    defaultOpt.textContent = `All ${label}s`;
+    sel.append(defaultOpt);
+    for (const v of uniqueValues(all, fk)) {
+      const opt = document.createElement("option");
+      opt.value = v;
+      opt.textContent = v;
+      if (columnFilters[fk] === v) opt.selected = true;
+      sel.append(opt);
+    }
+    sel.addEventListener("change", () => {
+      columnFilters[fk] = sel.value;
+      renderView();
+    });
+    filterSelects.set(fk, sel);
+    filterBar.append(sel);
+  }
+  const clearFiltersBtn = button({ class: "small" }, "Clear filters");
+  clearFiltersBtn.addEventListener("click", () => {
+    for (const fk of FILTER_KEYS) {
+      columnFilters[fk] = "";
+      const sel = filterSelects.get(fk);
+      if (sel) sel.value = "";
+    }
+    searchInput.value = "";
+    statusFilter = "all";
+    for (const [k, b] of statusBtns) b.classList.toggle("active", k === "all");
+    renderView();
+  });
+  filterBar.append(clearFiltersBtn);
+
+  // #98: view mode toggle
+  const viewToggle = el("div", { class: "lookup__view-toggle" });
+  const tableToggleBtn = button({ class: "chip chip--filter active" }, "Table");
+  const dashToggleBtn = button({ class: "chip chip--filter" }, "Dashboard");
+  tableToggleBtn.addEventListener("click", () => {
+    viewMode = "table";
+    tableToggleBtn.classList.add("active");
+    dashToggleBtn.classList.remove("active");
+    renderView();
+  });
+  dashToggleBtn.addEventListener("click", () => {
+    viewMode = "dashboard";
+    dashToggleBtn.classList.add("active");
+    tableToggleBtn.classList.remove("active");
+    renderView();
+  });
+  viewToggle.append(tableToggleBtn, dashToggleBtn);
+
   root.append(
     formRow([searchInput, scanBtn]),
     statusBar,
-    formRow([reprintSelBtn, exportCsvBtn]),
+    filterBar,
+    formRow([reprintSelBtn, exportCsvBtn, viewToggle]),
   );
 
-  // ---------- table ----------
+  // ---------- containers ----------
   const selectedIds = new Set<string>();
-
-  const tableWrap = el("div", { class: "lookup__table-wrap" });
-  const table = el("table", { class: "data lookup__table" });
-  const thead = el("thead");
-  const headRow = el("tr");
-  // Issue #91: "select all visible" checkbox
-  const selectAllCb = document.createElement("input");
-  selectAllCb.type = "checkbox";
-  selectAllCb.title = "Select all visible";
-  const selectAllTh = el("th", { class: "lookup__th-select" });
-  selectAllTh.append(selectAllCb);
-  headRow.append(selectAllTh);
-  for (const col of COLUMNS) headRow.append(el("th", {}, col.label));
-  headRow.append(el("th", { class: "lookup__th-actions" }, ""));
-  thead.append(headRow);
-  table.append(thead);
-  const tbody = el("tbody");
-  table.append(tbody);
-  tableWrap.append(table);
-  root.append(tableWrap);
+  const contentContainer = el("div", { class: "lookup__content" });
+  root.append(contentContainer);
 
   const detailCell = el("div", { class: "lookup__detail" });
   root.append(detailCell);
 
-  // Fuse index is rebuilt whenever the registry slice we're showing
-  // changes — but the registry itself doesn't mutate during a session
-  // (writes go through PR submission), so building once is enough.
-  const all = ctx.registry.all();
+  // Fuse index
   const fuse = new Fuse(all, {
     keys: ["id", "type", "vendor", "batch", "location", "notes", "description", "part_number"],
     threshold: 0.4,
@@ -167,17 +278,12 @@ function buildUI(ctx: AppContext): HTMLElement {
     (reprintSelBtn as HTMLButtonElement).disabled = selectedIds.size === 0;
   };
 
-  const renderRows = () => {
-    tbody.innerHTML = "";
-    detailCell.innerHTML = "";
-    selectedIds.clear();
-    selectAllCb.checked = false;
-    updateReprintBtn();
-
+  // ---------- compute filtered + sorted rows ----------
+  function computeRows(): RegistryRow[] {
     const q = searchInput.value.trim();
     let rows: RegistryRow[];
     if (!q) {
-      rows = all;
+      rows = [...all];
     } else {
       const norm = normalizeCanonicalId(q);
       const looksLikeId = ID_REGEX.test(norm) && norm.length === ID_LENGTH;
@@ -191,8 +297,85 @@ function buildUI(ctx: AppContext): HTMLElement {
     if (statusFilter !== "all") {
       rows = rows.filter((r) => r.status === statusFilter);
     }
+    // #93: apply structured filters
+    for (const fk of FILTER_KEYS) {
+      const fv = columnFilters[fk];
+      if (fv) {
+        rows = rows.filter(
+          (r) => (r as unknown as Record<string, string>)[fk] === fv,
+        );
+      }
+    }
+    // #93: sort
+    if (sortState.dir !== "none") {
+      const key = sortState.key;
+      const dir = sortState.dir === "asc" ? 1 : -1;
+      rows.sort((a, b) => {
+        const va = (a as unknown as Record<string, string>)[key] ?? "";
+        const vb = (b as unknown as Record<string, string>)[key] ?? "";
+        return va < vb ? -dir : va > vb ? dir : 0;
+      });
+    }
+    return rows;
+  }
 
-    visibleRows = rows;
+  // ---------- build table header with sort indicators (#93) ----------
+  function buildTableHead(): HTMLElement {
+    const thead = el("thead");
+    const headRow = el("tr");
+
+    // select-all checkbox
+    const selectAllCb = document.createElement("input");
+    selectAllCb.type = "checkbox";
+    selectAllCb.title = "Select all visible";
+    const selectAllTh = el("th", { class: "lookup__th-select" });
+    selectAllTh.append(selectAllCb);
+    headRow.append(selectAllTh);
+
+    for (const col of COLUMNS) {
+      const th = el("th", { class: "lookup__th-sortable" });
+      const sortIndicator =
+        sortState.key === col.key && sortState.dir !== "none"
+          ? sortState.dir === "asc"
+            ? " \u25B2"
+            : " \u25BC"
+          : "";
+      th.textContent = col.label + sortIndicator;
+      th.style.cursor = "pointer";
+      th.addEventListener("click", () => {
+        if (sortState.key === col.key) {
+          // cycle: asc -> desc -> none
+          sortState.dir =
+            sortState.dir === "asc"
+              ? "desc"
+              : sortState.dir === "desc"
+                ? "none"
+                : "asc";
+        } else {
+          sortState = { key: col.key, dir: "asc" };
+        }
+        renderView();
+      });
+      headRow.append(th);
+    }
+    headRow.append(el("th", { class: "lookup__th-actions" }, ""));
+    thead.append(headRow);
+
+    // Store selectAllCb reference for wiring in renderTableBody
+    (thead as unknown as Record<string, unknown>)._selectAllCb = selectAllCb;
+    return thead;
+  }
+
+  // ---------- render table body ----------
+  function renderTableBody(
+    rows: RegistryRow[],
+    tbody: HTMLElement,
+    selectAllCb: HTMLInputElement,
+  ): void {
+    tbody.innerHTML = "";
+    selectedIds.clear();
+    selectAllCb.checked = false;
+    updateReprintBtn();
 
     if (rows.length === 0) {
       const td = el("td", { colspan: String(COLUMNS.length + 2), class: "muted" });
@@ -209,14 +392,14 @@ function buildUI(ctx: AppContext): HTMLElement {
     for (const row of rows) {
       const tr = el("tr", { "data-id": row.id, class: `status-${row.status}` });
 
-      // Issue #91: row selection checkbox
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.addEventListener("click", (e) => e.stopPropagation());
       cb.addEventListener("change", () => {
         if (cb.checked) selectedIds.add(row.id);
         else selectedIds.delete(row.id);
-        selectAllCb.checked = selectedIds.size === rows.length && rows.length > 0;
+        selectAllCb.checked =
+          selectedIds.size === rows.length && rows.length > 0;
         updateReprintBtn();
       });
       const cbTd = el("td");
@@ -232,7 +415,13 @@ function buildUI(ctx: AppContext): HTMLElement {
           cell.append(fmtId(row.id));
         } else if (col.key === "status") {
           cell = el("td");
-          cell.append(el("span", { class: `chip chip--status chip--${row.status}` }, row.status));
+          cell.append(
+            el(
+              "span",
+              { class: `chip chip--status chip--${row.status}` },
+              row.status,
+            ),
+          );
         } else {
           cell = el("td", {}, value || el("span", { class: "muted" }, "\u2014"));
         }
@@ -256,7 +445,6 @@ function buildUI(ctx: AppContext): HTMLElement {
       tbody.append(tr);
     }
 
-    // Wire up "select all" checkbox
     selectAllCb.onchange = () => {
       for (let i = 0; i < rows.length; i++) {
         rowCheckboxes[i].checked = selectAllCb.checked;
@@ -265,9 +453,163 @@ function buildUI(ctx: AppContext): HTMLElement {
       }
       updateReprintBtn();
     };
+  }
+
+  // ---------- #98: dashboard view ----------
+  function renderDashboard(rows: RegistryRow[]): HTMLElement {
+    const dash = el("div", { class: "lookup__dashboard" });
+
+    // Summary cards
+    const summaryRow = el("div", { class: "dashboard__summary" });
+    const totalCard = el("article", { class: "dashboard__card" });
+    totalCard.append(
+      el("h4", {}, "Total"),
+      el("p", { class: "dashboard__number" }, String(rows.length)),
+    );
+    summaryRow.append(totalCard);
+
+    // Status breakdown
+    const statusCounts: Record<string, number> = {};
+    for (const r of rows) {
+      statusCounts[r.status] = (statusCounts[r.status] || 0) + 1;
+    }
+    for (const s of ["unbound", "bound", "void"] as Status[]) {
+      const count = statusCounts[s] || 0;
+      const card = el("article", { class: `dashboard__card dashboard__card--${s}` });
+      card.append(
+        el("h4", {}, s.charAt(0).toUpperCase() + s.slice(1)),
+        el("p", { class: "dashboard__number" }, String(count)),
+      );
+      card.style.cursor = "pointer";
+      card.addEventListener("click", () => {
+        statusFilter = s;
+        for (const [k, b] of statusBtns) b.classList.toggle("active", k === s);
+        viewMode = "table";
+        tableToggleBtn.classList.add("active");
+        dashToggleBtn.classList.remove("active");
+        renderView();
+      });
+      summaryRow.append(card);
+    }
+
+    // Batch count card
+    const batchSet = new Set(rows.map((r) => r.batch).filter(Boolean));
+    const batchCard = el("article", { class: "dashboard__card" });
+    batchCard.append(
+      el("h4", {}, "Batches"),
+      el("p", { class: "dashboard__number" }, String(batchSet.size)),
+    );
+    summaryRow.append(batchCard);
+    dash.append(summaryRow);
+
+    // Group-by sections
+    const groupKeys: { key: FilterKey; label: string }[] = [
+      { key: "batch", label: "Batch" },
+      { key: "location", label: "Location" },
+      { key: "vendor", label: "Vendor" },
+    ];
+
+    for (const gk of groupKeys) {
+      const groups = new Map<string, number>();
+      for (const r of rows) {
+        const v = (r as unknown as Record<string, string>)[gk.key] || "(empty)";
+        groups.set(v, (groups.get(v) || 0) + 1);
+      }
+      if (groups.size === 0) continue;
+
+      const section = el("div", { class: "dashboard__section" });
+      section.append(el("h3", {}, `By ${gk.label}`));
+
+      const sorted = [...groups.entries()].sort((a, b) => b[1] - a[1]);
+      for (const [groupVal, count] of sorted) {
+        const pct = rows.length > 0 ? Math.round((count / rows.length) * 100) : 0;
+        const bar = el("div", { class: "dashboard__bar-row" });
+        const labelEl = el("span", { class: "dashboard__bar-label" }, groupVal);
+        labelEl.style.cursor = "pointer";
+        labelEl.addEventListener("click", () => {
+          if (groupVal !== "(empty)") {
+            columnFilters[gk.key] = groupVal;
+            const sel = filterSelects.get(gk.key);
+            if (sel) sel.value = groupVal;
+          }
+          viewMode = "table";
+          tableToggleBtn.classList.add("active");
+          dashToggleBtn.classList.remove("active");
+          renderView();
+        });
+        const track = el("div", { class: "dashboard__bar-track" });
+        const fill = el("div", { class: "dashboard__bar-fill" });
+        fill.style.width = `${pct}%`;
+        track.append(fill);
+        const countEl = el("span", { class: "dashboard__bar-count muted small" }, `${count} (${pct}%)`);
+        bar.append(labelEl, track, countEl);
+        section.append(bar);
+      }
+      dash.append(section);
+    }
+
+    // Status group with progress bars
+    const statusSection = el("div", { class: "dashboard__section" });
+    statusSection.append(el("h3", {}, "By Status"));
+    for (const s of ["unbound", "bound", "void"] as Status[]) {
+      const count = statusCounts[s] || 0;
+      const pct = rows.length > 0 ? Math.round((count / rows.length) * 100) : 0;
+      const bar = el("div", { class: "dashboard__bar-row" });
+      const labelEl = el("span", { class: "dashboard__bar-label" }, s);
+      labelEl.style.cursor = "pointer";
+      labelEl.addEventListener("click", () => {
+        statusFilter = s;
+        for (const [k, b] of statusBtns) b.classList.toggle("active", k === s);
+        viewMode = "table";
+        tableToggleBtn.classList.add("active");
+        dashToggleBtn.classList.remove("active");
+        renderView();
+      });
+      const track = el("div", { class: "dashboard__bar-track" });
+      const fill = el("div", { class: `dashboard__bar-fill dashboard__bar-fill--${s}` });
+      fill.style.width = `${pct}%`;
+      track.append(fill);
+      const countEl = el("span", { class: "dashboard__bar-count muted small" }, `${count} (${pct}%)`);
+      bar.append(labelEl, track, countEl);
+      statusSection.append(bar);
+    }
+    dash.append(statusSection);
+
+    return dash;
+  }
+
+  // ---------- main render ----------
+  const renderView = () => {
+    contentContainer.innerHTML = "";
+    detailCell.innerHTML = "";
+
+    // #93: sync URL
+    writeFilterParams(searchInput.value.trim(), statusFilter, columnFilters);
+
+    const rows = computeRows();
+    visibleRows = rows;
+
+    if (viewMode === "dashboard") {
+      contentContainer.append(renderDashboard(rows));
+      return;
+    }
+
+    // Table view
+    const tableWrap = el("div", { class: "lookup__table-wrap" });
+    const table = el("table", { class: "data lookup__table" });
+    const thead = buildTableHead();
+    const selectAllCb = (thead as unknown as Record<string, unknown>)
+      ._selectAllCb as HTMLInputElement;
+    table.append(thead);
+    const tbody = el("tbody");
+    table.append(tbody);
+    tableWrap.append(table);
+    contentContainer.append(tableWrap);
+
+    renderTableBody(rows, tbody, selectAllCb);
   };
 
-  // Issue #91: Reprint selected — write selected IDs to print plan, switch to Print tab.
+  // Issue #91: Reprint selected
   reprintSelBtn.addEventListener("click", () => {
     if (selectedIds.size === 0) return;
     const plan = loadPlan();
@@ -288,18 +630,17 @@ function buildUI(ctx: AppContext): HTMLElement {
   exportCsvBtn.addEventListener("click", () => {
     if (visibleRows.length === 0) return;
     const keys = REGISTRY_FIELD_KEYS;
-    const header = keys.join(",");
+    const csvHeader = keys.join(",");
     const lines = visibleRows.map((row) =>
       keys
         .map((k) => {
           const v = (row as unknown as Record<string, string>)[k] ?? "";
-          // Escape fields containing commas, quotes, or newlines.
           if (/[,"\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
           return v;
         })
         .join(","),
     );
-    const csv = [header, ...lines].join("\n") + "\n";
+    const csv = [csvHeader, ...lines].join("\n") + "\n";
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -311,14 +652,14 @@ function buildUI(ctx: AppContext): HTMLElement {
     URL.revokeObjectURL(url);
   });
 
-  searchInput.addEventListener("input", renderRows);
+  searchInput.addEventListener("input", renderView);
 
   // Deep-link: if URL is /<ID>, open the detail card directly.
   const route = ctx.getRoute();
   if (route.kind === "part") {
     searchInput.value = route.id;
   }
-  renderRows();
+  renderView();
   if (route.kind === "part") {
     const row = ctx.registry.findById(route.id);
     if (row) detailCell.append(renderDetailView(row, ctx));
@@ -357,7 +698,7 @@ function renderDetailView(row: RegistryRow, ctx: AppContext): HTMLElement {
   }
   wrap.append(dl);
 
-  // Issue #95: Audit trail — surface provenance fields prominently.
+  // Issue #95: Audit trail
   const auditFields: { label: string; value: string }[] = [
     { label: "Minted by", value: row.minted_by },
     { label: "Bound by", value: row.bound_by },
@@ -400,7 +741,62 @@ function renderDetailView(row: RegistryRow, ctx: AppContext): HTMLElement {
   reprintBtn.addEventListener("click", () => {
     events.emit<ReprintRequest>(EVENT_REPRINT_REQUEST, { ids: [row.id] });
   });
-  wrap.append(formRow([editBtn, reprintBtn]));
+
+  // #96: Void button — only for bound/unbound parts (not already void)
+  const actionChildren: (HTMLElement | null)[] = [editBtn, reprintBtn];
+  if (row.status !== "void") {
+    const voidBtn = button(
+      { class: "row-detail__void" },
+      "Void",
+    );
+    voidBtn.addEventListener("click", () => {
+      // Replace detail view with void confirmation
+      wrap.replaceWith(renderVoidConfirm(row, ctx));
+    });
+    actionChildren.push(voidBtn);
+  }
+  wrap.append(formRow(actionChildren));
+  return wrap;
+}
+
+// #96: Void confirmation UI
+function renderVoidConfirm(row: RegistryRow, ctx: AppContext): HTMLElement {
+  const wrap = el("div", { class: "row-detail row-detail--void-confirm" });
+  wrap.append(
+    el("h3", { class: "row-detail__id" }, fmtId(row.id)),
+    el("p", { class: "error" }, `Are you sure you want to void ${fmtId(row.id)}?`),
+    el("p", { class: "muted small" }, "This will queue a status change to 'void'. The change must be submitted via the Bind tab."),
+  );
+
+  const reasonLabel = el("label", {});
+  reasonLabel.append(el("span", {}, "Reason (required):"));
+  const reasonTextarea = document.createElement("textarea");
+  reasonTextarea.className = "row-detail__input";
+  reasonTextarea.rows = 3;
+  reasonTextarea.placeholder = "Why is this part being voided?";
+  reasonLabel.append(reasonTextarea);
+  wrap.append(reasonLabel);
+
+  const errMsg = el("p", { class: "row-detail__error muted small" });
+  wrap.append(errMsg);
+
+  const confirmBtn = button({ class: "row-detail__void" }, "Confirm void");
+  confirmBtn.addEventListener("click", () => {
+    const reason = reasonTextarea.value.trim();
+    if (!reason) {
+      errMsg.textContent = "A reason is required to void a part.";
+      return;
+    }
+    appendVoid(row.id, reason);
+    ctx.showTab("bind");
+  });
+
+  const cancelBtn = button({ type: "button" }, "Cancel");
+  cancelBtn.addEventListener("click", () => {
+    wrap.replaceWith(renderDetailView(row, ctx));
+  });
+
+  wrap.append(formRow([confirmBtn, cancelBtn]));
   return wrap;
 }
 
@@ -462,7 +858,7 @@ function renderDetailEdit(row: RegistryRow, ctx: AppContext): HTMLElement {
       errMsg.textContent = "No changes to queue.";
       return;
     }
-    // Guardrail per #6: void → bound is a privileged transition.
+    // Guardrail per #6: void -> bound is a privileged transition.
     if (row.status === "void" && changes.status && changes.status !== "void") {
       if (!confirm(
         `${row.id} is voided. Re-binding a voided ID requires the back-office --force ` +

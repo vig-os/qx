@@ -295,9 +295,21 @@ function buildUI(ctx: AppContext): HTMLElement {
     }
   });
 
+  // #92: Repeat mode toggle
+  const repeatLabel = el("label", { class: "repeat-mode-toggle" });
+  const repeatCb = document.createElement("input");
+  repeatCb.type = "checkbox";
+  repeatCb.checked = repeatMode;
+  repeatCb.addEventListener("change", () => {
+    repeatMode = repeatCb.checked;
+    if (!repeatMode) lastBindFields = null;
+  });
+  repeatLabel.append(repeatCb, " Repeat mode (preserve metadata fields)");
+
   root.append(
     formRow([submitBtn, clearBtn, summaryEl]),
     formRow([uploadBtn, rollingBtn]),
+    formRow([repeatLabel]),
     preflightContainer,
     tableContainer,
   );
@@ -477,6 +489,10 @@ function renderEditRow(
   return tr;
 }
 
+// #92: Repeat mode state — module-level so it persists across re-renders
+let repeatMode = false;
+let lastBindFields: Record<EditableKey, string> | null = null;
+
 function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
   const tr = el("tr", { class: "entry-row" });
   // Spacer for the Kind column so columns line up.
@@ -531,6 +547,11 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
   const fieldInputs = new Map<EditableKey, HTMLInputElement>();
   for (const f of FIELDS.filter((f) => f.editable)) {
     const inp = input({ type: "text", placeholder: f.label });
+    // #92: pre-fill from last bind if repeat mode is active
+    if (repeatMode && lastBindFields) {
+      const key = f.key as EditableKey;
+      if (lastBindFields[key]) inp.value = lastBindFields[key];
+    }
     fieldInputs.set(f.key as EditableKey, inp);
     tr.append(el("td", {}, inp));
   }
@@ -559,10 +580,34 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
     for (const [k, inp] of fieldInputs) {
       (entry as unknown as Record<string, string>)[k] = inp.value;
     }
+
+    // #92: save field values before clearing if repeat mode
+    if (repeatMode) {
+      lastBindFields = {} as Record<EditableKey, string>;
+      for (const [k, inp] of fieldInputs) {
+        lastBindFields[k] = inp.value;
+      }
+    }
+
     appendBind(entry);
-    onAdd();
+
+    // #92: in repeat mode, clear only ID and auto-focus; otherwise full re-render clears all
+    if (repeatMode) {
+      idInput.value = "";
+      idInput.focus();
+      // Don't call onAdd() — we keep the entry row as-is with fields preserved
+      // But we still need to re-render the queue table above to show the new row
+      onAdd();
+    } else {
+      onAdd();
+    }
   });
   tr.append(el("td", { class: "row-actions" }, addBtn));
+
+  // #92: auto-focus ID input if we're in repeat mode
+  if (repeatMode) {
+    requestAnimationFrame(() => idInput.focus());
+  }
 
   return tr;
 }

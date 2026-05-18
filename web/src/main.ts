@@ -110,14 +110,14 @@ async function main(): Promise<void> {
 
   const updateBadges = () => {
     // Bind tab badge
-    const bindBtn = tabButtons.get("bind");
-    if (bindBtn) {
+    const bindEntry = tabEntries.get("bind");
+    if (bindEntry) {
       const queue = loadQueue();
-      let badge = bindBtn.querySelector(".tab-badge");
+      let badge = bindEntry.btn.querySelector(".tab-badge");
       if (queue.length > 0) {
         if (!badge) {
           badge = el("span", { class: "tab-badge" });
-          bindBtn.append(badge);
+          bindEntry.btn.append(badge);
         }
         badge.textContent = String(queue.length);
       } else {
@@ -126,14 +126,14 @@ async function main(): Promise<void> {
     }
 
     // Print tab badge
-    const printBtn = tabButtons.get("print");
-    if (printBtn) {
+    const printEntry = tabEntries.get("print");
+    if (printEntry) {
       const plan = loadPlan();
-      let badge = printBtn.querySelector(".tab-badge");
+      let badge = printEntry.btn.querySelector(".tab-badge");
       if (plan.length > 0) {
         if (!badge) {
           badge = el("span", { class: "tab-badge" });
-          printBtn.append(badge);
+          printEntry.btn.append(badge);
         }
         badge.textContent = String(plan.length);
       } else {
@@ -172,9 +172,9 @@ async function main(): Promise<void> {
     updateBadges();
   };
   ctxHolder.showTab = (id) => void showTabWithBadges(id);
-  for (const [tabId, btn] of tabButtons) {
+  for (const [tabId, entry] of tabEntries) {
     // Re-wire click handlers to use badge-aware showTab
-    btn.onclick = () => void showTabWithBadges(tabId);
+    entry.btn.onclick = () => void showTabWithBadges(tabId);
   }
 
   // Update on plan/queue mutations
