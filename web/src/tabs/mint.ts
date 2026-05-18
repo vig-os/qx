@@ -264,7 +264,7 @@ function buildUI(ctx: AppContext): HTMLElement {
 
 async function submitToRegistry(
   ids: string[],
-  batch: string,
+  _batch: string,
   notes: string,
   feedback: HTMLElement,
   submitBtn: HTMLButtonElement,
