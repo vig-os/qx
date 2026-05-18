@@ -55,6 +55,12 @@ const MODE_KEY = "part-registry.print-output-mode";
 const MODE_OPTS_KEY = "part-registry.print-output-mode-opts";
 const DEFAULT_MODE_ID = "dk-continuous";
 
+/** Brother QL-820NWBc prints at 300 DPI (dots per inch). */
+export const PRINTER_DPI = 300;
+export const MM_PER_INCH = 25.4;
+/** 1 printer pixel = MM_PER_INCH / PRINTER_DPI mm. */
+export const PX_TO_MM = MM_PER_INCH / PRINTER_DPI;
+
 function loadPlan(): JobItem[] {
   try {
     const raw = localStorage.getItem(PLAN_KEY);
@@ -305,8 +311,28 @@ function buildUI(ctx: AppContext): HTMLElement {
     layoutSel.value = "horz";
     const tapeSel = makeTapeSelect();
     const sizeIn = numberInput({ value: DEFAULT_SIZE_MM, min: 4, max: 100, step: 0.5 });
+    const bulkUnitSel = select([
+      { value: "mm", label: "mm" },
+      { value: "px", label: "px" },
+    ]);
+    bulkUnitSel.value = "mm";
+    const bulkSizeHint = el("span", { class: "muted small size-hint" });
+    const updateBulkSizeHint = () => {
+      if (bulkUnitSel.value === "px") {
+        const px = parseFloat(sizeIn.value) || 0;
+        bulkSizeHint.textContent = `= ${(px * PX_TO_MM).toFixed(2)} mm`;
+      } else {
+        bulkSizeHint.textContent = "";
+      }
+    };
+    bulkUnitSel.addEventListener("change", updateBulkSizeHint);
+    sizeIn.addEventListener("input", updateBulkSizeHint);
     tapeSel.addEventListener("change", () => {
-      if (tapeSel.value) sizeIn.value = String(TAPE_SIZES[tapeSel.value]);
+      if (tapeSel.value) {
+        sizeIn.value = String(TAPE_SIZES[tapeSel.value]);
+        bulkUnitSel.value = "mm";
+        updateBulkSizeHint();
+      }
     });
     const copiesIn = numberInput({ value: 1, min: 1, max: 100, step: 1 });
     const bulkExtrasArea = el("div");
@@ -353,6 +379,9 @@ function buildUI(ctx: AppContext): HTMLElement {
         alert("Empty batch.");
         return;
       }
+      if (!window.confirm(`Add ${rows.length} labels from batch '${batchSel.value}' to the plan?`)) {
+        return;
+      }
       const layout = getLayout(layoutSel.value);
       const fields = layout?.optionFields?.() ?? [];
       const extras: Record<string, number> = {};
@@ -365,12 +394,14 @@ function buildUI(ctx: AppContext): HTMLElement {
           extras[f.key] = parseFloat(inp.value) || (f.default as number);
         }
       }
+      const rawSize = parseFloat(sizeIn.value);
+      const sizeMm = bulkUnitSel.value === "px" ? rawSize * PX_TO_MM : rawSize;
       const plan = loadPlan();
       for (const r of rows) {
         plan.push({
           id: r.id,
           layoutId: layoutSel.value,
-          size: parseFloat(sizeIn.value),
+          size: sizeMm,
           copies: parseInt(copiesIn.value, 10),
           extras,
         });
@@ -384,7 +415,7 @@ function buildUI(ctx: AppContext): HTMLElement {
       el("h3", {}, `Bulk add from batch`),
       formRow([el("label", {}, "Batch"), batchSel]),
       formRow([el("label", {}, "Layout"), layoutSel]),
-      formRow([el("label", {}, "Tape"), tapeSel, el("label", {}, "Size (mm)"), sizeIn]),
+      formRow([el("label", {}, "Tape"), tapeSel, el("label", {}, "Size"), sizeIn, bulkUnitSel, bulkSizeHint]),
       bulkExtrasArea,
       formRow([el("label", {}, "Copies / ID"), copiesIn]),
       formRow([confirm, cancel]),
@@ -598,7 +629,7 @@ function renderTable(
 function renderJobRow(item: JobItem, index: number, onChange: () => void): HTMLElement {
   const tr = el("tr");
 
-  const idCell = el("td", { class: "id-cell" }, fmtId(item.id));
+  const idCell = el("td", { class: "id-cell", title: item.id }, fmtId(item.id));
   tr.append(idCell);
 
   const layoutSel = select(
@@ -749,7 +780,16 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
   });
   const idWrap = el("div", { style: "display:flex; gap:4px;" });
   idWrap.append(idIn, scanBtn);
-  tr.append(el("td", { class: "id-cell" }, idWrap));
+  const idCell = el("td", { class: "id-cell" });
+  idCell.append(idWrap);
+  tr.append(idCell);
+
+  // Update title on the ID cell whenever the input changes, so
+  // hovering shows the raw canonical ID for copy.
+  idIn.addEventListener("input", () => {
+    const raw = idIn.value.trim().toUpperCase().replace(/-/g, "");
+    idCell.title = raw.length === 14 ? raw : "";
+  });
 
   const layoutSel = select(
     allLayouts().map((l) => ({ value: l.id, label: l.label })),
@@ -758,7 +798,27 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
   tr.append(el("td", {}, layoutSel));
 
   const sizeIn = numberInput({ value: DEFAULT_SIZE_MM, min: 4, max: 100, step: 0.5 });
-  tr.append(el("td", {}, sizeIn));
+  const unitSel = select([
+    { value: "mm", label: "mm" },
+    { value: "px", label: "px" },
+  ]);
+  unitSel.value = "mm";
+  const sizeHint = el("div", { class: "muted small size-hint" });
+  const updateSizeHint = () => {
+    if (unitSel.value === "px") {
+      const px = parseFloat(sizeIn.value) || 0;
+      sizeHint.textContent = `= ${(px * PX_TO_MM).toFixed(2)} mm`;
+    } else {
+      sizeHint.textContent = "";
+    }
+  };
+  unitSel.addEventListener("change", updateSizeHint);
+  sizeIn.addEventListener("input", updateSizeHint);
+  const sizeWrap = el("div");
+  const sizeRow = el("div", { style: "display:flex;gap:4px;align-items:center;" });
+  sizeRow.append(sizeIn, unitSel);
+  sizeWrap.append(sizeRow, sizeHint);
+  tr.append(el("td", {}, sizeWrap));
 
   const extrasCell = el("td");
   const entryExtraInputs: Record<string, HTMLInputElement> = {};
@@ -815,11 +875,13 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
         extras[f.key] = parseFloat(inp.value) || (f.default as number);
       }
     }
+    const rawSize = parseFloat(sizeIn.value);
+    const sizeMm = unitSel.value === "px" ? rawSize * PX_TO_MM : rawSize;
     const plan = loadPlan();
     plan.push({
       id,
       layoutId: layoutSel.value,
-      size: parseFloat(sizeIn.value),
+      size: sizeMm,
       copies: parseInt(copiesIn.value, 10),
       extras,
     });
@@ -846,9 +908,10 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
   return tr;
 }
 
-function fmtId(id: string): string {
+export function fmtId(id: string): string {
   if (id.length < 8) return id;
-  return `${id.slice(0, 4)}-${id.slice(4, 8)}`;
+  // Full 14-char ID in 4-4-4-2 grouping: ABCD-EFGH-JKMN-PQ
+  return `${id.slice(0, 4)}-${id.slice(4, 8)}-${id.slice(8, 12)}-${id.slice(12, 14)}`;
 }
 
 // Open a print-only window with the HTML produced by the active output
