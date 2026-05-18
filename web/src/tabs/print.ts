@@ -29,6 +29,7 @@ import { allOutputModes, getOutputMode } from "../output";
 import {
   events,
   EVENT_REPRINT_REQUEST,
+  EVENT_PLAN_CHANGED,
   type ReprintRequest,
 } from "../core/events";
 import {
@@ -41,8 +42,9 @@ import {
 } from "../ui/dom";
 import { icon } from "../ui/icons";
 import { openScanner } from "../ui/scanner";
+import { isWasmReady, renderLabelSync } from "../wasm/loader";
 
-interface JobItem {
+export interface JobItem {
   id: string;
   layoutId: string;
   size: number;
@@ -61,7 +63,7 @@ export const MM_PER_INCH = 25.4;
 /** 1 printer pixel = MM_PER_INCH / PRINTER_DPI mm. */
 export const PX_TO_MM = MM_PER_INCH / PRINTER_DPI;
 
-function loadPlan(): JobItem[] {
+export function loadPlan(): JobItem[] {
   try {
     const raw = localStorage.getItem(PLAN_KEY);
     if (!raw) return [];
@@ -71,8 +73,9 @@ function loadPlan(): JobItem[] {
   }
 }
 
-function savePlan(plan: JobItem[]): void {
+export function savePlan(plan: JobItem[]): void {
   localStorage.setItem(PLAN_KEY, JSON.stringify(plan));
+  events.emit(EVENT_PLAN_CHANGED, { count: plan.length });
 }
 
 function loadModeId(): string {
@@ -162,9 +165,51 @@ function buildUI(ctx: AppContext): HTMLElement {
 
   const summary = el("div", { class: "muted small" });
   const tableWrap = el("div");
+  const livePreviewArea = el("div", { class: "label-preview label-preview--live" });
   const previewArea = el("div", { class: "label-preview" });
   const modeOptsArea = el("div", { class: "form-row" });
   const planSummaryEl = el("div", { class: "muted small" });
+
+  // Issue #87: debounced live SVG preview of the first plan item.
+  let livePreviewTimer: ReturnType<typeof setTimeout> | undefined;
+  const refreshLivePreview = () => {
+    clearTimeout(livePreviewTimer);
+    livePreviewTimer = setTimeout(() => {
+      requestAnimationFrame(() => {
+        livePreviewArea.innerHTML = "";
+        const plan = loadPlan();
+        if (plan.length === 0) return;
+        const first = plan[0];
+        if (!isWasmReady()) {
+          livePreviewArea.append(
+            el("p", { class: "muted small" }, "Loading preview..."),
+          );
+          return;
+        }
+        try {
+          const layout = getLayout(first.layoutId);
+          if (!layout) return;
+          const wrap = el("div", { class: "label-preview__item" });
+          wrap.innerHTML = layout.renderSvg(first.id, {
+            size: first.size,
+            extra: { ...first.extras },
+          });
+          wrap.append(
+            el(
+              "div",
+              { class: "muted small" },
+              `Live preview: ${fmtId(first.id)} \u00b7 ${first.layoutId} \u00b7 ${first.size}mm`,
+            ),
+          );
+          livePreviewArea.append(wrap);
+        } catch {
+          livePreviewArea.append(
+            el("p", { class: "muted small" }, "Preview unavailable."),
+          );
+        }
+      });
+    }, 200);
+  };
 
   // Output mode state.
   let activeModeId = loadModeId();
@@ -293,6 +338,7 @@ function buildUI(ctx: AppContext): HTMLElement {
       refreshPlanSummary();
     }));
     refreshPlanSummary();
+    refreshLivePreview();
   };
   renderPlan();
   renderModeOpts();
@@ -459,6 +505,7 @@ function buildUI(ctx: AppContext): HTMLElement {
     formRow([bulkBtn, clearBtn]),
     summary,
     tableWrap,
+    livePreviewArea,
     el("h3", {}, "Paper format"),
     formRow([el("label", {}, "Output"), modeSel]),
     modeOptsArea,

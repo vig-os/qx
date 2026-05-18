@@ -9,3 +9,8 @@ id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,
 89ABCDEFGHJKMN,unbound,2026-05-05T06:00:00+00:00,B-2026-05-05,,,,,,,,github:eve,,,
 9ABCDEFGHJKMNP,void,2026-05-05T06:00:00+00:00,B-2026-05-05,2026-05-05T09:00:00+00:00,Fitting,6mm union tee,Swagelok,SS-600-3,cooling loop / junction,label peeled — voided,github:eve,github:frank,2026-05-05T10:00:00+00:00,github:frank
 ABCDEFGHJKMNPQ,bound,2026-05-06T05:00:00+00:00,B-2026-05-05,2026-05-06T08:00:00+00:00,Cable,Thermocouple K-type 2m,Omega,TJ36-CASS-18U,sdmd_v2 / furnace-A / zone-1,,github:eve,github:frank,2026-05-06T08:00:00+00:00,github:frank
+BCDEFGHJKMNPQR,bound,2026-05-06T05:00:00+00:00,B-2026-05-05,2026-05-07T09:00:00+00:00,Pressure transducer,Coolant inlet 0-10 bar,Honeywell,PX309-150GI,cooling loop / supply-T,,github:eve,github:frank,2026-05-07T09:00:00+00:00,github:frank
+CDEFGHJKMNPQRS,unbound,2026-05-08T06:00:00+00:00,B-2026-05-08,,,,,,,,github:alice,,,
+DEFGHJKMNPQRST,bound,2026-05-08T06:00:00+00:00,B-2026-05-08,2026-05-08T14:00:00+00:00,RTD probe,Class A RTD 100mm insertion,TE Connectivity,NB-PTCO-068,test bench / CH-4,,github:alice,github:bob,2026-05-08T14:00:00+00:00,github:bob
+EFGHJKMNPQRSTU,unbound,2026-05-08T06:00:00+00:00,B-2026-05-08,,,,,,,,github:alice,,,
+FGHJKMNPQRSTUV,void,2026-05-08T06:00:00+00:00,B-2026-05-08,,Flow sensor,Cracked ultrasonic transducer,Siemens,7ME3530-1AA00,,housing crack — voided,github:alice,,,
