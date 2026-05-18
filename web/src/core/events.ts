@@ -32,6 +32,8 @@ export const events = new EventBus();
 // Event names — SSOT for cross-module event types.
 export const EVENT_REPRINT_REQUEST = "reprint:request" as const;
 export const EVENT_TAB_SHOW = "tab:show" as const;
+export const EVENT_PLAN_CHANGED = "plan:changed" as const;
+export const EVENT_QUEUE_CHANGED = "queue:changed" as const;
 
 export interface ReprintRequest {
   ids: string[];

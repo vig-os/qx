@@ -1,7 +1,7 @@
 // Lookup tab e2e tests — route-intercepted, offline.
 //
 // Verifies the data grid, fuzzy search, status filter chips, and
-// deep-link routing against the 10-row fixture CSV.
+// deep-link routing against the 15-row fixture CSV.
 
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "fs";
@@ -30,9 +30,9 @@ test.describe("Lookup data-grid (fixture)", () => {
   test("renders all rows from the fixture CSV", async ({ page }) => {
     await page.goto("/");
 
-    // The fixture has 10 data rows.
+    // The fixture has 15 data rows.
     const rows = page.locator(".lookup__table tbody tr");
-    await expect(rows).toHaveCount(10);
+    await expect(rows).toHaveCount(15);
   });
 
   test("fuzzy search filters rows by vendor name", async ({ page }) => {
@@ -49,20 +49,20 @@ test.describe("Lookup data-grid (fixture)", () => {
   test("status filter chips narrow to matching status", async ({ page }) => {
     await page.goto("/");
 
-    // Click the "bound" filter chip — fixture has 5 bound rows.
+    // Click the "bound" filter chip — fixture has 7 bound rows.
     await page.locator(".chip--filter", { hasText: /^bound$/ }).click();
     const boundRows = page.locator(".lookup__table tbody tr");
-    await expect(boundRows).toHaveCount(5);
+    await expect(boundRows).toHaveCount(7);
 
-    // Click the "void" filter chip — fixture has 2 void rows.
+    // Click the "void" filter chip — fixture has 3 void rows.
     await page.locator(".chip--filter", { hasText: /^void$/ }).click();
     const voidRows = page.locator(".lookup__table tbody tr");
-    await expect(voidRows).toHaveCount(2);
+    await expect(voidRows).toHaveCount(3);
 
-    // Click the "unbound" filter chip — fixture has 3 unbound rows.
+    // Click the "unbound" filter chip — fixture has 5 unbound rows.
     await page.locator(".chip--filter", { hasText: /^unbound$/ }).click();
     const unboundRows = page.locator(".lookup__table tbody tr");
-    await expect(unboundRows).toHaveCount(3);
+    await expect(unboundRows).toHaveCount(5);
   });
 
   test("deep-link to /<ID> highlights that row in the grid", async ({ page }) => {

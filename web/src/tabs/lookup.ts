@@ -13,8 +13,8 @@
 
 import Fuse from "fuse.js";
 
-import { ID_LENGTH, ID_REGEX } from "../config";
-import { FIELDS, STATUSES, type RegistryRow, type Status } from "../registry/schema";
+import { ID_LENGTH, ID_REGEX, DATA_REPO_SLUG, DEFAULT_BRANCH, DEFAULT_SIZE_MM } from "../config";
+import { FIELDS, STATUSES, REGISTRY_FIELD_KEYS, type RegistryRow, type Status } from "../registry/schema";
 import { appendEdit } from "../registry/queue";
 import type { AppContext, Tab } from "../core/types";
 import { normalizeCanonicalId } from "../routing/route";
@@ -26,6 +26,7 @@ import {
 import { el, button, input, formRow } from "../ui/dom";
 import { icon } from "../ui/icons";
 import { openScanner, type ScanStatus } from "../ui/scanner";
+import { loadPlan, savePlan } from "./print";
 
 type StatusFilter = "all" | Status;
 
@@ -109,16 +110,34 @@ function buildUI(ctx: AppContext): HTMLElement {
     }
   });
 
+  // Issue #91: reprint selected + Issue #94: export CSV
+  const reprintSelBtn = button(
+    { class: "secondary", disabled: "true" },
+    icon("reprint"),
+    " Reprint selected",
+  );
+  const exportCsvBtn = button({}, icon("download"), " Export CSV");
+
   root.append(
     formRow([searchInput, scanBtn]),
     statusBar,
+    formRow([reprintSelBtn, exportCsvBtn]),
   );
 
   // ---------- table ----------
+  const selectedIds = new Set<string>();
+
   const tableWrap = el("div", { class: "lookup__table-wrap" });
   const table = el("table", { class: "data lookup__table" });
   const thead = el("thead");
   const headRow = el("tr");
+  // Issue #91: "select all visible" checkbox
+  const selectAllCb = document.createElement("input");
+  selectAllCb.type = "checkbox";
+  selectAllCb.title = "Select all visible";
+  const selectAllTh = el("th", { class: "lookup__th-select" });
+  selectAllTh.append(selectAllCb);
+  headRow.append(selectAllTh);
   for (const col of COLUMNS) headRow.append(el("th", {}, col.label));
   headRow.append(el("th", { class: "lookup__th-actions" }, ""));
   thead.append(headRow);
@@ -141,9 +160,19 @@ function buildUI(ctx: AppContext): HTMLElement {
     ignoreLocation: true,
   });
 
+  // Track currently visible rows for CSV export and select-all.
+  let visibleRows: RegistryRow[] = [];
+
+  const updateReprintBtn = () => {
+    (reprintSelBtn as HTMLButtonElement).disabled = selectedIds.size === 0;
+  };
+
   const renderRows = () => {
     tbody.innerHTML = "";
     detailCell.innerHTML = "";
+    selectedIds.clear();
+    selectAllCb.checked = false;
+    updateReprintBtn();
 
     const q = searchInput.value.trim();
     let rows: RegistryRow[];
@@ -163,8 +192,10 @@ function buildUI(ctx: AppContext): HTMLElement {
       rows = rows.filter((r) => r.status === statusFilter);
     }
 
+    visibleRows = rows;
+
     if (rows.length === 0) {
-      const td = el("td", { colspan: String(COLUMNS.length + 1), class: "muted" });
+      const td = el("td", { colspan: String(COLUMNS.length + 2), class: "muted" });
       td.append(
         all.length === 0
           ? "Registry is empty. Mint some IDs via the CLI first."
@@ -174,8 +205,25 @@ function buildUI(ctx: AppContext): HTMLElement {
       return;
     }
 
+    const rowCheckboxes: HTMLInputElement[] = [];
     for (const row of rows) {
       const tr = el("tr", { "data-id": row.id, class: `status-${row.status}` });
+
+      // Issue #91: row selection checkbox
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.addEventListener("click", (e) => e.stopPropagation());
+      cb.addEventListener("change", () => {
+        if (cb.checked) selectedIds.add(row.id);
+        else selectedIds.delete(row.id);
+        selectAllCb.checked = selectedIds.size === rows.length && rows.length > 0;
+        updateReprintBtn();
+      });
+      const cbTd = el("td");
+      cbTd.append(cb);
+      tr.append(cbTd);
+      rowCheckboxes.push(cb);
+
       for (const col of COLUMNS) {
         const value = row[col.key] ?? "";
         let cell: HTMLElement;
@@ -186,7 +234,7 @@ function buildUI(ctx: AppContext): HTMLElement {
           cell = el("td");
           cell.append(el("span", { class: `chip chip--status chip--${row.status}` }, row.status));
         } else {
-          cell = el("td", {}, value || el("span", { class: "muted" }, "—"));
+          cell = el("td", {}, value || el("span", { class: "muted" }, "\u2014"));
         }
         tr.append(cell);
       }
@@ -207,7 +255,61 @@ function buildUI(ctx: AppContext): HTMLElement {
       });
       tbody.append(tr);
     }
+
+    // Wire up "select all" checkbox
+    selectAllCb.onchange = () => {
+      for (let i = 0; i < rows.length; i++) {
+        rowCheckboxes[i].checked = selectAllCb.checked;
+        if (selectAllCb.checked) selectedIds.add(rows[i].id);
+        else selectedIds.delete(rows[i].id);
+      }
+      updateReprintBtn();
+    };
   };
+
+  // Issue #91: Reprint selected — write selected IDs to print plan, switch to Print tab.
+  reprintSelBtn.addEventListener("click", () => {
+    if (selectedIds.size === 0) return;
+    const plan = loadPlan();
+    for (const id of selectedIds) {
+      plan.push({
+        id,
+        layoutId: "horz",
+        size: DEFAULT_SIZE_MM,
+        copies: 1,
+        extras: {},
+      });
+    }
+    savePlan(plan);
+    ctx.showTab("print");
+  });
+
+  // Issue #94: Export filtered view as CSV download.
+  exportCsvBtn.addEventListener("click", () => {
+    if (visibleRows.length === 0) return;
+    const keys = REGISTRY_FIELD_KEYS;
+    const header = keys.join(",");
+    const lines = visibleRows.map((row) =>
+      keys
+        .map((k) => {
+          const v = (row as unknown as Record<string, string>)[k] ?? "";
+          // Escape fields containing commas, quotes, or newlines.
+          if (/[,"\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
+          return v;
+        })
+        .join(","),
+    );
+    const csv = [header, ...lines].join("\n") + "\n";
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `registry-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
 
   searchInput.addEventListener("input", renderRows);
 
@@ -249,11 +351,36 @@ function renderDetailView(row: RegistryRow, ctx: AppContext): HTMLElement {
       el(
         "dd",
         {},
-        value || el("span", { class: "muted" }, "—"),
+        value || el("span", { class: "muted" }, "\u2014"),
       ),
     );
   }
   wrap.append(dl);
+
+  // Issue #95: Audit trail — surface provenance fields prominently.
+  const auditFields: { label: string; value: string }[] = [
+    { label: "Minted by", value: row.minted_by },
+    { label: "Bound by", value: row.bound_by },
+    { label: "Last edited at", value: row.last_edited_at },
+    { label: "Last edited by", value: row.last_edited_by },
+  ];
+  const auditDl = el("dl", { class: "row-detail__audit" });
+  for (const af of auditFields) {
+    auditDl.append(el("dt", {}, af.label));
+    auditDl.append(
+      el("dd", {}, af.value || el("span", { class: "muted" }, "\u2014")),
+    );
+  }
+  wrap.append(el("h4", { class: "row-detail__audit-heading" }, "Audit trail"));
+  wrap.append(auditDl);
+
+  const historyLink = el("a", {
+    href: `https://github.com/${DATA_REPO_SLUG}/commits/${DEFAULT_BRANCH}/registry.csv`,
+    target: "_blank",
+    rel: "noopener",
+    class: "row-detail__history",
+  }, "View history");
+  wrap.append(historyLink);
 
   const editBtn = button(
     { class: "secondary row-detail__edit" },

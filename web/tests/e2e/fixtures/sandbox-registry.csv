@@ -1,0 +1,26 @@
+id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,minted_by,bound_by,last_edited_at,last_edited_by
+23456789ABCDEF,bound,2026-05-01T08:00:00+00:00,B-2026-05-01,2026-05-01T14:00:00+00:00,PT100,Supply temperature sensor,TC Direct,402-141,cooling loop / supply-T,,github:alice,github:bob,2026-05-01T14:00:00+00:00,github:bob
+2345ABCDEFGHJK,bound,2026-05-01T08:00:00+00:00,B-2026-05-01,2026-05-01T15:00:00+00:00,Thermocouple K-type,Exhaust gas thermocouple 2m,Omega Engineering,TJ36-CASS-18U,exhaust stack / T3,,github:alice,github:bob,2026-05-01T15:00:00+00:00,github:bob
+3456ABCDEFGHJK,bound,2026-05-01T08:00:00+00:00,B-2026-05-01,2026-05-02T09:00:00+00:00,Pressure transducer,Coolant loop pressure 0-10 bar,Honeywell,PX309-150GI,cooling loop / supply-T,,github:alice,github:carol,2026-05-02T09:00:00+00:00,github:carol
+456789ABCDEFGH,unbound,2026-05-01T08:00:00+00:00,B-2026-05-01,,,,,,,,github:alice,,,
+56789ABCDEFGHJ,bound,2026-05-01T08:00:00+00:00,B-2026-05-01,2026-05-02T10:00:00+00:00,RTD probe,Class A RTD 100mm insertion,TE Connectivity,NB-PTCO-068,test bench / CH-4,,github:alice,github:dave,2026-05-02T10:00:00+00:00,github:dave
+6789ABCDEFGHJK,unbound,2026-05-01T08:00:00+00:00,B-2026-05-01,,,,,,,,github:alice,,,
+789ABCDEFGHJKM,bound,2026-05-01T08:00:00+00:00,B-2026-05-01,2026-05-03T08:00:00+00:00,Flow sensor,Ultrasonic clamp-on DN25,Siemens,7ME3530-1AA00,cooling loop / supply-T,,github:alice,github:bob,2026-05-03T08:00:00+00:00,github:bob
+89ABCDEFGHJKMN,void,2026-05-01T08:00:00+00:00,B-2026-05-01,,PT100,Spare sensor damaged in shipping,TC Direct,402-141,,label misprinted — voided,github:alice,,,
+9ABCDEFGHJKMNP,bound,2026-05-01T08:00:00+00:00,B-2026-05-01,2026-05-03T11:00:00+00:00,Thermocouple K-type,Furnace zone 2 TC,Omega Engineering,KQXL-18G-12,test bench / CH-4,,github:alice,github:carol,2026-05-03T11:00:00+00:00,github:carol
+ABCDEFGHJKMNPQ,unbound,2026-05-01T08:00:00+00:00,B-2026-05-01,,,,,,,,github:alice,,,
+BCDEFGHJKMNPQR,bound,2026-05-08T08:00:00+00:00,B-2026-05-08,2026-05-08T13:00:00+00:00,PT100,Return temperature sensor,TC Direct,402-142,cooling loop / supply-T,,github:bob,github:dave,2026-05-08T13:00:00+00:00,github:dave
+CDEFGHJKMNPQRS,bound,2026-05-08T08:00:00+00:00,B-2026-05-08,2026-05-08T14:00:00+00:00,Pressure transducer,Exhaust back-pressure sensor,Honeywell,PX309-050GI,exhaust stack / T3,,github:bob,github:dave,2026-05-08T14:00:00+00:00,github:dave
+DEFGHJKMNPQRST,unbound,2026-05-08T08:00:00+00:00,B-2026-05-08,,,,,,,,github:bob,,,
+EFGHJKMNPQRSTU,void,2026-05-08T08:00:00+00:00,B-2026-05-08,,Flow sensor,Damaged turbine flowmeter,Siemens,7ME3530-1AA00,,cracked housing — voided,github:bob,,,
+FGHJKMNPQRSTUV,bound,2026-05-08T08:00:00+00:00,B-2026-05-08,2026-05-09T09:00:00+00:00,RTD probe,Clean room ambient RTD,TE Connectivity,NB-PTCO-152,clean room / RH-1,,github:bob,github:carol,2026-05-09T09:00:00+00:00,github:carol
+GHJKMNPQRSTUVW,unbound,2026-05-08T08:00:00+00:00,B-2026-05-08,,,,,,,,github:bob,,,
+HJKMNPQRSTUVWX,bound,2026-05-08T08:00:00+00:00,B-2026-05-08,2026-05-09T11:00:00+00:00,Thermocouple K-type,Test bench reference TC,Omega Engineering,TJ36-CASS-14U,test bench / CH-4,,github:bob,github:alice,2026-05-09T11:00:00+00:00,github:alice
+JKMNPQRSTUVWXY,void,2026-05-08T08:00:00+00:00,B-2026-05-08,,PT100,Sensor failed calibration,TC Direct,402-141,,cal drift > 0.5 degC — voided,github:bob,,,
+KMNPQRSTUVWXYZ,bound,2026-05-08T08:00:00+00:00,B-2026-05-08,2026-05-10T08:00:00+00:00,Flow sensor,Magnetic flowmeter DN15,Siemens,7ME6310-2YF13,cooling loop / supply-T,,github:bob,github:dave,2026-05-10T08:00:00+00:00,github:dave
+MNPQRSTUVWXYZ2,unbound,2026-05-08T08:00:00+00:00,B-2026-05-08,,,,,,,,github:bob,,,
+NPQRSTUVWXYZ23,bound,2026-05-15T08:00:00+00:00,B-2026-05-15,2026-05-15T14:00:00+00:00,Pressure transducer,Clean room differential pressure,Honeywell,PX274-01DI,clean room / RH-1,,github:carol,github:alice,2026-05-15T14:00:00+00:00,github:alice
+PQRSTUVWXYZ234,unbound,2026-05-15T08:00:00+00:00,B-2026-05-15,,,,,,,,github:carol,,,
+QRSTUVWXYZ2345,void,2026-05-15T08:00:00+00:00,B-2026-05-15,,RTD probe,Bent sheath on arrival,TE Connectivity,NB-PTCO-068,,sheath bent 15deg — voided,github:carol,,,
+RSTUVWXYZ23456,bound,2026-05-15T08:00:00+00:00,B-2026-05-15,2026-05-16T09:00:00+00:00,Thermocouple K-type,Cooling return TC,Omega Engineering,KQXL-18G-12,cooling loop / supply-T,,github:carol,github:bob,2026-05-16T09:00:00+00:00,github:bob
+STUVWXYZ234567,unbound,2026-05-15T08:00:00+00:00,B-2026-05-15,,,,,,,,github:carol,,,

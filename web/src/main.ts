@@ -17,6 +17,13 @@ import { PLUGINS } from "./plugins";
 import { buildPartPath, parseAppPath, type AppPath } from "./routing/route";
 import { el, button } from "./ui/dom";
 import { loadWasm } from "./wasm/loader";
+import { loadQueue } from "./registry/queue";
+import { loadPlan } from "./tabs/print";
+import {
+  events,
+  EVENT_PLAN_CHANGED,
+  EVENT_QUEUE_CHANGED,
+} from "./core/events";
 
 async function main(): Promise<void> {
   const root = document.getElementById("app");
@@ -97,14 +104,94 @@ async function main(): Promise<void> {
     tabList.append(li);
   }
 
+  // Issue #97: badge counts on Bind and Print tab buttons + queue warning banner.
+  const queueWarning = el("div", { class: "queue-warning" });
+  layout.main.insertBefore(queueWarning, tabBar.nextSibling);
+
+  const updateBadges = () => {
+    // Bind tab badge
+    const bindBtn = tabButtons.get("bind");
+    if (bindBtn) {
+      const queue = loadQueue();
+      let badge = bindBtn.querySelector(".tab-badge");
+      if (queue.length > 0) {
+        if (!badge) {
+          badge = el("span", { class: "tab-badge" });
+          bindBtn.append(badge);
+        }
+        badge.textContent = String(queue.length);
+      } else {
+        badge?.remove();
+      }
+    }
+
+    // Print tab badge
+    const printBtn = tabButtons.get("print");
+    if (printBtn) {
+      const plan = loadPlan();
+      let badge = printBtn.querySelector(".tab-badge");
+      if (plan.length > 0) {
+        if (!badge) {
+          badge = el("span", { class: "tab-badge" });
+          printBtn.append(badge);
+        }
+        badge.textContent = String(plan.length);
+      } else {
+        badge?.remove();
+      }
+    }
+
+    // Queue staleness warning
+    queueWarning.innerHTML = "";
+    const queue = loadQueue();
+    if (queue.length > 0) {
+      const oneHourAgo = Date.now() - 60 * 60 * 1000;
+      const stale = queue.filter((q) => {
+        const ts = new Date(q.queued_at).getTime();
+        return ts > 0 && ts < oneHourAgo;
+      });
+      if (stale.length > 0) {
+        const oldest = new Date(
+          Math.min(...stale.map((q) => new Date(q.queued_at).getTime())),
+        );
+        queueWarning.append(
+          el(
+            "div",
+            { class: "queue-warning__banner" },
+            `${stale.length} unsubmitted bind(s) from ${oldest.toLocaleString()}`,
+          ),
+        );
+      }
+    }
+  };
+
+  // Update on tab switch
+  const origShowTab = showTab;
+  const showTabWithBadges = async (id: string) => {
+    await origShowTab(id);
+    updateBadges();
+  };
+  ctxHolder.showTab = (id) => void showTabWithBadges(id);
+  for (const [tabId, btn] of tabButtons) {
+    // Re-wire click handlers to use badge-aware showTab
+    btn.onclick = () => void showTabWithBadges(tabId);
+  }
+
+  // Update on plan/queue mutations
+  events.on(EVENT_PLAN_CHANGED, updateBadges);
+  events.on(EVENT_QUEUE_CHANGED, updateBadges);
+
+  // Initial badge render
+  updateBadges();
+
   window.addEventListener("popstate", () => {
     route = parseAppPath(window.location.pathname);
     syncCanonicalPath(route);
     const nextTabId = route.kind === "home" ? TABS[0]?.id : "lookup";
-    if (nextTabId) void showTab(nextTabId);
+    if (nextTabId) void showTabWithBadges(nextTabId);
   });
 
-  if (activeTabId) await showTab(activeTabId);
+  if (activeTabId) await showTabWithBadges(activeTabId);
 }
 
 function syncCanonicalPath(route: AppPath): void {

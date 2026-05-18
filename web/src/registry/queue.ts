@@ -5,6 +5,7 @@
 // changes; the queue + submit doesn't care about origin.
 
 import type { RegistryRow } from "./schema";
+import { events, EVENT_QUEUE_CHANGED } from "../core/events";
 
 const QUEUE_KEY = "part-registry.bind-queue";
 
@@ -81,6 +82,7 @@ export function loadQueue(): QueueItem[] {
 
 export function saveQueue(q: QueueItem[]): void {
   localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
+  events.emit(EVENT_QUEUE_CHANGED, { count: q.length });
 }
 
 export function appendBind(entry: Omit<QueuedBind, "kind" | "queued_at">): void {
