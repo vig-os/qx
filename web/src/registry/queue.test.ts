@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   appendBind,
   appendEdit,
+  appendVoid,
   clearQueue,
   loadQueue,
   removeAt,
@@ -135,8 +136,21 @@ describe("appendBind / appendEdit / removeAt", () => {
   });
 });
 
+describe("appendVoid", () => {
+  it("queues an edit with status=void and timestamped reason in notes", () => {
+    appendVoid("ABCDEFGHJKMNPQ", { status: "bound" as const, notes: "" }, "Damaged in transit");
+    const q = loadQueue();
+    expect(q).toHaveLength(1);
+    expect(q[0].kind).toBe("edit");
+    if (q[0].kind === "edit") {
+      expect(q[0].changes.status).toBe("void");
+      expect(q[0].changes.notes).toMatch(/^\[voided .+\] Damaged in transit$/);
+    }
+  });
+});
+
 describe("summarizeQueue", () => {
-  it("labels pure-bind, pure-edit, and mixed queues distinctly", () => {
+  it("labels pure-bind, pure-edit, void, and mixed queues distinctly", () => {
     const bind: QueueItem = {
       kind: "bind",
       id: "A",
@@ -155,13 +169,28 @@ describe("summarizeQueue", () => {
       before: {},
       changes: { location: "lab" },
     };
+    const voidItem: QueueItem = {
+      kind: "edit",
+      id: "C",
+      queued_at: "",
+      before: { status: "bound" as const },
+      changes: { status: "void" as const, notes: "[voided] test" },
+    };
     expect(summarizeQueue([])).toMatchObject({ label: "bind", total: 0 });
-    expect(summarizeQueue([bind])).toMatchObject({ label: "bind", binds: 1, edits: 0 });
-    expect(summarizeQueue([edit])).toMatchObject({ label: "edit", binds: 0, edits: 1 });
+    expect(summarizeQueue([bind])).toMatchObject({ label: "bind", binds: 1, edits: 0, voids: 0 });
+    expect(summarizeQueue([edit])).toMatchObject({ label: "edit", binds: 0, edits: 1, voids: 0 });
+    expect(summarizeQueue([voidItem])).toMatchObject({ label: "void", binds: 0, edits: 0, voids: 1 });
     expect(summarizeQueue([bind, edit])).toMatchObject({
       label: "bind+edit",
       binds: 1,
       edits: 1,
+      voids: 0,
+    });
+    expect(summarizeQueue([bind, edit, voidItem])).toMatchObject({
+      label: "bind+edit+void",
+      binds: 1,
+      edits: 1,
+      voids: 1,
     });
   });
 });

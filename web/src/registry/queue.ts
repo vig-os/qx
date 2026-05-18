@@ -122,17 +122,32 @@ export function clearQueue(): void {
   saveQueue([]);
 }
 
+export function appendVoid(
+  id: string,
+  before: Partial<RegistryRow>,
+  reason: string,
+): void {
+  const ts = new Date().toISOString();
+  const notesValue = `[voided ${ts}] ${reason}`;
+  appendEdit(id, before, { status: "void" as RegistryRow["status"], notes: notesValue });
+}
+
 export function summarizeQueue(q: QueueItem[]): {
   binds: number;
   edits: number;
+  voids: number;
   total: number;
   label: string;
 } {
   const binds = q.filter((x) => x.kind === "bind").length;
-  const edits = q.filter((x) => x.kind === "edit").length;
-  let label: string;
-  if (binds > 0 && edits > 0) label = "bind+edit";
-  else if (edits > 0) label = "edit";
-  else label = "bind";
-  return { binds, edits, total: q.length, label };
+  const voids = q.filter(
+    (x) => x.kind === "edit" && (x as QueuedEdit).changes.status === "void",
+  ).length;
+  const edits = q.filter((x) => x.kind === "edit").length - voids;
+  const parts: string[] = [];
+  if (binds > 0) parts.push("bind");
+  if (edits > 0) parts.push("edit");
+  if (voids > 0) parts.push("void");
+  const label = parts.length > 0 ? parts.join("+") : "bind";
+  return { binds, edits, voids, total: q.length, label };
 }

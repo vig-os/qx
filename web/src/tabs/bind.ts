@@ -28,12 +28,7 @@ import {
 import type { AppContext, Tab } from "../core/types";
 import { el, button, input, formRow } from "../ui/dom";
 import { icon } from "../ui/icons";
-import {
-  openScannerMulti,
-  openImageScan,
-  openScannerRolling,
-  type ScanStatus,
-} from "../ui/scanner";
+import { openScannerMulti, type ScanStatus } from "../ui/scanner";
 import type { Action, AuthDecision } from "../wasm/loader";
 import {
   submitBatch,
@@ -43,6 +38,13 @@ import {
   SubmitError,
 } from "../registry/submit";
 import { DATA_REPO_SLUG } from "../config";
+
+// Repeat-mode state (#92): when enabled, bind metadata fields are
+// preserved after queuing so the operator can scan-scan-scan a batch of
+// identical parts without re-entering type/vendor/location each time.
+let repeatModeEnabled = false;
+// Stashed field values survive re-renders when repeat mode is on.
+let repeatFieldValues: Record<string, string> = {};
 
 function emptyBindFields(): Pick<
   QueuedBind,
@@ -103,20 +105,33 @@ function buildUI(ctx: AppContext): HTMLElement {
     if (queue.length === 0) return;
     try {
       const registry = buildRegistryMap(ctx);
-      const items: QueueItem[] = queue
-        .filter((q): q is QueuedBind => q.kind === "bind")
-        .map((q) => ({
+      const items: QueueItem[] = queue.map((q) => {
+        if (q.kind === "bind") {
+          return {
+            id: q.id,
+            kind: "bind" as const,
+            fields: {
+              type: q.type,
+              description: q.description,
+              vendor: q.vendor,
+              part_number: q.part_number,
+              location: q.location,
+              notes: q.notes,
+            },
+          };
+        }
+        // Edit or void — map changes to fields, detect void kind.
+        const isVoid = q.changes.status === "void";
+        const fields: Record<string, string> = {};
+        for (const [k, v] of Object.entries(q.changes)) {
+          if (v !== undefined) fields[k] = String(v);
+        }
+        return {
           id: q.id,
-          kind: "bind" as const,
-          fields: {
-            type: q.type,
-            description: q.description,
-            vendor: q.vendor,
-            part_number: q.part_number,
-            location: q.location,
-            notes: q.notes,
-          },
-        }));
+          kind: (isVoid ? "void" : "edit") as "bind" | "edit" | "void",
+          fields,
+        };
+      });
       const result = runPreflight(items, registry);
       preflightContainer.append(renderPreflight(result));
       // Block submit on policy block OR unknown-id (FE-local).
@@ -144,10 +159,14 @@ function buildUI(ctx: AppContext): HTMLElement {
     refreshPreflight(queue);
 
     const summary = summarizeQueue(queue);
+    const summaryParts: string[] = [];
+    if (summary.binds > 0) summaryParts.push(`${summary.binds} bind`);
+    if (summary.edits > 0) summaryParts.push(`${summary.edits} edit`);
+    if (summary.voids > 0) summaryParts.push(`${summary.voids} void`);
     summaryEl.textContent =
       queue.length === 0
         ? ""
-        : `${summary.total} item(s): ${summary.binds} bind, ${summary.edits} edit`;
+        : `${summary.total} item(s): ${summaryParts.join(", ")}`;
 
     const table = el("table", { class: "data bind-queue" });
     const thead = el("thead");
@@ -203,9 +222,13 @@ function buildUI(ctx: AppContext): HTMLElement {
     }
 
     const summary = summarizeQueue(q);
+    const confirmParts: string[] = [];
+    if (summary.binds > 0) confirmParts.push(`${summary.binds} bind`);
+    if (summary.edits > 0) confirmParts.push(`${summary.edits} edit`);
+    if (summary.voids > 0) confirmParts.push(`${summary.voids} void`);
     if (
       !confirm(
-        `Submit ${summary.total} item(s) (${summary.binds} bind, ${summary.edits} edit) ` +
+        `Submit ${summary.total} item(s) (${confirmParts.join(", ")}) ` +
           `as a PR to ${DATA_REPO_SLUG}?`,
       )
     ) {
@@ -248,56 +271,19 @@ function buildUI(ctx: AppContext): HTMLElement {
     renderTable();
   });
 
-  // ---- Batch scan buttons (image upload #99, rolling scan #100) ----
-
-  const makeResolveStatus = (): ((canonical: string) => ScanStatus) => {
-    const queuedIds = new Set(loadQueue().map((q) => q.id));
-    return (canonical): ScanStatus => {
-      if (queuedIds.has(canonical)) return "queued";
-      const row = ctx.registry.findById(canonical);
-      if (!row) return "unknown";
-      if (row.status === "unbound") return "unbound";
-      return "bound";
-    };
-  };
-
-  const addScannedIds = (ids: string[]) => {
-    if (ids.length === 0) return;
-    const queuedIds = new Set(loadQueue().map((q) => q.id));
-    for (const id of ids) {
-      if (queuedIds.has(id)) continue;
-      appendBind({ id, ...emptyBindFields() });
-    }
-    renderTable();
-  };
-
-  const uploadBtn = button({}, icon("upload"), " Upload image");
-  uploadBtn.addEventListener("click", async () => {
-    try {
-      const ids = await openImageScan({
-        resolveStatus: makeResolveStatus(),
-      });
-      addScannedIds(ids);
-    } catch {
-      /* user cancelled */
-    }
+  // Repeat-mode toggle (#92): keep metadata fields after queuing a bind.
+  const repeatLabel = el("label", { class: "repeat-mode-toggle" });
+  const repeatCheckbox = document.createElement("input");
+  repeatCheckbox.type = "checkbox";
+  repeatCheckbox.checked = repeatModeEnabled;
+  repeatCheckbox.addEventListener("change", () => {
+    repeatModeEnabled = repeatCheckbox.checked;
   });
-
-  const rollingBtn = button({}, icon("list-checks"), " Rolling scan");
-  rollingBtn.addEventListener("click", async () => {
-    try {
-      const ids = await openScannerRolling({
-        resolveStatus: makeResolveStatus(),
-      });
-      addScannedIds(ids);
-    } catch {
-      /* user cancelled */
-    }
-  });
+  repeatLabel.append(repeatCheckbox, " Repeat mode");
 
   root.append(
     formRow([submitBtn, clearBtn, summaryEl]),
-    formRow([uploadBtn, rollingBtn]),
+    formRow([repeatLabel]),
     preflightContainer,
     tableContainer,
   );
@@ -435,8 +421,12 @@ function renderEditRow(
   index: number,
   onChange: () => void,
 ): HTMLElement {
-  const tr = el("tr", { class: "queue-row queue-row--edit", "data-kind": "edit", "data-id": item.id });
-  tr.append(el("td", {}, el("span", { class: "chip chip--kind chip--edit" }, "edit")));
+  const isVoid = item.changes.status === "void";
+  const rowClass = isVoid ? "queue-row queue-row--edit queue-row--void" : "queue-row queue-row--edit";
+  const chipClass = isVoid ? "chip chip--kind chip--void" : "chip chip--kind chip--edit";
+  const chipLabel = isVoid ? "void" : "edit";
+  const tr = el("tr", { class: rowClass, "data-kind": isVoid ? "void" : "edit", "data-id": item.id });
+  tr.append(el("td", {}, el("span", { class: chipClass }, chipLabel)));
   tr.append(el("td", { class: "id-cell" }, fmtId(item.id)));
 
   for (const f of FIELDS.filter((f) => f.editable)) {
@@ -530,8 +520,13 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
 
   const fieldInputs = new Map<EditableKey, HTMLInputElement>();
   for (const f of FIELDS.filter((f) => f.editable)) {
+    const key = f.key as EditableKey;
     const inp = input({ type: "text", placeholder: f.label });
-    fieldInputs.set(f.key as EditableKey, inp);
+    // Repeat mode (#92): restore stashed values from previous bind.
+    if (repeatModeEnabled && repeatFieldValues[key]) {
+      inp.value = repeatFieldValues[key];
+    }
+    fieldInputs.set(key, inp);
     tr.append(el("td", {}, inp));
   }
 
@@ -560,7 +555,29 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
       (entry as unknown as Record<string, string>)[k] = inp.value;
     }
     appendBind(entry);
+
+    if (repeatModeEnabled) {
+      // Repeat mode (#92): stash field values so they survive re-render,
+      // then clear only the ID and auto-focus it.
+      for (const [k, inp] of fieldInputs) {
+        repeatFieldValues[k] = inp.value;
+      }
+    } else {
+      repeatFieldValues = {};
+    }
+
     onAdd();
+
+    if (repeatModeEnabled) {
+      // After re-render, focus the new ID input. Use document query
+      // since the entry row was rebuilt by onAdd().
+      requestAnimationFrame(() => {
+        const newIdInput = document.querySelector<HTMLInputElement>(
+          '.entry-row input[placeholder*="ID"]',
+        );
+        newIdInput?.focus();
+      });
+    }
   });
   tr.append(el("td", { class: "row-actions" }, addBtn));
 
