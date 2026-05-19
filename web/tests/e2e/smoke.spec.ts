@@ -52,7 +52,7 @@ test.describe("part-registry FE smoke", () => {
 
     // All four tab labels visible.
     await expect(page.getByRole("button", { name: "Lookup" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Print" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Print", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Bind" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Mint" })).toBeVisible();
 
