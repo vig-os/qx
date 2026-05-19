@@ -208,7 +208,27 @@ function syncCanonicalPath(route: AppPath): void {
 function renderLayout() {
   const shell = el("main", { class: "container shell" });
   const header = el("header", { class: "shell__header" });
-  const title = el("h1", { class: "shell__title" }, "part-registry");
+
+  // Inline QR icon SVG — stylised 3x3 grid suggesting a QR code
+  const qrIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  qrIcon.setAttribute("viewBox", "0 0 20 20");
+  qrIcon.setAttribute("width", "20");
+  qrIcon.setAttribute("height", "20");
+  qrIcon.setAttribute("fill", "currentColor");
+  qrIcon.setAttribute("aria-hidden", "true");
+  qrIcon.innerHTML = [
+    '<rect x="1" y="1" width="6" height="6" rx="1"/>',
+    '<rect x="13" y="1" width="6" height="6" rx="1"/>',
+    '<rect x="1" y="13" width="6" height="6" rx="1"/>',
+    '<rect x="9" y="9" width="2" height="2"/>',
+    '<rect x="13" y="13" width="2" height="2"/>',
+    '<rect x="17" y="13" width="2" height="2"/>',
+    '<rect x="13" y="17" width="6" height="2"/>',
+    '<rect x="9" y="13" width="2" height="6"/>',
+  ].join("");
+
+  const title = el("h1", { class: "shell__title" });
+  title.append(qrIcon, "part-registry");
   const repoLink = el("a", {
     class: "shell__repo",
     href: `https://github.com/${REPO_SLUG}`,
