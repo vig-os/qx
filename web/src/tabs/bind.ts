@@ -11,7 +11,6 @@
 // entry point for new binds. Manual paste is also supported. Edits
 // arrive from the Lookup tab; they're not added from here.
 
-import { ID_REGEX } from "../config";
 import { FIELDS, type RegistryRow } from "../registry/schema";
 import { runPreflight, type QueueItem } from "../registry/preflight";
 import {
@@ -81,10 +80,10 @@ function buildUI(ctx: AppContext): HTMLElement {
   root.append(
     el(
       "p",
-      { class: "muted" },
-      "Scan a QR (camera icon in the empty row) or paste an ID to queue a new bind. " +
-        "Edits arrive from the Lookup tab — click any row's Edit button there to queue an edit. " +
-        "Submit creates a PR against the data repo; you'll need a GitHub PAT on first submit.",
+      { class: "muted small" },
+      "Click \"+\u00a0Add row\" to queue a new bind (or scan QR codes). " +
+        "Edits arrive from the Lookup tab. " +
+        "Submit creates a PR against the data repo.",
     ),
   );
 
@@ -406,7 +405,22 @@ function renderBindRow(
 ): HTMLElement {
   const tr = el("tr", { class: "queue-row queue-row--bind", "data-kind": "bind", "data-id": item.id });
   tr.append(el("td", {}, el("span", { class: "chip chip--kind chip--bind" }, "bind")));
-  tr.append(el("td", { class: "id-cell" }, fmtId(item.id)));
+
+  // Editable ID cell — supports blank rows added via "+" button
+  const idCell = el("td", { class: "id-cell" });
+  const idInp = input({ type: "text", value: item.id ? fmtId(item.id) : "", placeholder: "ID (14-char)", autocapitalize: "characters" });
+  idInp.addEventListener("change", () => {
+    const raw = idInp.value.trim().toUpperCase().replace(/-/g, "");
+    const queue = loadQueue();
+    const current = queue[index];
+    if (current && current.kind === "bind") {
+      current.id = raw;
+      saveQueue(queue);
+      tr.dataset.id = raw;
+    }
+  });
+  idCell.append(idInp);
+  tr.append(idCell);
 
   for (const f of FIELDS.filter((f) => f.editable)) {
     const cell = el("td");
@@ -418,6 +432,11 @@ function renderBindRow(
       if (current && current.kind === "bind") {
         (current as unknown as Record<string, string>)[key] = inp.value;
         saveQueue(queue);
+        // #92: track last-edited fields for repeat mode
+        if (repeatMode) {
+          if (!lastBindFields) lastBindFields = {} as Record<EditableKey, string>;
+          lastBindFields[key] = inp.value;
+        }
       }
     });
     cell.append(inp);
@@ -495,20 +514,32 @@ let lastBindFields: Record<EditableKey, string> | null = null;
 
 function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
   const tr = el("tr", { class: "entry-row" });
-  // Spacer for the Kind column so columns line up.
-  tr.append(el("td", {}, el("span", { class: "muted small" }, "new")));
 
-  const idInput = input({
-    type: "text",
-    placeholder: "ID (14-char)",
-    autocapitalize: "characters",
+  // "+" button spans the full row — clicking creates a blank bind row
+  const editableCount = FIELDS.filter((f) => f.editable).length;
+  // +1 Kind, +1 ID, +editableCount fields, +1 Queued, +1 actions = editableCount + 4
+  const totalCols = editableCount + 4;
+  const addCell = el("td", { colspan: String(totalCols), style: "text-align: center;" });
+
+  const addBlankBtn = button({ class: "secondary small", title: "Add blank row to queue" }, icon("plus"), " Add row");
+  addBlankBtn.addEventListener("click", () => {
+    const fields = repeatMode && lastBindFields
+      ? { ...lastBindFields }
+      : emptyBindFields();
+    appendBind({ id: "", ...fields });
+    onAdd();
+    // Focus the ID input of the newly added row (last queue row)
+    requestAnimationFrame(() => {
+      const rows = document.querySelectorAll<HTMLElement>(".queue-row--bind");
+      const lastRow = rows[rows.length - 1];
+      const idInp = lastRow?.querySelector<HTMLInputElement>(".id-cell input");
+      if (idInp) idInp.focus();
+    });
   });
-  const scanBtn = button({ class: "icon-only", title: "Scan QR" }, icon("camera"));
+
+  const scanBtn = button({ class: "secondary small", title: "Scan QR" }, icon("camera"), " Scan");
   scanBtn.addEventListener("click", async () => {
     try {
-      // Snapshot multi-pick: greys out IDs already in the queue
-      // (so the operator can see at a glance which on-bench parts
-      // are still un-queued) and reds out IDs not in the registry.
       const queuedIds = new Set(loadQueue().map((q) => q.id));
       const ids = await openScannerMulti({
         resolveStatus: (canonical): ScanStatus => {
@@ -520,94 +551,20 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
         },
       });
       if (ids.length === 0) return;
-      if (ids.length === 1) {
-        // Single pick: populate the entry row so the operator can
-        // fill metadata fields before queuing.
-        idInput.value = ids[0];
-        idInput.focus();
-      } else {
-        // Multi-pick: auto-queue all selected IDs with empty
-        // metadata (operator can edit inline in the table).
-        for (const id of ids) {
-          if (queuedIds.has(id)) continue; // skip duplicates
-          appendBind({ id, ...emptyBindFields() });
-        }
-        onAdd();
+      for (const id of ids) {
+        if (queuedIds.has(id)) continue;
+        const fields = repeatMode && lastBindFields
+          ? { ...lastBindFields }
+          : emptyBindFields();
+        appendBind({ id, ...fields });
       }
+      onAdd();
     } catch {
       /* user cancelled */
     }
   });
-  const idCell = el("td", { class: "id-cell" });
-  const idWrap = el("div", { style: "display:flex; gap:4px;" });
-  idWrap.append(idInput, scanBtn);
-  idCell.append(idWrap);
-  tr.append(idCell);
 
-  const fieldInputs = new Map<EditableKey, HTMLInputElement>();
-  for (const f of FIELDS.filter((f) => f.editable)) {
-    const inp = input({ type: "text", placeholder: f.label });
-    // #92: pre-fill from last bind if repeat mode is active
-    if (repeatMode && lastBindFields) {
-      const key = f.key as EditableKey;
-      if (lastBindFields[key]) inp.value = lastBindFields[key];
-    }
-    fieldInputs.set(f.key as EditableKey, inp);
-    tr.append(el("td", {}, inp));
-  }
-
-  tr.append(el("td", {}, ""));
-
-  const addBtn = button({ class: "icon-only primary", title: "Queue this bind" }, icon("plus"));
-  addBtn.addEventListener("click", () => {
-    const id = idInput.value.trim().toUpperCase().replace(/-/g, "");
-    if (!ID_REGEX.test(id)) {
-      alert("ID must be 14 chars from the canonical alphabet.");
-      return;
-    }
-    const existing = ctx.registry.findById(id);
-    if (existing && existing.status === "void") {
-      alert(`${id} is voided. Cannot bind.`);
-      return;
-    }
-    if (!existing && !confirm(`${id} is not in the loaded registry. Queue anyway?`)) {
-      return;
-    }
-    const entry: Omit<QueuedBind, "kind" | "queued_at"> = {
-      id,
-      ...emptyBindFields(),
-    };
-    for (const [k, inp] of fieldInputs) {
-      (entry as unknown as Record<string, string>)[k] = inp.value;
-    }
-
-    // #92: save field values before clearing if repeat mode
-    if (repeatMode) {
-      lastBindFields = {} as Record<EditableKey, string>;
-      for (const [k, inp] of fieldInputs) {
-        lastBindFields[k] = inp.value;
-      }
-    }
-
-    appendBind(entry);
-
-    // #92: in repeat mode, clear only ID and auto-focus; otherwise full re-render clears all
-    if (repeatMode) {
-      idInput.value = "";
-      idInput.focus();
-      // Don't call onAdd() — we keep the entry row as-is with fields preserved
-      // But we still need to re-render the queue table above to show the new row
-      onAdd();
-    } else {
-      onAdd();
-    }
-  });
-  tr.append(el("td", { class: "row-actions" }, addBtn));
-
-  // #92: auto-focus ID input if we're in repeat mode
-  if (repeatMode) {
-    requestAnimationFrame(() => idInput.focus());
-  }
-
+  addCell.append(addBlankBtn, " ", scanBtn);
+  tr.append(addCell);
   return tr;
 }
