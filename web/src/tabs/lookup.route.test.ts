@@ -154,14 +154,19 @@ describe("lookupTab data-grid (#10)", () => {
     expect((rows[0] as HTMLElement).dataset.id).toBe(unboundRow.id);
   });
 
-  it("clicking a row navigates via ctx.showPart", () => {
+  // TODO: fix after #106 lookup refactor — renderView needs investigation in jsdom.
+  // The refactored lookup tab renders differently in jsdom; row click
+  // dispatches through ctx.showPart but the table body isn't reliably
+  // populated in the jsdom environment.
+  it.skip("clicking a row navigates via ctx.showPart", () => {
     const container = document.createElement("div");
     const ctx = makeContext([boundRow], () => ({ kind: "home" }));
     lookupTab.mount(container, ctx);
 
-    // TODO: fix after #106 lookup refactor — renderView needs investigation in jsdom
-    // The refactored lookup tab renders differently in jsdom.
-    expect(true).toBe(true);
+    const row = container.querySelector("tbody tr[data-id]") as HTMLElement;
+    row.click();
+
+    expect(ctx.showPart).toHaveBeenCalledWith(boundRow.id);
   });
 
   it("fuzzy-searches across non-id columns", () => {
