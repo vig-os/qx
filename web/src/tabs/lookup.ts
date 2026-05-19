@@ -19,7 +19,7 @@
 import Fuse from "fuse.js";
 
 import { ID_LENGTH, ID_REGEX, DATA_REPO_SLUG, DEFAULT_BRANCH, DEFAULT_SIZE_MM } from "../config";
-import { FIELDS, STATUSES, REGISTRY_FIELD_KEYS, type RegistryRow, type Status } from "../registry/schema";
+import { FIELDS, REGISTRY_FIELD_KEYS, type RegistryRow, type Status } from "../registry/schema";
 import { appendEdit, appendVoid } from "../registry/queue";
 import type { AppContext, Tab } from "../core/types";
 import { normalizeCanonicalId } from "../routing/route";
