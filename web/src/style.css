@@ -63,25 +63,35 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
 .shell__status { padding: 8px 16px; border-top: 1px solid var(--border); font-size: 12px; }
 .shell__status.error { color: var(--error); }
 
-.tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 16px; padding: 0; list-style: none; }
+.tabs { display: flex; gap: 0; border-bottom: 2px solid var(--pico-muted-border-color, var(--border)); margin-bottom: 16px; padding: 0; list-style: none; }
 .tabs ul { display: flex; gap: 0; padding: 0; margin: 0; list-style: none; }
 .tabs li { margin-bottom: -2px; }
+.tabs button,
+.tabs button.active,
+.tabs button:hover,
+.tabs button:focus,
+.tabs button[type="button"],
 .tab-btn {
-  background: none;
-  border: none;
-  border-bottom: 3px solid transparent;
-  border-radius: 0;
-  padding: 10px 20px;
+  all: unset;
+  padding: 12px 24px;
   cursor: pointer;
-  font: inherit;
   font-size: 15px;
-  color: var(--muted);
-  box-shadow: none;
-  outline: none;
-  transition: color 0.15s, border-bottom-color 0.15s;
+  color: var(--pico-muted-color, var(--muted));
+  border-bottom: 3px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
 }
-.tab-btn:hover:not(.active) { color: var(--fg); background: none; filter: none; }
-.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; background: none; }
+.tabs button:hover:not(.active),
+.tab-btn:hover:not(.active) { color: var(--pico-color, var(--fg)); }
+.tabs button.active,
+.tab-btn.active {
+  color: var(--pico-primary, var(--accent));
+  border-bottom-color: var(--pico-primary, var(--accent));
+  font-weight: 600;
+}
 
 .toolbar-btn { background: transparent; border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 10px; cursor: pointer; font: inherit; color: var(--fg); display: inline-flex; align-items: center; gap: 6px; }
 .toolbar-btn:hover { background: var(--bg-elev); }
@@ -161,8 +171,8 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 .match-list li { margin: 4px 0; font-family: ui-monospace, monospace; }
 
 .label-preview { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 16px; align-items: flex-start; }
-.label-preview__item { background: var(--bg-elev); padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); }
-.label-preview__item svg { display: block; height: auto; max-width: 200px; }
+.label-preview__item { background: var(--bg-elev); padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); min-height: 80px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.label-preview__item svg { display: block; height: auto; max-width: 300px; width: 100%; }
 
 .diecut-preview__sheets { display: flex; flex-wrap: wrap; gap: 12px; }
 .diecut-preview .slot { position: absolute; overflow: hidden; }
@@ -357,13 +367,30 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
   padding: 4px 12px;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--bg-elev);
   font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+}
+.lookup__status-filter .chip--filter:hover:not(.active) {
+  border-color: var(--muted);
+  background: var(--row-hover);
 }
 .lookup__status-filter .chip--filter.active {
-  background: var(--accent, #1f6feb);
   color: #fff;
+  font-weight: 600;
   border-color: var(--accent, #1f6feb);
+  background: var(--accent, #1f6feb);
+}
+/* Status-specific active chip colours */
+.lookup__status-filter .chip--filter.chip--status-unbound.active {
+  background: #2e7d32; border-color: #2e7d32;
+}
+.lookup__status-filter .chip--filter.chip--status-bound.active {
+  background: #1f6feb; border-color: #1f6feb;
+}
+.lookup__status-filter .chip--filter.chip--status-void.active {
+  background: #c62828; border-color: #c62828;
 }
 .lookup__table-wrap {
   max-height: 60vh;
@@ -478,6 +505,9 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
   font-weight: 600;
   margin-bottom: 12px;
 }
+
+/* Table row count indicator */
+.lookup__table-count { margin: 6px 0 4px; font-size: 12px; }
 
 /* Issue #91: selection checkbox column */
 .lookup__th-select { width: 32px; }

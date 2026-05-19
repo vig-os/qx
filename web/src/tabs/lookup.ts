@@ -147,7 +147,7 @@ function buildUI(ctx: AppContext): HTMLElement {
   const statusBar = el("div", { class: "lookup__status-filter" });
   for (const s of ["all", "unbound", "bound", "void"] as const) {
     const btn = button(
-      { class: `chip chip--filter ${s === statusFilter ? "active" : ""}` },
+      { class: `chip chip--filter chip--status-${s} ${s === statusFilter ? "active" : ""}` },
       s,
     );
     btn.addEventListener("click", () => {
@@ -201,7 +201,7 @@ function buildUI(ctx: AppContext): HTMLElement {
     sel.title = `Filter by ${label}`;
     const defaultOpt = document.createElement("option");
     defaultOpt.value = "";
-    defaultOpt.textContent = `All ${label}s`;
+    defaultOpt.textContent = `All ${/(?:ch|sh|s|x|z)$/i.test(label) ? label + "es" : label + "s"}`;
     sel.append(defaultOpt);
     for (const v of uniqueValues(all, fk)) {
       const opt = document.createElement("option");
@@ -620,6 +620,16 @@ function buildUI(ctx: AppContext): HTMLElement {
     tableWrap.append(table);
     contentContainer.append(tableWrap);
 
+    // Table row count indicator
+    const countLabel = el(
+      "div",
+      { class: "lookup__table-count muted small" },
+      rows.length === all.length
+        ? `${rows.length} parts`
+        : `Showing ${rows.length} of ${all.length} parts`,
+    );
+    contentContainer.append(countLabel);
+
     renderTableBody(rows, tbody, selectAllCb);
   };
 
@@ -698,8 +708,10 @@ const EDIT_FIELD_KEYS: (keyof RegistryRow)[] = [
 function renderDetailView(row: RegistryRow, ctx: AppContext): HTMLElement {
   const wrap = el("div", { class: "row-detail" });
   wrap.append(el("h3", { class: "row-detail__id" }, fmtId(row.id)));
+  const AUDIT_KEYS = new Set(["minted_by", "bound_by", "last_edited_at", "last_edited_by"]);
   const dl = el("dl");
   for (const f of FIELDS) {
+    if (AUDIT_KEYS.has(f.key)) continue;
     const value = (row as unknown as Record<string, string>)[f.key] ?? "";
     dl.append(el("dt", {}, f.label));
     dl.append(
@@ -760,7 +772,7 @@ function renderDetailView(row: RegistryRow, ctx: AppContext): HTMLElement {
   const actionChildren: (HTMLElement | null)[] = [editBtn, reprintBtn];
   if (row.status !== "void") {
     const voidBtn = button(
-      { class: "row-detail__void" },
+      { class: "destructive row-detail__void" },
       "Void",
     );
     voidBtn.addEventListener("click", () => {
@@ -794,7 +806,7 @@ function renderVoidConfirm(row: RegistryRow, ctx: AppContext): HTMLElement {
   const errMsg = el("p", { class: "row-detail__error muted small" });
   wrap.append(errMsg);
 
-  const confirmBtn = button({ class: "row-detail__void" }, "Confirm void");
+  const confirmBtn = button({ class: "destructive row-detail__void" }, "Confirm void");
   confirmBtn.addEventListener("click", () => {
     const reason = reasonTextarea.value.trim();
     if (!reason) {
