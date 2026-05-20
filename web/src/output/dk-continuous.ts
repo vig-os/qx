@@ -12,17 +12,13 @@
 // every page break.
 
 import type {
-  LayoutOptions,
   OutputMode,
   OutputModeField,
   PlanItem,
   PlannedPage,
 } from "../core/types";
 import { getLayout } from "../layouts";
-
-function planItemToOpts(item: PlanItem): LayoutOptions {
-  return { size: item.size, extra: { ...item.extras } };
-}
+import { planItemToOpts } from "./plan-opts";
 
 export const dkContinuousMode: OutputMode = {
   id: "dk-continuous",

@@ -11,13 +11,13 @@
 //   - cut guides default On (operator usually scissors-cuts these)
 
 import type {
-  LayoutOptions,
   OutputMode,
   OutputModeField,
   PlanItem,
   PlannedPage,
 } from "../core/types";
 import { getLayout } from "../layouts";
+import { planItemToOpts } from "./plan-opts";
 
 const PAPER_SIZES: Record<string, { w: number; h: number }> = {
   a4: { w: 210, h: 297 },
@@ -62,10 +62,6 @@ function readBool(v: number | string | undefined, fallback: boolean): boolean {
   if (typeof v === "number") return v !== 0;
   if (typeof v === "string") return v === "1" || v === "true";
   return fallback;
-}
-
-function planItemToOpts(item: PlanItem): LayoutOptions {
-  return { size: item.size, extra: { ...item.extras } };
 }
 
 function expandToSlots(items: PlanItem[]): Slot[] {

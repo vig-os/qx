@@ -12,8 +12,8 @@ import type {
   LayoutOptionField,
 } from "../core/types";
 import { renderLabelSync, type WasmFormatId } from "../wasm/loader";
+import { resolveFormat, resolveMicro, stripText } from "./label-settings";
 
-const FORMAT: WasmFormatId = "4/4";
 const DEFAULT_CABLE_OD_MM = 6;
 
 function cableOd(opts: LayoutOptions): number {
@@ -33,11 +33,14 @@ export const flagLayout: Layout = {
     return { widthMm: 4 * s + wrap, heightMm: s };
   },
   renderSvg(canonical: string, opts: LayoutOptions): string {
-    return renderLabelSync(canonical, "flag", opts.size, FORMAT, {
+    const fmt: WasmFormatId = resolveFormat(opts);
+    const svg = renderLabelSync(canonical, "flag", opts.size, fmt, {
+      micro: resolveMicro(opts),
       cableOdMm: cableOd(opts),
       noMarkers: Boolean(opts.extra?.noMarkers),
       alignmentLine: Boolean(opts.extra?.alignmentLine),
     });
+    return opts.extra?.showText === false ? stripText(svg) : svg;
   },
   optionFields(): LayoutOptionField[] {
     return [

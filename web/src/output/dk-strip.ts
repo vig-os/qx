@@ -8,22 +8,18 @@
 // `labelsPerStrip` to split a long job into multiple pages.
 
 import type {
-  LayoutOptions,
   OutputMode,
   OutputModeField,
   PlanItem,
   PlannedPage,
 } from "../core/types";
 import { getLayout } from "../layouts";
+import { planItemToOpts } from "./plan-opts";
 
 interface RenderedLabel {
   svg: string;
   widthMm: number;
   heightMm: number;
-}
-
-function planItemToOpts(item: PlanItem): LayoutOptions {
-  return { size: item.size, extra: { ...item.extras } };
 }
 
 function readNumber(v: number | string | undefined, fallback: number): number {

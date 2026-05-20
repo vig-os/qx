@@ -108,9 +108,13 @@ pub fn decode_qr(image_png: &[u8]) -> Result<String, CodecError> {
     use rxing::{BarcodeFormat, DecodeHints};
     let mut hints = DecodeHints {
         PossibleFormats: Some(
-            [BarcodeFormat::QR_CODE, BarcodeFormat::MICRO_QR_CODE]
-                .into_iter()
-                .collect(),
+            [
+                BarcodeFormat::QR_CODE,
+                BarcodeFormat::MICRO_QR_CODE,
+                BarcodeFormat::DATA_MATRIX,
+            ]
+            .into_iter()
+            .collect(),
         ),
         TryHarder: Some(true),
         ..DecodeHints::default()

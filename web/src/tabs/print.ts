@@ -27,6 +27,12 @@ import type {
 import { allLayouts, getLayout } from "../layouts";
 import { allOutputModes, getOutputMode } from "../output";
 import {
+  loadLabelSettings,
+  saveLabelSettings,
+  type CodeType,
+  type FormatSetting,
+} from "../layouts/label-settings";
+import {
   events,
   EVENT_REPRINT_REQUEST,
   EVENT_PLAN_CHANGED,
@@ -165,6 +171,17 @@ function buildUI(ctx: AppContext): HTMLElement {
     pendingReprint = [];
   }
 
+  // ---- Global label settings (code type, text format, show text) ----
+  let labelSettings = loadLabelSettings();
+
+  /** Merge global label settings into a per-item extras object. */
+  const withLabelSettings = (extras: Record<string, unknown>): Record<string, unknown> => ({
+    ...extras,
+    micro: labelSettings.codeType === "micro",
+    format: labelSettings.format === "auto" ? undefined : labelSettings.format,
+    showText: labelSettings.showText,
+  });
+
   const summary = el("div", { class: "muted small" });
   const tableWrap = el("div");
   const livePreviewArea = el("div", { class: "label-preview label-preview--live" });
@@ -194,7 +211,7 @@ function buildUI(ctx: AppContext): HTMLElement {
           const wrap = el("div", { class: "label-preview__item" });
           wrap.innerHTML = layout.renderSvg(first.id, {
             size: first.size,
-            extra: { ...first.extras },
+            extra: withLabelSettings(first.extras),
           });
           wrap.append(
             el(
@@ -297,7 +314,7 @@ function buildUI(ctx: AppContext): HTMLElement {
         const wrap = el("div", { class: "label-preview__item" });
         wrap.innerHTML = layout.renderSvg(item.id, {
           size: item.size,
-          extra: { ...item.extras },
+          extra: withLabelSettings(item.extras),
         });
         wrap.append(
           el(
@@ -528,11 +545,19 @@ function buildUI(ctx: AppContext): HTMLElement {
     openPrintWindow(mode.renderPrintHtml(pages));
   });
 
+  // ---- Label settings section (code type, text format, show text) ----
+  const labelSettingsSection = buildLabelSettingsUI(labelSettings, () => {
+    labelSettings = loadLabelSettings();
+    renderPlan();
+    refreshPreview();
+  });
+
   root.append(
     formRow([bulkBtn, clearBtn]),
     summary,
     tableWrap,
     livePreviewArea,
+    labelSettingsSection,
     printWarning,
     el("h3", {}, "Paper format"),
     formRow([el("label", {}, "Output"), modeSel]),
@@ -987,6 +1012,58 @@ export function fmtId(id: string): string {
   if (id.length < 8) return id;
   // Full 14-char ID in 4-4-4-2 grouping: ABCD-EFGH-JKMN-PQ
   return `${id.slice(0, 4)}-${id.slice(4, 8)}-${id.slice(8, 12)}-${id.slice(12, 14)}`;
+}
+
+/** Build the label settings section: code type, text format, show text. */
+function buildLabelSettingsUI(
+  initial: { codeType: CodeType; format: FormatSetting; showText: boolean },
+  onChange: () => void,
+): HTMLElement {
+  const section = el("div", { class: "label-settings" });
+  section.append(el("h3", {}, "Label settings"));
+
+  // Code type: Standard QR (V1, 21×21) vs Micro QR (M4, 17×17)
+  const codeTypeSel = select([
+    { value: "standard", label: "Standard QR (V1)" },
+    { value: "micro", label: "Micro QR (M4)" },
+  ]);
+  codeTypeSel.value = initial.codeType;
+
+  // Text format
+  const formatSel = select([
+    { value: "auto", label: "Auto (by size)" },
+    { value: "4/4", label: "4/4 (8 chars, 2 rows)" },
+    { value: "4/4/4", label: "4/4/4 (12 chars, 3 rows)" },
+    { value: "5/5/4", label: "5/5/4 (14 chars, full ID)" },
+  ]);
+  formatSel.value = initial.format;
+
+  // Show text toggle
+  const showTextCb = document.createElement("input");
+  showTextCb.type = "checkbox";
+  showTextCb.checked = initial.showText;
+  const showTextLabel = el("label", { class: "muted small", style: "display:inline-flex;align-items:center;gap:4px;" });
+  showTextLabel.append(showTextCb, "Show human-readable text");
+
+  const persist = () => {
+    saveLabelSettings({
+      codeType: codeTypeSel.value as CodeType,
+      format: formatSel.value as FormatSetting,
+      showText: showTextCb.checked,
+    });
+    onChange();
+  };
+  codeTypeSel.addEventListener("change", persist);
+  formatSel.addEventListener("change", persist);
+  showTextCb.addEventListener("change", persist);
+
+  section.append(
+    formRow([el("label", {}, "Code type"), codeTypeSel]),
+    formRow([el("label", {}, "Text format"), formatSel]),
+    formRow([showTextLabel]),
+  );
+
+  return section;
 }
 
 // Open a print-only window with the HTML produced by the active output
