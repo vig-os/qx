@@ -35,10 +35,32 @@ export const errorReportPlugin: Plugin = {
     );
     if (btn) {
       btn.innerHTML = "";
-      btn.append(icon("bug"), el("span", {}, "Report"));
+      btn.classList.add("icon-only");
+      btn.append(icon("bug"));
     }
   },
 };
+
+function collectAppState(): string {
+  const lines: string[] = [];
+  try {
+    const activeTab = document.querySelector(".tabs button.active")?.textContent?.trim() ?? "unknown";
+    lines.push(`- Active tab: ${activeTab}`);
+    const partCount = document.querySelector(".shell__status")?.textContent?.trim() ?? "unknown";
+    lines.push(`- Registry: ${partCount}`);
+    // Session state
+    const sessionIndicator = document.querySelector(".session-indicator")?.textContent?.trim();
+    if (sessionIndicator) lines.push(`- Session: ${sessionIndicator}`);
+    // Queue badge
+    const bindBadge = document.querySelector('.tabs button:nth-child(3) .tab-badge')?.textContent;
+    if (bindBadge) lines.push(`- Bind queue: ${bindBadge} items`);
+    // Contract version
+    lines.push(`- Contract schema_version: ${(window as any).__contractVersion ?? "unknown"}`);
+  } catch {
+    lines.push("- (state collection failed)");
+  }
+  return lines.join("\n");
+}
 
 async function captureAndOpenIssue(host: PluginHost): Promise<void> {
   const html2canvas = (await import("html2canvas-pro")).default;
@@ -75,6 +97,9 @@ async function captureAndOpenIssue(host: PluginHost): Promise<void> {
     copied
       ? "*Paste from clipboard (image already copied).*"
       : "*Attach manually — clipboard copy was not supported on this browser.*",
+    "",
+    "## App state",
+    collectAppState(),
     "",
     "## Environment",
     `- URL: ${url}`,
