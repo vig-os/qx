@@ -13,11 +13,16 @@ path = "src/lib.rs"
 name = "coverage"
 path = "src/bin/coverage.rs"
 
+[[bin]]
+name = "gen-scanner-fixtures"
+path = "src/bin/gen_scanner_fixtures.rs"
+
 # ADR-027 §Consequences: this crate depends only on `domain` and the
 # trait-defining crates. Adapter crates depend on it as a
 # dev-dependency, never the other way around (would be a cycle).
 [dependencies]
 part-registry-domain = { path = "../domain" }
+part-registry-codec = { path = "../codec" }
 part-registry-storage = { path = "../storage" }
 part-registry-identity = { path = "../identity" }
 part-registry-transport = { path = "../transport" }
