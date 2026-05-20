@@ -12,7 +12,7 @@
 import { ISSUE_NEW_URL } from "../config";
 import type { AppContext, Plugin, PluginHost } from "../core/types";
 import { icon } from "../ui/icons";
-import { el } from "../ui/dom";
+// el no longer used after icon-only change
 
 export const errorReportPlugin: Plugin = {
   id: "error-report",
