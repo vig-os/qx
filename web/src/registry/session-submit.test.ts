@@ -25,7 +25,7 @@ describe("sessionToSubmitPayload", () => {
       { kind: "void", id: "V1", reason: "broken", createdAt: "2026-05-18T01:00:00Z" },
     ]);
 
-    const { queueItems, mintRows, summary } = sessionToSubmitPayload(session);
+    const { queueItems, mintRows, summary: _summary } = sessionToSubmitPayload(session);
     expect(mintRows).toHaveLength(1);
     expect(mintRows[0].id).toBe("M1");
     expect(queueItems).toHaveLength(3);

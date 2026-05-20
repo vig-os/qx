@@ -378,7 +378,7 @@ export async function submitSession(
   dataRepoSlug: string,
 ): Promise<SubmitResult> {
   const apiBase = `https://api.github.com/repos/${dataRepoSlug}`;
-  const { queueItems, mintRows, summary } = sessionToSubmitPayload(session);
+  const { queueItems, mintRows, summary: _summary } = sessionToSubmitPayload(session);
 
   if (queueItems.length === 0 && mintRows.length === 0) {
     throw new SubmitError("Session is empty — nothing to submit.", "validate");
