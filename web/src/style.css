@@ -109,9 +109,9 @@ input::placeholder { font-size: 14px; }
   font-weight: 600;
 }
 
-.toolbar-btn { background: transparent; border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 10px; cursor: pointer; font: inherit; color: var(--fg); display: inline-flex; align-items: center; gap: 6px; }
-.toolbar-btn:hover { background: var(--bg-elev); }
-.toolbar-btn .icon { width: 14px; height: 14px; }
+.toolbar-btn { background: transparent; border: none; border-radius: var(--radius); padding: 6px; cursor: pointer; font: inherit; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.toolbar-btn:hover { color: var(--fg); background: var(--bg-elev); }
+.toolbar-btn .icon, .toolbar-btn svg { width: 18px; height: 18px; }
 
 button {
   font: inherit; padding: 6px 14px; border-radius: var(--radius);

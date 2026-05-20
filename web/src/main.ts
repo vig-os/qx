@@ -351,6 +351,15 @@ function renderLayout() {
     rel: "noopener",
   }, REPO_SLUG);
   const toolbar = el("div", { class: "shell__toolbar" });
+
+  // Settings gear (placeholder for future settings panel)
+  const settingsBtn = button({ class: "toolbar-btn icon-only", title: "Settings" });
+  settingsBtn.innerHTML = '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="3"/><path d="M10 1v2m0 14v2m-6.36-3.64l1.42-1.42m9.9-9.9l1.42-1.42M1 10h2m14 0h2m-3.64 6.36l-1.42-1.42M4.04 4.04L2.62 2.62"/></svg>';
+  settingsBtn.addEventListener("click", () => {
+    alert("Settings panel coming soon.");
+  });
+  toolbar.append(settingsBtn);
+
   header.append(title, repoLink, toolbar);
 
   const main = el("section", { class: "shell__main" });
