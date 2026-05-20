@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AppContext } from "../core/types";
 import { loadQueue } from "../registry/queue";
+import * as session from "../registry/session";
 import type { Registry, RegistryQuery } from "../registry/registry";
 import type { RegistryRow } from "../registry/schema";
 import { lookupTab } from "./lookup";
@@ -33,6 +34,10 @@ function makeLocalStorage() {
 
 beforeEach(() => {
   vi.stubGlobal("localStorage", makeLocalStorage());
+  // Initialize the session store's in-memory cache so the synchronous
+  // queue API works without IndexedDB (not available in jsdom/Node).
+  (session as any)._initCacheForTest?.() ??
+    ((session as any)._cache = { id: "test", createdAt: new Date().toISOString(), items: [] });
 });
 
 afterEach(() => {
