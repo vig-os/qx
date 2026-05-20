@@ -32,13 +32,13 @@
 //   tab's preview.
 
 import type {
-  LayoutOptions,
   OutputMode,
   OutputModeField,
   PlanItem,
   PlannedPage,
 } from "../core/types";
 import { getLayout } from "../layouts";
+import { planItemToOpts } from "./plan-opts";
 
 // Physical and printable dimensions for DK-1201 (Brother spec).
 export const DK1201_PHYSICAL_W_MM = 29;
@@ -46,10 +46,6 @@ export const DK1201_PHYSICAL_H_MM = 90;
 export const DK1201_PRINTABLE_W_MM = 25;
 export const DK1201_PRINTABLE_H_MM = 80;
 const DK1201_MARGIN_MM = 2; // (29 - 25) / 2 = (90 - 80) / 2
-
-function planItemToOpts(item: PlanItem): LayoutOptions {
-  return { size: item.size, extra: { ...item.extras } };
-}
 
 // One rendered label slot ready for placement in a cell.
 interface Slot {

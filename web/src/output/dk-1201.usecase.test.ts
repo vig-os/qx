@@ -21,7 +21,7 @@ const ITEMS: PlanItem[] = [
 ];
 
 describe("DK-1201 FE print use case", () => {
-  it("generates a printable sheet plan with 14-char canonical IDs and 4/4 visible text", () => {
+  it("generates a printable sheet plan with 14-char canonical IDs and auto-format visible text", () => {
     const pages = dk1201DiecutMode.plan(ITEMS, {
       rows: 2,
       cols: 2,
@@ -33,13 +33,16 @@ describe("DK-1201 FE print use case", () => {
 
     expect(pages).toHaveLength(1);
     expect(pages[0].labelCount).toBe(2);
+    // Both IDs' first 4 chars visible
     expect(pages[0].bodyHtml).toContain("K7M3");
     expect(pages[0].bodyHtml).toContain("PQ9R");
     expect(pages[0].bodyHtml).toContain("2A3B");
     expect(pages[0].bodyHtml).toContain("4C5D");
-    expect(pages[0].bodyHtml).not.toContain("T5VA");
+    // Auto-format at 11 mm = 4/4/4 (12 chars), so T5VA and 6E7F are visible
+    expect(pages[0].bodyHtml).toContain("T5VA");
+    expect(pages[0].bodyHtml).toContain("6E7F");
+    // Only the final 2 chars (XY, GH) are truncated in 4/4/4
     expect(pages[0].bodyHtml).not.toContain("XY");
-    expect(pages[0].bodyHtml).not.toContain("6E7F");
     expect(pages[0].bodyHtml).not.toContain("GH");
   });
 
