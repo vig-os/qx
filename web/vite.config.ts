@@ -18,22 +18,32 @@ const BASE = process.env.VITE_BASE ?? "/part-registry/";
 //   2. BUNDLE_METADATA.json (data-repo CI — bundle extracted from tarball)
 //   3. git describe (local dev)
 //   4. "dev" fallback
-let appVersion = process.env.GITHUB_REF_NAME ?? "";
+// GITHUB_REF_NAME = tag in code-repo release CI.
+// BUNDLE_TAG = tag passed to data-repo sandbox deploy workflow.
+let appVersion = process.env.GITHUB_REF_NAME || process.env.BUNDLE_TAG || "";
 let gitHash = "";
 
-// Try BUNDLE_METADATA.json (present when building from a release bundle)
+// Try BUNDLE_METADATA.json (present when building from a release bundle).
+// Search both __dirname/.. (normal) and CWD/.. (fallback for working-directory builds).
 if (!appVersion) {
-  try {
-    const metaPath = resolve(__dirname, "../BUNDLE_METADATA.json");
-    if (existsSync(metaPath)) {
-      const meta = JSON.parse(readFileSync(metaPath, "utf8")) as {
-        tag?: string;
-        commit?: string;
-      };
-      if (meta.tag) appVersion = meta.tag;
-      if (meta.commit) gitHash = meta.commit.slice(0, 7);
-    }
-  } catch { /* parse error — skip */ }
+  const candidates = [
+    resolve(__dirname, "../BUNDLE_METADATA.json"),
+    resolve(process.cwd(), "../BUNDLE_METADATA.json"),
+    resolve(process.cwd(), "BUNDLE_METADATA.json"),
+  ];
+  for (const metaPath of candidates) {
+    try {
+      if (existsSync(metaPath)) {
+        const meta = JSON.parse(readFileSync(metaPath, "utf8")) as {
+          tag?: string;
+          commit?: string;
+        };
+        if (meta.tag) appVersion = meta.tag;
+        if (meta.commit) gitHash = meta.commit.slice(0, 7);
+        break;
+      }
+    } catch { /* parse error — try next */ }
+  }
 }
 
 if (!appVersion) {
