@@ -18,9 +18,12 @@ const BASE = process.env.VITE_BASE ?? "/part-registry/";
 //   2. BUNDLE_METADATA.json (data-repo CI — bundle extracted from tarball)
 //   3. git describe (local dev)
 //   4. "dev" fallback
-// GITHUB_REF_NAME = tag in code-repo release CI.
-// BUNDLE_TAG = tag passed to data-repo sandbox deploy workflow.
-let appVersion = process.env.GITHUB_REF_NAME || process.env.BUNDLE_TAG || "";
+// BUNDLE_TAG = tag passed to data-repo sandbox deploy workflow (preferred).
+// GITHUB_REF_NAME = tag in code-repo release CI (only if it looks like a version tag).
+const refName = process.env.GITHUB_REF_NAME ?? "";
+const isTag = refName.startsWith("v") && /^v\d/.test(refName);
+const bundleTag = process.env.BUNDLE_TAG ?? "";
+let appVersion = (bundleTag && bundleTag !== "latest" ? bundleTag : "") || (isTag ? refName : "") || "";
 let gitHash = "";
 
 // Try BUNDLE_METADATA.json (present when building from a release bundle).
