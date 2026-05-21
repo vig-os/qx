@@ -36,40 +36,80 @@ export class SubmitError extends Error {
   }
 }
 
-// ---- localStorage PAT management ----
+// ---- sessionStorage PAT + identity management ----
+//
+// The PAT lives in sessionStorage (cleared on tab close) rather than
+// localStorage to reduce the exposure window. The operator identity
+// (GitHub username) is fetched once via GET /user and cached alongside
+// the token for the duration of the session.
 
 const PAT_KEY = "part-registry.github-pat";
+const USER_KEY = "part-registry.github-user";
 
 export function getStoredToken(): string | null {
   try {
-    return localStorage.getItem(PAT_KEY);
+    // Check sessionStorage first, then migrate from localStorage if present.
+    const ss = sessionStorage.getItem(PAT_KEY);
+    if (ss) return ss;
+    const ls = localStorage.getItem(PAT_KEY);
+    if (ls) {
+      sessionStorage.setItem(PAT_KEY, ls);
+      localStorage.removeItem(PAT_KEY); // one-time migration
+      return ls;
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
 export function storeToken(token: string): void {
-  localStorage.setItem(PAT_KEY, token);
+  sessionStorage.setItem(PAT_KEY, token);
 }
 
 export function clearToken(): void {
-  localStorage.removeItem(PAT_KEY);
+  sessionStorage.removeItem(PAT_KEY);
+  sessionStorage.removeItem(USER_KEY);
+}
+
+/** Return the cached GitHub username, or null if not yet fetched. */
+export function getStoredUser(): string | null {
+  try {
+    return sessionStorage.getItem(USER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Fetch and cache the GitHub username from the PAT. */
+export async function fetchAndCacheUser(token: string): Promise<string | null> {
+  try {
+    const res = await ghFetch("https://api.github.com/user", token);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { login?: string };
+    const login = data.login ?? null;
+    if (login) sessionStorage.setItem(USER_KEY, login);
+    return login;
+  } catch {
+    return null;
+  }
 }
 
 /** Prompt the operator for a GitHub PAT. Returns the token or null
- *  if cancelled. Uses a simple `prompt()` — good enough for a bench
- *  tool; a proper OAuth flow is the future (#5 GitHub App path). */
+ *  if cancelled. On success, fetches and caches the GitHub username. */
 export function promptForToken(): string | null {
   const existing = getStoredToken();
   const token = prompt(
     "Enter a GitHub Personal Access Token (fine-grained) with contents:write + pull_requests:write on the data repo." +
-      (existing ? "\n\nA token is already saved. Leave blank to keep it, or paste a new one." : ""),
+      (existing ? "\n\nA token is saved for this session. Leave blank to keep it, or paste a new one." : ""),
     "",
   );
   if (token === null) return null; // cancelled
   if (token.trim() === "" && existing) return existing;
   if (token.trim() === "") return null;
   storeToken(token.trim());
+  // Fire-and-forget: fetch username in background
+  void fetchAndCacheUser(token.trim());
   return token.trim();
 }
 
@@ -129,15 +169,16 @@ export function serialiseCsv(header: string, rows: Map<string, string>): string 
 function applyQueue(
   csvText: string,
   queue: ReadonlyArray<QueueItem>,
+  operator?: string,
 ): string {
   const { header, rows } = parseCsv(csvText);
   const headerCols = header.split(",").map((c) => c.trim());
 
   for (const item of queue) {
     if (item.kind === "bind") {
-      applyBind(headerCols, rows, item);
+      applyBind(headerCols, rows, item, operator);
     } else {
-      applyEdit(headerCols, rows, item);
+      applyEdit(headerCols, rows, item, operator);
     }
   }
   return serialiseCsv(header, rows);
@@ -200,6 +241,7 @@ export function applyBind(
   headerCols: string[],
   rows: Map<string, string>,
   bind: QueuedBind,
+  operator?: string,
 ): void {
   const existing = rows.get(bind.id);
   if (!existing) return; // ID not in registry — skip (preflight would have warned)
@@ -212,7 +254,9 @@ export function applyBind(
   if (bind.part_number) obj.part_number = bind.part_number;
   if (bind.location) obj.location = bind.location;
   if (bind.notes) obj.notes = bind.notes;
+  if (operator) obj.bound_by = operator;
   obj.last_edited_at = new Date().toISOString();
+  if (operator) obj.last_edited_by = operator;
   rows.set(bind.id, rowToLine(headerCols, obj));
 }
 
@@ -220,6 +264,7 @@ export function applyEdit(
   headerCols: string[],
   rows: Map<string, string>,
   edit: QueuedEdit,
+  operator?: string,
 ): void {
   const existing = rows.get(edit.id);
   if (!existing) return;
@@ -230,6 +275,7 @@ export function applyEdit(
     }
   }
   obj.last_edited_at = new Date().toISOString();
+  if (operator) obj.last_edited_by = operator;
   rows.set(edit.id, rowToLine(headerCols, obj));
 }
 
@@ -263,7 +309,11 @@ export async function submitBatch(
   const csvText = new TextDecoder().decode(csvBytes);
 
   // 2. Apply queue edits to produce new CSV.
-  const newCsv = applyQueue(csvText, queue);
+  let operator = getStoredUser() ?? undefined;
+  if (!operator) {
+    operator = (await fetchAndCacheUser(token)) ?? undefined;
+  }
+  const newCsv = applyQueue(csvText, queue, operator);
 
   // 3. Get the SHA of main's HEAD so we can create a branch from it.
   const mainRefRes = await ghFetch(`${apiBase}/git/ref/heads/main`, token);
@@ -409,9 +459,15 @@ export async function submitSession(
   let csvText = new TextDecoder().decode(csvBytes);
 
   // 2. Apply mints first (add new rows), then queue edits.
-  csvText = applyMints(csvText, mintRows);
+  //    Operator identity is filled from the cached GitHub username.
+  //    If not yet cached, fetch it now (the PAT is available).
+  let operator = getStoredUser() ?? undefined;
+  if (!operator) {
+    operator = (await fetchAndCacheUser(token)) ?? undefined;
+  }
+  csvText = applyMints(csvText, mintRows, operator);
   if (queueItems.length > 0) {
-    csvText = applyQueue(csvText, queueItems);
+    csvText = applyQueue(csvText, queueItems, operator);
   }
 
   // 3. Get the SHA of main's HEAD.
