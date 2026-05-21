@@ -35,17 +35,39 @@ import { loadPlan, savePlan } from "./print";
 
 type StatusFilter = "all" | Status;
 
-// Columns surfaced in the table view. Subset of `FIELDS` chosen for
-// at-a-glance density: id + status + the discriminating metadata
-// fields. Edit / Reprint live in the row action cell.
-const COLUMNS: { key: string; label: string }[] = [
-  { key: "id", label: "ID" },
-  { key: "status", label: "Status" },
-  { key: "type", label: "Type" },
-  { key: "vendor", label: "Vendor" },
-  { key: "batch", label: "Batch" },
-  { key: "location", label: "Location" },
-];
+// All possible columns from the contract.
+const ALL_COLUMNS: { key: string; label: string }[] = FIELDS.map((f) => ({
+  key: f.key,
+  label: f.label,
+}));
+
+// Default visible columns — at-a-glance density. Users can toggle more.
+const DEFAULT_VISIBLE = new Set([
+  "id", "status", "type", "vendor", "batch", "location",
+]);
+
+const COLS_KEY = "part-registry.lookup.columns";
+
+function loadVisibleColumns(): Set<string> {
+  try {
+    const raw = localStorage.getItem(COLS_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw) as string[];
+      if (Array.isArray(arr) && arr.length > 0) return new Set(arr);
+    }
+  } catch { /* ignore */ }
+  return new Set(DEFAULT_VISIBLE);
+}
+
+function saveVisibleColumns(cols: Set<string>): void {
+  localStorage.setItem(COLS_KEY, JSON.stringify([...cols]));
+}
+
+let visibleColumns = loadVisibleColumns();
+
+function getColumns(): { key: string; label: string }[] {
+  return ALL_COLUMNS.filter((c) => visibleColumns.has(c.key));
+}
 
 // #93: sortable columns
 type SortDir = "asc" | "desc" | "none";
@@ -249,11 +271,56 @@ function buildUI(ctx: AppContext): HTMLElement {
   });
   viewToggle.append(tableToggleBtn, dashToggleBtn);
 
+  // Column picker — toggle which fields are visible in the table
+  const colPickerWrap = el("div", { class: "lookup__col-picker", style: "position:relative;display:inline-block;" });
+  const colPickerBtn = button({ class: "outline small" }, icon("settings"), " Columns");
+  const colPickerDropdown = el("div", {
+    class: "col-picker-dropdown",
+    style: "display:none;position:absolute;right:0;top:100%;z-index:10;background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);padding:8px;min-width:180px;max-height:300px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.1);",
+  });
+
+  const buildColPicker = () => {
+    colPickerDropdown.innerHTML = "";
+    for (const col of ALL_COLUMNS) {
+      const label = el("label", { style: "display:flex;align-items:center;gap:4px;padding:2px 0;cursor:pointer;font-size:13px;" });
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = visibleColumns.has(col.key);
+      // id and status are always visible
+      if (col.key === "id" || col.key === "status") {
+        cb.disabled = true;
+        cb.checked = true;
+      }
+      cb.addEventListener("change", () => {
+        if (cb.checked) visibleColumns.add(col.key);
+        else visibleColumns.delete(col.key);
+        saveVisibleColumns(visibleColumns);
+        renderView();
+      });
+      label.append(cb, ` ${col.label}`);
+      colPickerDropdown.append(label);
+    }
+  };
+  buildColPicker();
+
+  colPickerBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const showing = colPickerDropdown.style.display !== "none";
+    colPickerDropdown.style.display = showing ? "none" : "block";
+  });
+  // Close on outside click
+  document.addEventListener("click", () => {
+    colPickerDropdown.style.display = "none";
+  });
+  colPickerDropdown.addEventListener("click", (e) => e.stopPropagation());
+
+  colPickerWrap.append(colPickerBtn, colPickerDropdown);
+
   root.append(
     formRow([searchInput, scanBtn]),
     statusBar,
     filterBar,
-    formRow([reprintSelBtn, exportCsvBtn, viewToggle]),
+    formRow([reprintSelBtn, exportCsvBtn, viewToggle, colPickerWrap]),
   );
 
   // ---------- containers ----------
@@ -332,7 +399,7 @@ function buildUI(ctx: AppContext): HTMLElement {
     selectAllTh.append(selectAllCb);
     headRow.append(selectAllTh);
 
-    for (const col of COLUMNS) {
+    for (const col of getColumns()) {
       const th = el("th", { class: "lookup__th-sortable" });
       const sortIndicator =
         sortState.key === col.key && sortState.dir !== "none"
@@ -381,7 +448,7 @@ function buildUI(ctx: AppContext): HTMLElement {
       if (all.length === 0) {
         // Full empty state — no parts at all
         const emptyWrap = el("tr");
-        const emptyTd = el("td", { colspan: String(COLUMNS.length + 2) });
+        const emptyTd = el("td", { colspan: String(getColumns().length + 2) });
         const emptyState = el("div", { class: "empty-state" });
         emptyState.append(
           el("div", { class: "empty-state__icon" }, "📦"),
@@ -395,7 +462,7 @@ function buildUI(ctx: AppContext): HTMLElement {
         emptyWrap.append(emptyTd);
         tbody.append(emptyWrap);
       } else {
-        const td = el("td", { colspan: String(COLUMNS.length + 2), class: "muted" });
+        const td = el("td", { colspan: String(getColumns().length + 2), class: "muted" });
         td.append("No matches.");
         tbody.append(el("tr", {}, td));
       }
@@ -421,7 +488,7 @@ function buildUI(ctx: AppContext): HTMLElement {
       tr.append(cbTd);
       rowCheckboxes.push(cb);
 
-      for (const col of COLUMNS) {
+      for (const col of getColumns()) {
         const value = row[col.key] ?? "";
         let cell: HTMLElement;
         if (col.key === "id") {
@@ -437,7 +504,14 @@ function buildUI(ctx: AppContext): HTMLElement {
             ),
           );
         } else {
-          cell = el("td", {}, value || el("span", { class: "muted" }, "\u2014"));
+          // Format date fields as human-readable
+          const fieldDef = FIELDS.find((f) => f.key === col.key);
+          const display = value
+            ? (fieldDef?.type === "date" && value.includes("T")
+              ? new Date(value).toLocaleDateString()
+              : value)
+            : "";
+          cell = el("td", {}, display || el("span", { class: "muted" }, "\u2014"));
         }
         tr.append(cell);
       }

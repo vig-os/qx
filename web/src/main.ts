@@ -88,7 +88,17 @@ async function main(): Promise<void> {
   const layout = renderLayout();
   root.append(layout.shell);
 
+  // Plugins append in order: theme toggle, then bug report.
   installPlugins(layout.toolbar, ctx, PLUGINS);
+
+  // Settings gear appended last → rightmost position in toolbar.
+  // Order: dark-mode toggle | bug report | settings
+  const settingsBtn = button({ class: "toolbar-btn icon-only", title: "Settings" });
+  settingsBtn.append(icon("settings"));
+  settingsBtn.addEventListener("click", () => {
+    alert("Settings panel coming soon.");
+  });
+  layout.toolbar.append(settingsBtn);
 
   layout.statusBar.textContent = "Loading registry\u2026";
   try {
@@ -356,14 +366,6 @@ function renderLayout() {
     rel: "noopener",
   }, REPO_SLUG);
   const toolbar = el("div", { class: "shell__toolbar" });
-
-  // Settings gear (placeholder for future settings panel)
-  const settingsBtn = button({ class: "toolbar-btn icon-only", title: "Settings" });
-  settingsBtn.append(icon("settings"));
-  settingsBtn.addEventListener("click", () => {
-    alert("Settings panel coming soon.");
-  });
-  toolbar.append(settingsBtn);
 
   header.append(title, repoLink, toolbar);
 
