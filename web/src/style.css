@@ -184,12 +184,22 @@ table.data input[type=text], table.data input[type=number] {
 table.data input[type=text]:focus { border-color: var(--border); background: var(--bg); }
 table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 
+.row-actions { white-space: nowrap; text-align: right; }
 .row-actions button { padding: 4px; background: transparent; border: 1px solid transparent; }
 .row-actions button:hover { border-color: var(--border); }
 .row-actions .icon { width: 14px; height: 14px; }
 
 .form-row { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
 .form-row > label { min-width: 110px; color: var(--muted); }
+.form-row__inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 16px;
+  font-size: 13px;
+}
+.form-row__inline select,
+.form-row__inline input { width: auto; min-width: 60px; padding: 4px 8px; font-size: 13px; }
 
 .muted { color: var(--muted); }
 .error { color: var(--error); }
@@ -205,7 +215,7 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 
 .label-preview { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 16px; align-items: flex-start; }
 .label-preview__item { background: var(--bg-elev); padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); min-height: 80px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.label-preview__item svg { display: block; height: auto; max-width: 300px; width: 100%; }
+.label-preview__item svg { display: block; height: auto; max-width: 500px; width: 100%; }
 
 .diecut-preview__sheets { display: flex; flex-wrap: wrap; gap: 12px; }
 .diecut-preview .slot { position: absolute; overflow: hidden; }
@@ -587,6 +597,28 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 
 /* Issue #87: live preview */
 .label-preview--live { margin-top: 12px; }
+
+/* Label settings — compact inline layout */
+.label-settings { margin: 12px 0; }
+.label-settings h3 { margin-bottom: 8px; }
+.label-settings__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: center;
+}
+.label-settings__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.label-settings__field select {
+  width: auto;
+  min-width: 140px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
 
 /* Issue #92: repeat mode toggle */
 .repeat-mode-toggle {

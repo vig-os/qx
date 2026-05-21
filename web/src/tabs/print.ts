@@ -140,7 +140,15 @@ export const printTab: Tab = {
   label: "Print",
   mount(container, ctx) {
     container.innerHTML = "";
-    container.append(buildUI(ctx));
+    try {
+      container.append(buildUI(ctx));
+    } catch (e) {
+      // Guard against corrupted plan data crashing the tab render.
+      console.error("Print tab render failed:", e);
+      savePlan([]); // reset corrupted plan
+      container.innerHTML = "";
+      container.append(buildUI(ctx)); // retry with empty plan
+    }
   },
 };
 
@@ -1057,11 +1065,16 @@ function buildLabelSettingsUI(
   formatSel.addEventListener("change", persist);
   showTextCb.addEventListener("change", persist);
 
-  section.append(
-    formRow([el("label", {}, "Code type"), codeTypeSel]),
-    formRow([el("label", {}, "Text format"), formatSel]),
-    formRow([showTextLabel]),
+  // Compact inline layout — not full-width selectors
+  codeTypeSel.style.width = "auto";
+  formatSel.style.width = "auto";
+  const settingsRow = el("div", { class: "label-settings__row" });
+  settingsRow.append(
+    el("label", { class: "label-settings__field" }, "Code type ", codeTypeSel),
+    el("label", { class: "label-settings__field" }, "Text format ", formatSel),
+    showTextLabel,
   );
+  section.append(settingsRow);
 
   return section;
 }
