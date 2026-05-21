@@ -174,6 +174,8 @@ async function captureAndOpenIssue(host: PluginHost): Promise<void> {
     "",
     "## Environment",
     `- URL: \`${url}\``,
+    `- Version: \`${__APP_VERSION__} (${__GIT_HASH__})\``,
+    `- Built: ${__BUILD_TIME__}`,
     `- User agent: \`${ua}\``,
     `- Time: ${new Date().toISOString()}`,
   ].join("\n");

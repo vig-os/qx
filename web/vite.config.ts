@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { execSync } from "node:child_process";
 
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
@@ -8,6 +9,24 @@ import { VitePWA } from "vite-plugin-pwa";
 // Data-repo deployments inject their own VITE_BASE per docs/release.md.
 const BASE = process.env.VITE_BASE ?? "/part-registry/";
 
+// Inject version + git commit hash at build time so the deployed site
+// can display exactly which build is running — catches stale caches.
+// In CI, GITHUB_REF_NAME is the tag (e.g. "v0.6.2"); locally falls
+// back to git describe or package.json version.
+let appVersion = process.env.GITHUB_REF_NAME ?? "";
+if (!appVersion) {
+  try {
+    appVersion = execSync("git describe --tags --always", { encoding: "utf8" }).trim();
+  } catch {
+    appVersion = "dev";
+  }
+}
+let gitHash = "dev";
+try {
+  gitHash = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
+} catch { /* not in a git repo — CI or tarball build */ }
+const buildTime = new Date().toISOString();
+
 // Per ADR-013 §Consequences "PWA installability is mandatory for the
 // lab-floor UX": vite-plugin-pwa generates the manifest + a Workbox
 // service worker that caches the SPA shell + WASM artifacts so the
@@ -15,6 +34,11 @@ const BASE = process.env.VITE_BASE ?? "/part-registry/";
 // fresh writes are still picked up when online).
 export default defineConfig({
   base: BASE,
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+    __GIT_HASH__: JSON.stringify(gitHash),
+    __BUILD_TIME__: JSON.stringify(buildTime),
+  },
   resolve: {
     alias: {
       "@registry-contract": resolve(

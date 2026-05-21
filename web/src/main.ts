@@ -93,7 +93,11 @@ async function main(): Promise<void> {
   layout.statusBar.textContent = "Loading registry\u2026";
   try {
     await registry.load();
+    const versionTag = `${__APP_VERSION__} (${__GIT_HASH__})`;
     layout.statusBar.textContent = `${registry.all().length} parts loaded.`;
+    layout.statusBar.append(
+      el("span", { class: "shell__version muted", title: `Built ${__BUILD_TIME__}` }, ` \u00b7 ${versionTag}`),
+    );
   } catch (e) {
     layout.statusBar.textContent = `Registry load failed: ${(e as Error).message}`;
     layout.statusBar.classList.add("error");
