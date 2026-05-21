@@ -11,9 +11,27 @@ const BASE = process.env.VITE_BASE ?? "/part-registry/";
 
 // Inject version + git commit hash at build time so the deployed site
 // can display exactly which build is running — catches stale caches.
-// In CI, GITHUB_REF_NAME is the tag (e.g. "v0.6.2"); locally falls
-// back to git describe or package.json version.
+//
+// Resolution order:
+//   1. GITHUB_REF_NAME env var (code-repo CI release build)
+//   2. BUNDLE_METADATA.json (data-repo CI — bundle extracted from tarball)
+//   3. git describe (local dev)
+//   4. "dev" fallback
 let appVersion = process.env.GITHUB_REF_NAME ?? "";
+let gitHash = "";
+
+// Try BUNDLE_METADATA.json (present when building from a release bundle)
+if (!appVersion) {
+  try {
+    const metaPath = resolve(__dirname, "../BUNDLE_METADATA.json");
+    const meta = JSON.parse(
+      require("node:fs").readFileSync(metaPath, "utf8"),
+    ) as { tag?: string; commit?: string };
+    if (meta.tag) appVersion = meta.tag;
+    if (meta.commit) gitHash = meta.commit.slice(0, 7);
+  } catch { /* no metadata file — not a bundle build */ }
+}
+
 if (!appVersion) {
   try {
     appVersion = execSync("git describe --tags --always", { encoding: "utf8" }).trim();
@@ -21,10 +39,13 @@ if (!appVersion) {
     appVersion = "dev";
   }
 }
-let gitHash = "dev";
-try {
-  gitHash = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
-} catch { /* not in a git repo — CI or tarball build */ }
+if (!gitHash) {
+  try {
+    gitHash = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
+  } catch {
+    gitHash = "dev";
+  }
+}
 const buildTime = new Date().toISOString();
 
 // Per ADR-013 §Consequences "PWA installability is mandatory for the
