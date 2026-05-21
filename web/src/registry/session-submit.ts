@@ -118,6 +118,7 @@ export function buildSessionCommitMessage(session: Session): {
 export function applyMints(
   csvText: string,
   mints: Array<{ id: string; batch: string; notes: string; mintedAt: string }>,
+  operator?: string,
 ): string {
   if (mints.length === 0) return csvText;
 
@@ -134,6 +135,7 @@ export function applyMints(
     obj.id = mint.id;
     obj.status = "unbound";
     obj.minted_at = mint.mintedAt;
+    if (operator) obj.minted_by = operator;
     obj.batch = mint.batch;
     obj.notes = mint.notes;
 
