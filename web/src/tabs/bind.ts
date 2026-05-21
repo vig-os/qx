@@ -41,7 +41,7 @@ import {
   clearToken,
   SubmitError,
 } from "../registry/submit";
-import { loadSession, clearSession, summarizeSession, removeItemAt as sessionRemoveAt, type SessionMint } from "../registry/session";
+import { loadSession, clearSession, summarizeSession, addBind as sessionAddBind, removeItemAt as sessionRemoveAt, type SessionMint } from "../registry/session";
 import { DATA_REPO_SLUG } from "../config";
 
 function emptyBindFields(): Pick<
@@ -77,6 +77,20 @@ export const bindTab: Tab = {
 
 function buildUI(ctx: AppContext): HTMLElement {
   const root = el("div", { class: "tab tab--bind" });
+
+  // Datalist for ID autocomplete — shows unbound IDs from the registry
+  const datalist = document.createElement("datalist");
+  datalist.id = "unbound-ids";
+  const unboundIds = ctx.registry.all()
+    .filter((r) => r.status === "unbound")
+    .map((r) => r.id);
+  for (const id of unboundIds) {
+    const opt = document.createElement("option");
+    opt.value = fmtId(id);
+    datalist.append(opt);
+  }
+  root.append(datalist);
+
   root.append(el("h2", {}, "Session queue"));
   root.append(
     el(
@@ -356,12 +370,12 @@ function buildUI(ctx: AppContext): HTMLElement {
     };
   };
 
-  const addScannedIds = (ids: string[]) => {
+  const addScannedIds = async (ids: string[]) => {
     if (ids.length === 0) return;
     const queuedIds = new Set(loadQueue().map((q) => q.id));
     for (const id of ids) {
       if (queuedIds.has(id)) continue;
-      appendBind({ id, ...emptyBindFields() });
+      await sessionAddBind(id, {});
     }
     renderTable();
   };
@@ -372,7 +386,7 @@ function buildUI(ctx: AppContext): HTMLElement {
       const ids = await openImageScan({
         resolveStatus: makeResolveStatus(),
       });
-      addScannedIds(ids);
+      await addScannedIds(ids);
     } catch {
       /* user cancelled */
     }
@@ -546,9 +560,33 @@ function renderBindRow(
 
   // Editable ID cell — supports blank rows added via "+" button
   const idCell = el("td", { class: "id-cell" });
-  const idInp = input({ type: "text", value: item.id ? fmtId(item.id) : "", placeholder: "ID (14-char)", autocapitalize: "characters" });
+  const idInp = input({
+    type: "text",
+    value: item.id ? fmtId(item.id) : "",
+    placeholder: "XXXX-XXXX-XXXX-XX",
+    autocapitalize: "characters",
+    maxlength: "19", // 14 chars + 4 dashes + 1 buffer
+    list: "unbound-ids",
+  });
+
+  // Auto-format on input: uppercase, insert dashes in 4-4-4-2 pattern
+  idInp.addEventListener("input", () => {
+    const pos = idInp.selectionStart ?? 0;
+    const raw = idInp.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 14);
+    const formatted = fmtId(raw);
+    if (idInp.value !== formatted) {
+      idInp.value = formatted;
+      // Restore cursor position, adjusting for inserted dashes
+      const dashesBeforePos = formatted.slice(0, pos).split("-").length - 1;
+      const rawBeforePos = idInp.value.slice(0, pos).replace(/-/g, "").length;
+      const newPos = rawBeforePos + dashesBeforePos;
+      idInp.setSelectionRange(newPos, newPos);
+    }
+  });
+
   idInp.addEventListener("change", () => {
-    const raw = idInp.value.trim().toUpperCase().replace(/-/g, "");
+    const raw = idInp.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 14);
+    idInp.value = raw.length > 0 ? fmtId(raw) : "";
     const queue = loadQueue();
     const current = queue[index];
     if (current && current.kind === "bind") {
@@ -714,7 +752,7 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
         const fields = repeatMode && lastBindFields
           ? { ...lastBindFields }
           : emptyBindFields();
-        appendBind({ id, ...fields });
+        await sessionAddBind(id, fields as Record<string, string>);
       }
       onAdd();
     } catch {
