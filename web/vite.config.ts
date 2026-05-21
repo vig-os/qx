@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { readFileSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 
 import { defineConfig } from "vite";
@@ -24,12 +25,15 @@ let gitHash = "";
 if (!appVersion) {
   try {
     const metaPath = resolve(__dirname, "../BUNDLE_METADATA.json");
-    const meta = JSON.parse(
-      require("node:fs").readFileSync(metaPath, "utf8"),
-    ) as { tag?: string; commit?: string };
-    if (meta.tag) appVersion = meta.tag;
-    if (meta.commit) gitHash = meta.commit.slice(0, 7);
-  } catch { /* no metadata file — not a bundle build */ }
+    if (existsSync(metaPath)) {
+      const meta = JSON.parse(readFileSync(metaPath, "utf8")) as {
+        tag?: string;
+        commit?: string;
+      };
+      if (meta.tag) appVersion = meta.tag;
+      if (meta.commit) gitHash = meta.commit.slice(0, 7);
+    }
+  } catch { /* parse error — skip */ }
 }
 
 if (!appVersion) {
