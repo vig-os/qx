@@ -26,6 +26,7 @@ import { validateField, type ValidationError } from "../registry/validate";
 import type { AppContext, Tab } from "../core/types";
 import { el, button, input, formRow } from "../ui/dom";
 import { icon } from "../ui/icons";
+import { renderErrorCard, renderValidationErrors } from "../ui/error-card";
 import {
   openScannerMulti,
   openImageScan,
@@ -94,6 +95,9 @@ function buildUI(ctx: AppContext): HTMLElement {
   // ADR-016 §"FE preflight" + issue #23: every queue mutation re-runs
   // the same classify + policy engine the CI gate runs, advisory only.
   const preflightContainer = el("div", { class: "preflight" });
+
+  // Persistent error card container (replaces alert() for submit errors).
+  const submitErrorContainer = el("div", { class: "submit-error" });
 
   const tableContainer = el("div", {});
 
@@ -206,7 +210,29 @@ function buildUI(ctx: AppContext): HTMLElement {
   submitBtn.addEventListener("click", async () => {
     const session = await loadSession();
     if (session.items.length === 0) {
-      alert("Session is empty.");
+      submitErrorContainer.innerHTML = "";
+      submitErrorContainer.append(
+        renderErrorCard({
+          title: "Nothing to submit",
+          message: "Session is empty. Mint IDs, add binds, or queue edits first.",
+          kind: "warning",
+          actions: [{ label: "Dismiss", onClick: () => { submitErrorContainer.innerHTML = ""; } }],
+        }),
+      );
+      return;
+    }
+
+    // Check for field-level validation errors before submitting.
+    const fieldErrors = document.querySelectorAll(".field--error");
+    if (fieldErrors.length > 0) {
+      const errorFields = Array.from(fieldErrors).map((el) => ({
+        field: el.getAttribute("title") ?? el.getAttribute("placeholder") ?? "field",
+        message: el.parentElement?.querySelector(".field-error")?.textContent ?? "invalid",
+      }));
+      submitErrorContainer.innerHTML = "";
+      submitErrorContainer.append(
+        renderValidationErrors(errorFields, () => { submitErrorContainer.innerHTML = ""; }),
+      );
       return;
     }
 
@@ -230,24 +256,78 @@ function buildUI(ctx: AppContext): HTMLElement {
     submitBtn.textContent = "Submitting\u2026";
 
     try {
+      submitErrorContainer.innerHTML = "";
       const result = await submitSession(session, token, DATA_REPO_SLUG);
       await clearSession();
       renderTable();
-      alert(`PR #${result.prNumber} created.\n\n${result.prUrl}`);
+      // Success card instead of alert
+      submitErrorContainer.innerHTML = "";
+      submitErrorContainer.append(
+        renderErrorCard({
+          title: "PR created",
+          message: `PR #${result.prNumber} submitted successfully.`,
+          kind: "warning", // reuse warning style for green-ish success
+          details: [{ label: "URL", value: result.prUrl }],
+          actions: [
+            {
+              label: "Open PR",
+              style: "primary",
+              onClick: () => window.open(result.prUrl, "_blank", "noopener"),
+            },
+            {
+              label: "Dismiss",
+              onClick: () => { submitErrorContainer.innerHTML = ""; },
+            },
+          ],
+        }),
+      );
     } catch (e) {
       const msg = e instanceof SubmitError
-        ? `Submit failed at step "${e.step}": ${e.message}`
-        : `Submit failed: ${(e as Error).message}`;
+        ? `Failed at step "${e.step}": ${e.message}`
+        : `${(e as Error).message}`;
       console.error("Submit error:", e);
 
-      // If 401/403, the token is probably bad — offer to re-enter.
-      if (e instanceof SubmitError && (e.status === 401 || e.status === 403)) {
-        if (confirm(`${msg}\n\nThe token may be invalid. Clear it and enter a new one?`)) {
-          clearToken();
-        }
-      } else {
-        alert(msg);
+      const details: Array<{ label: string; value: string }> = [];
+      if (e instanceof SubmitError) {
+        details.push({ label: "Step", value: e.step });
+        if (e.status) details.push({ label: "HTTP status", value: String(e.status) });
       }
+
+      const isAuthError = e instanceof SubmitError && (e.status === 401 || e.status === 403);
+
+      submitErrorContainer.innerHTML = "";
+      submitErrorContainer.append(
+        renderErrorCard({
+          title: "Submit failed",
+          message: msg,
+          details,
+          actions: [
+            {
+              label: "Retry",
+              style: "primary",
+              onClick: () => {
+                submitErrorContainer.innerHTML = "";
+                submitBtn.click();
+              },
+            },
+            ...(isAuthError
+              ? [{
+                  label: "Re-enter token",
+                  style: "outline" as const,
+                  onClick: () => {
+                    clearToken();
+                    submitErrorContainer.innerHTML = "";
+                    submitBtn.click();
+                  },
+                }]
+              : []),
+            {
+              label: "Dismiss",
+              onClick: () => { submitErrorContainer.innerHTML = ""; },
+            },
+          ],
+        }),
+      );
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = "";
@@ -323,6 +403,7 @@ function buildUI(ctx: AppContext): HTMLElement {
 
   root.append(
     formRow([submitBtn, clearBtn, summaryEl]),
+    submitErrorContainer,
     formRow([uploadBtn, rollingBtn]),
     formRow([repeatLabel]),
     preflightContainer,
