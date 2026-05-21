@@ -380,6 +380,33 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 .preflight-issues .issue--unknown_id { color: var(--error, #c62828); }
 .preflight-issues .issue--duplicate_in_queue { color: var(--warn, #ed6c02); }
 
+/* Error cards — persistent error display with recovery actions */
+.error-card {
+  border: 1px solid var(--error);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin: 12px 0;
+  background: rgba(192, 57, 43, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.error-card--warning {
+  border-color: var(--warn);
+  background: rgba(192, 128, 32, 0.04);
+}
+.error-card__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--error);
+}
+.error-card--warning .error-card__header { color: var(--warn); }
+.error-card__message { margin: 0; }
+.error-card__details { padding: 4px 0; }
+.error-card__detail-label { font-weight: 600; }
+.error-card__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
 /* Lookup data-grid (issue #10) */
 .lookup__search { flex: 1; min-width: 0; }
 .lookup__status-filter { display: flex; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
