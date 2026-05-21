@@ -110,8 +110,24 @@ input::placeholder { font-size: 14px; }
   font-weight: 600;
 }
 
-.toolbar-btn { background: transparent; border: none; border-radius: var(--radius); padding: 6px; cursor: pointer; font: inherit; color: var(--fg); opacity: 0.6; display: inline-flex; align-items: center; gap: 6px; }
-.toolbar-btn:hover { opacity: 1; background: var(--bg-elev); }
+/* Override Pico's button color for toolbar icons — Pico sets button
+   color to white (for its filled-button look), which is invisible on
+   light backgrounds. We need the icons to inherit from --fg. */
+.shell__toolbar .toolbar-btn,
+.shell__toolbar button.toolbar-btn {
+  all: unset;
+  border-radius: var(--radius);
+  padding: 6px;
+  cursor: pointer;
+  color: var(--fg, #222);
+  opacity: 0.6;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+}
+.shell__toolbar .toolbar-btn:hover,
+.shell__toolbar button.toolbar-btn:hover { opacity: 1; background: var(--bg-elev); }
 .toolbar-btn .icon, .toolbar-btn svg { width: 18px; height: 18px; }
 
 button {
