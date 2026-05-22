@@ -46,13 +46,17 @@
 
 import { el, button } from "./dom";
 import { icon } from "./icons";
+import { tryExtractId } from "../labels/payload-formats";
 
 // ---- Pure ID helpers (exported for testing) ----
 
-/** Strip dashes and uppercase a raw QR payload to produce the
- *  canonical registry ID. Idempotent. */
+/** Extract the canonical registry ID from a barcode payload.
+ *  Tries all registered payload formats (prefixed, URL, etc.)
+ *  then falls back to raw canonicalization. */
 export function canonicalizeId(raw: string): string {
-  return raw.toUpperCase().replace(/-/g, "");
+  const extracted = tryExtractId(raw);
+  if (extracted) return extracted;
+  return raw.toUpperCase().replace(/[-\s]/g, "");
 }
 
 /** Format a canonical ID for human display: groups of 4 separated by

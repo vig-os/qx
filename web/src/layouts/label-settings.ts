@@ -15,6 +15,7 @@ import type { WasmFormatId } from "../wasm/loader";
 const KEY_CODE_TYPE = "part-registry.label.codeType";
 const KEY_FORMAT = "part-registry.label.format";
 const KEY_SHOW_TEXT = "part-registry.label.showText";
+const KEY_PAYLOAD_FORMAT = "part-registry.label.payloadFormat";
 
 // Code type IDs match the `id` field in code-types.json.
 // "standard_qr" | "micro_qr" | "data_matrix" (or any future type).
@@ -27,11 +28,13 @@ export function loadLabelSettings(): {
   codeType: CodeType;
   format: FormatSetting;
   showText: boolean;
+  payloadFormat: string;
 } {
   return {
-    codeType: (localStorage.getItem(KEY_CODE_TYPE) as CodeType) || "standard",
+    codeType: (localStorage.getItem(KEY_CODE_TYPE) as CodeType) || "standard_qr",
     format: (localStorage.getItem(KEY_FORMAT) as FormatSetting) || "auto",
     showText: localStorage.getItem(KEY_SHOW_TEXT) !== "false",
+    payloadFormat: localStorage.getItem(KEY_PAYLOAD_FORMAT) || "id_only",
   };
 }
 
@@ -39,10 +42,12 @@ export function saveLabelSettings(settings: {
   codeType: CodeType;
   format: FormatSetting;
   showText: boolean;
+  payloadFormat: string;
 }): void {
   localStorage.setItem(KEY_CODE_TYPE, settings.codeType);
   localStorage.setItem(KEY_FORMAT, settings.format);
   localStorage.setItem(KEY_SHOW_TEXT, String(settings.showText));
+  localStorage.setItem(KEY_PAYLOAD_FORMAT, settings.payloadFormat);
 }
 
 // ---- Helpers called from layout renderSvg ----

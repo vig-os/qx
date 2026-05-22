@@ -16,6 +16,8 @@
     "defaultLayout": "horz",
     "allowedTextFormats": ["auto", "4/4", "4/4/4", "5/5/4"],
     "defaultTextFormat": "auto",
+    "allowedPayloadFormats": ["id_only", "prefixed_id", "id_type", "url"],
+    "defaultPayloadFormat": "id_only",
     "printerDpi": 300
   },
 
