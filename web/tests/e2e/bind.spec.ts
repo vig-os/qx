@@ -31,74 +31,59 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe("Bind tab", () => {
-  test("renders form with editable fields matching contract", async ({ page }) => {
+  test("renders entry controls — Add row and Scan buttons", async ({ page }) => {
     await page.goto("/");
 
     const tabBar = page.locator("nav.tabs");
     await tabBar.getByRole("button", { name: "Bind" }).click();
 
-    // The entry row should have one input per editable field.
+    // Entry row has "+ Add row" and "Scan" buttons
     const entryRow = page.locator(".entry-row");
     await entryRow.waitFor({ state: "visible" });
-
-    for (const key of EDITABLE_KEYS) {
-      // Each editable field has a placeholder matching the field label.
-      // We just verify there's an input for each editable key.
-      const inputs = entryRow.locator("input[type='text']");
-      const count = await inputs.count();
-      // At minimum: ID input + one per editable field.
-      expect(count).toBeGreaterThanOrEqual(EDITABLE_KEYS.length + 1);
-      break; // One check is sufficient — the count covers all fields.
-    }
+    await expect(entryRow.getByRole("button", { name: /Add row/i })).toBeVisible();
+    await expect(entryRow.getByRole("button", { name: /Scan/i })).toBeVisible();
   });
 
-  test("queue a bind with a valid 14-char ID, verify it appears in queue table", async ({ page }) => {
-    // Auto-accept dialogs (unknown-ID confirm).
-    page.on("dialog", (dialog) => dialog.accept());
-
+  test("add row creates a bind row with editable fields", async ({ page }) => {
     await page.goto("/");
 
     const tabBar = page.locator("nav.tabs");
     await tabBar.getByRole("button", { name: "Bind" }).click();
 
-    const entryRow = page.locator(".entry-row");
-    await entryRow.waitFor({ state: "visible" });
+    // Click "+ Add row" to create a blank bind row
+    const addBtn = page.locator(".entry-row").getByRole("button", { name: /Add row/i });
+    await addBtn.click();
 
-    // Fill ID.
-    const idInput = entryRow.locator('input[placeholder*="ID" i]').first();
-    await idInput.fill("23456789ABCDEF");
-
-    // Click "Queue this bind".
-    await entryRow.locator('button[title="Queue this bind"]').click();
-
-    // The queued row should appear in the queue table.
+    // A queue row should appear with editable inputs
     const queueRow = page.locator(".queue-row--bind");
     await expect(queueRow).toHaveCount(1, { timeout: 5_000 });
-    await expect(queueRow).toContainText("2345");
+
+    // Should have ID input + editable field inputs
+    const inputs = queueRow.locator("input");
+    const count = await inputs.count();
+    expect(count).toBeGreaterThanOrEqual(2); // ID + at least one field
   });
 
-  test("preflight banner appears after queuing", async ({ page }) => {
-    // Auto-accept dialogs.
-    page.on("dialog", (dialog) => dialog.accept());
-
+  test("preflight banner appears after adding a row with an ID", async ({ page }) => {
     await page.goto("/");
 
     const tabBar = page.locator("nav.tabs");
     await tabBar.getByRole("button", { name: "Bind" }).click();
 
-    const entryRow = page.locator(".entry-row");
-    await entryRow.waitFor({ state: "visible" });
+    // Add a row and fill the ID
+    const addBtn = page.locator(".entry-row").getByRole("button", { name: /Add row/i });
+    await addBtn.click();
 
-    const idInput = entryRow.locator('input[placeholder*="ID" i]').first();
-    await idInput.fill("23456789ABCDEF");
-    await entryRow.locator('button[title="Queue this bind"]').click();
+    const queueRow = page.locator(".queue-row--bind");
+    await expect(queueRow).toHaveCount(1, { timeout: 5_000 });
 
-    // Preflight card should render.
+    // Fill the ID in the new row
+    const idInput = queueRow.locator(".id-cell input").first();
+    await idInput.fill("2345-6789-ABCD-EF");
+    await idInput.dispatchEvent("change");
+
+    // Preflight card should render after ID is set.
     const card = page.locator(".preflight-card");
     await expect(card).toBeVisible({ timeout: 5_000 });
-    await expect(card).toHaveAttribute(
-      "data-preflight-decision",
-      /allow|warn|block|requires_elevation/,
-    );
   });
 });

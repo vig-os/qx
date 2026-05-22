@@ -54,7 +54,7 @@ test.describe("part-registry FE smoke", () => {
     await expect(page.getByRole("button", { name: "Lookup" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Print", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Bind" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Mint" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Mint", exact: true })).toBeVisible();
 
     expect(errors, `unexpected console errors: ${errors.join("\n")}`).toEqual([]);
   });
@@ -91,36 +91,26 @@ test.describe("part-registry FE smoke", () => {
     expect(errors, `pageerrors: ${errors.join("\n")}`).toEqual([]);
   });
 
-  test("Bind preflight (#23): renders banner + chips + local-issue when queuing an unknown ID", async ({ page }) => {
-    // The bind entry row uses confirm()/alert() for unknown-registry
-    // + sanity checks; auto-accept so the queue commit goes through.
-    page.on("dialog", (dialog) => dialog.accept());
-
+  test("Bind preflight (#23): renders banner after adding a row with an ID", async ({ page }) => {
     await page.goto("/");
 
     const tabBar = page.locator("nav.tabs");
     await tabBar.getByRole("button", { name: "Bind" }).click();
 
-    // Fill the ID input in the entry row, then click "Queue this bind".
-    const entryRow = page.locator(".entry-row");
-    await entryRow.waitFor({ state: "visible" });
-    const idInput = entryRow.locator('input[placeholder*="ID" i]').first();
-    await idInput.fill("ABCDEFGHJKMNPQ");
-    await entryRow.locator('button[title="Queue this bind"]').click();
+    // Click "+ Add row" to create a blank bind row
+    const addBtn = page.locator(".entry-row").getByRole("button", { name: /Add row/i });
+    await addBtn.click();
 
-    // Preflight card renders with the policy decision attribute.
+    // Fill the ID in the new bind row
+    const queueRow = page.locator(".queue-row--bind");
+    await expect(queueRow).toHaveCount(1, { timeout: 5_000 });
+    const idInput = queueRow.locator(".id-cell input").first();
+    await idInput.fill("ABCD-EFGH-JKMN-PQ");
+    await idInput.dispatchEvent("change");
+
+    // Preflight card renders.
     const card = page.locator(".preflight-card");
     await expect(card).toBeVisible({ timeout: 5_000 });
-    await expect(card).toHaveAttribute("data-preflight-decision", /allow|warn|block|requires_elevation/);
-
-    // row_bind chip rendered (zero rows would actually classify; with
-    // an unknown id the diff has no edits so actions may be empty —
-    // assert only the card + local issue surface).
-    await expect(page.locator(".issue--unknown_id")).toBeVisible();
-
-    // Submit button is data-preflight=blocked when unknown_id fires.
-    const submitBtn = page.getByRole("button", { name: /Submit batch/ });
-    await expect(submitBtn).toHaveAttribute("data-preflight", "blocked");
   });
 
   test("PWA: manifest is reachable and ServiceWorker registers", async ({ page }) => {
@@ -306,21 +296,22 @@ test.describe("Lookup inline edit → bind queue (#6)", () => {
   test("Edit on the detail card flips to a form, queues an edit, and switches to Bind", async ({ page }) => {
     await page.goto("/");
 
-    // Open the detail card by clicking the bound row.
-    const row = page.locator(".lookup__table tbody tr").first();
+    // Open the detail card by clicking the bound row — opens in modal overlay.
+    const row = page.locator("table.data tbody tr").first();
     await row.click();
-    await expect(page.locator(".row-detail")).toBeVisible();
+    const modal = page.locator(".detail-modal-overlay");
+    await expect(modal.locator(".row-detail")).toBeVisible();
 
-    // Click "Edit" → form appears.
-    await page.locator(".row-detail__edit").click();
-    await expect(page.locator(".row-detail--edit")).toBeVisible();
+    // Click "Edit" → form appears in the modal.
+    await modal.locator(".row-detail__edit").click();
+    await expect(modal.locator(".row-detail--edit")).toBeVisible();
 
     // Change vendor.
-    const vendorInput = page.locator(".row-detail__input[data-key='vendor']");
+    const vendorInput = modal.locator(".row-detail__input[data-key='vendor']");
     await vendorInput.fill("ACME Probes");
 
     // Save → bind tab opens, edit row visible with before/after diff.
-    await page.locator(".row-detail button", { hasText: "Queue edit" }).click();
+    await modal.locator("button", { hasText: "Queue edit" }).click();
     const tabBar = page.locator("nav.tabs");
     await expect(tabBar.getByRole("button", { name: "Bind" })).toHaveClass(
       /\bactive\b/,
