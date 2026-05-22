@@ -5,6 +5,7 @@ import "./style.css";
 import { registerSW } from "virtual:pwa-register";
 
 import { REPO_SLUG } from "./config";
+import { getConfig } from "./config/deploy-config";
 import { createRegistry } from "./registry/registry";
 import type {
   AppContext,
@@ -358,7 +359,8 @@ function renderLayout() {
   ].join("");
 
   const title = el("h1", { class: "shell__title" });
-  title.append(qrIcon, "part-registry");
+  const appTitle = getConfig().presentation?.appTitle ?? "part-registry";
+  title.append(qrIcon, appTitle);
   const repoLink = el("a", {
     class: "shell__repo",
     href: `https://github.com/${REPO_SLUG}`,

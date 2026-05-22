@@ -54,6 +54,7 @@ export interface DeployConfig {
   };
   features: {
     enableScanner: boolean;
+    enableLookupTab: boolean;
     enableMintTab: boolean;
     enablePrintTab: boolean;
     enableBindTab: boolean;
