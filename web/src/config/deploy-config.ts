@@ -41,6 +41,8 @@ export interface DeployConfig {
     defaultLayout: string;
     allowedTextFormats: string[];
     defaultTextFormat: string;
+    allowedPayloadFormats: string[];
+    defaultPayloadFormat: string;
     printerDpi: number;
   };
   scanner: {

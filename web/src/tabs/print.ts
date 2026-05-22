@@ -33,6 +33,7 @@ import {
   type FormatSetting,
 } from "../layouts/label-settings";
 import { getAllowedPrintCodeTypes, getConfig, toMm } from "../config/deploy-config";
+import { getAllPayloadFormats, getPayloadFormat } from "../labels/payload-formats";
 import {
   events,
   EVENT_REPRINT_REQUEST,
@@ -247,12 +248,14 @@ function buildUI(ctx: AppContext): HTMLElement {
             size: first.size,
             extra: extras,
           });
+          // Show payload info
+          const payloadFmt = getPayloadFormat(labelSettings.payloadFormat);
+          const payloadStr = payloadFmt ? payloadFmt.render(first.id) : first.id;
           wrap.append(
-            el(
-              "div",
-              { class: "muted small" },
-              `Live preview: ${fmtId(first.id)} \u00b7 ${first.layoutId} \u00b7 ${first.size}mm`,
-            ),
+            el("div", { class: "muted small" },
+              `Live preview: ${fmtId(first.id)} \u00b7 ${first.layoutId} \u00b7 ${first.size}mm`),
+            el("code", { class: "muted small", style: "display:block;font-size:11px;margin-top:2px;" },
+              `Payload: ${payloadStr} (${payloadStr.length} chars)`),
           );
           livePreviewArea.append(wrap);
         } catch {
@@ -1106,9 +1109,9 @@ export function fmtId(id: string): string {
   return `${id.slice(0, 4)}-${id.slice(4, 8)}-${id.slice(8, 12)}-${id.slice(12, 14)}`;
 }
 
-/** Build the label settings section: code type, text format, show text. */
+/** Build the label settings section: code type, text format, payload, show text. */
 function buildLabelSettingsUI(
-  initial: { codeType: CodeType; format: FormatSetting; showText: boolean },
+  initial: { codeType: CodeType; format: FormatSetting; showText: boolean; payloadFormat: string },
   onChange: () => void,
 ): HTMLElement {
   const section = el("div", { class: "label-settings" });
@@ -1136,6 +1139,15 @@ function buildLabelSettingsUI(
   const formatSel = select(fmtOptions);
   formatSel.value = initial.format;
 
+  // Payload format — from deploy config
+  const allowedPayloads = deployCfg.labels.allowedPayloadFormats ?? ["id_only"];
+  const payloadFmts = getAllPayloadFormats().filter((f) => allowedPayloads.includes(f.id));
+  const payloadSel = select(
+    payloadFmts.map((f) => ({ value: f.id, label: `${f.label} (${f.example})` })),
+  );
+  payloadSel.value = initial.payloadFormat;
+  if (payloadFmts.length <= 1) payloadSel.disabled = true;
+
   // Show text toggle
   const showTextCb = document.createElement("input");
   showTextCb.type = "checkbox";
@@ -1148,19 +1160,23 @@ function buildLabelSettingsUI(
       codeType: codeTypeSel.value as CodeType,
       format: formatSel.value as FormatSetting,
       showText: showTextCb.checked,
+      payloadFormat: payloadSel.value,
     });
     onChange();
   };
   codeTypeSel.addEventListener("change", persist);
   formatSel.addEventListener("change", persist);
+  payloadSel.addEventListener("change", persist);
   showTextCb.addEventListener("change", persist);
 
   // Compact inline layout — not full-width selectors
   codeTypeSel.style.width = "auto";
   formatSel.style.width = "auto";
+  payloadSel.style.width = "auto";
   const settingsRow = el("div", { class: "label-settings__row" });
   settingsRow.append(
     el("label", { class: "label-settings__field" }, "Code type ", codeTypeSel),
+    el("label", { class: "label-settings__field" }, "Payload ", payloadSel),
     el("label", { class: "label-settings__field" }, "Text format ", formatSel),
     showTextLabel,
   );
