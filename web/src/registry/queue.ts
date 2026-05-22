@@ -167,27 +167,27 @@ export function saveQueue(q: QueueItem[]): void {
   void saveSession(session);
 }
 
-export function appendBind(entry: Omit<QueuedBind, "kind" | "queued_at">): void {
+export async function appendBind(entry: Omit<QueuedBind, "kind" | "queued_at">): Promise<void> {
   const fields: Record<string, string> = {};
   for (const key of ["type", "description", "vendor", "part_number", "location", "notes"] as const) {
     if (entry[key]) fields[key] = entry[key];
   }
-  void sessionAddBind(entry.id, fields);
+  await sessionAddBind(entry.id, fields);
 }
 
-export function appendEdit(
+export async function appendEdit(
   id: string,
   before: Partial<RegistryRow>,
   changes: Partial<RegistryRow>,
-): void {
-  void sessionAddEdit(
+): Promise<void> {
+  await sessionAddEdit(
     id,
     { ...before } as Record<string, string>,
     { ...changes } as Record<string, string>,
   );
 }
 
-export function removeAt(index: number): void {
+export async function removeAt(index: number): Promise<void> {
   // The index in loadQueue() excludes mints, so we need to map back
   // to the session index.
   const session = getSessionSync();
@@ -197,23 +197,23 @@ export function removeAt(index: number): void {
   for (let i = 0; i < session.items.length; i++) {
     if (session.items[i].kind === "mint") continue;
     if (queueIdx === index) {
-      void sessionRemoveAt(i);
+      await sessionRemoveAt(i);
       return;
     }
     queueIdx++;
   }
 }
 
-export function clearQueue(): void {
+export async function clearQueue(): Promise<void> {
   // Clear only bind/edit/void items, keep mints
   const session = getSessionSync();
   if (!session) return;
   session.items = session.items.filter((i) => i.kind === "mint");
-  void saveSession(session);
+  await saveSession(session);
 }
 
-export function appendVoid(id: string, reason: string): void {
-  void sessionAddVoid(id, reason);
+export async function appendVoid(id: string, reason: string): Promise<void> {
+  await sessionAddVoid(id, reason);
 }
 
 export function summarizeQueue(q: QueueItem[]): {

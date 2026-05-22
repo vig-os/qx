@@ -61,7 +61,7 @@ afterEach(() => {
 
 describe("appendBind / appendEdit / removeAt", () => {
   it("appends bind items with kind=bind and a queued_at timestamp", async () => {
-    appendBind({
+    await appendBind({
       id: "ABCDEFGHJKMNPQ",
       type: "PT100",
       description: "",
@@ -70,8 +70,6 @@ describe("appendBind / appendEdit / removeAt", () => {
       location: "",
       notes: "",
     });
-    // Wait for async session write to complete
-    await new Promise((r) => setTimeout(r, 10));
     const q = loadQueue();
     expect(q).toHaveLength(1);
     expect(q[0].kind).toBe("bind");
@@ -79,12 +77,11 @@ describe("appendBind / appendEdit / removeAt", () => {
   });
 
   it("appends edit items carrying before+changes", async () => {
-    appendEdit(
+    await appendEdit(
       "ABCDEFGHJKMNPQ",
       { vendor: "TC", location: "" },
       { vendor: "TC Direct", location: "supply" },
     );
-    await new Promise((r) => setTimeout(r, 10));
     const q = loadQueue();
     expect(q).toHaveLength(1);
     expect(q[0].kind).toBe("edit");
@@ -95,7 +92,7 @@ describe("appendBind / appendEdit / removeAt", () => {
   });
 
   it("removeAt removes the right item even with mixed kinds", async () => {
-    appendBind({
+    await appendBind({
       id: "ABCDEFGHJKMNPQ",
       type: "",
       description: "",
@@ -104,10 +101,8 @@ describe("appendBind / appendEdit / removeAt", () => {
       location: "",
       notes: "",
     });
-    await new Promise((r) => setTimeout(r, 10));
-    appendEdit("ABCDEFGHJKMNPR", {}, { location: "lab" });
-    await new Promise((r) => setTimeout(r, 10));
-    appendBind({
+    await appendEdit("ABCDEFGHJKMNPR", {}, { location: "lab" });
+    await appendBind({
       id: "ABCDEFGHJKMNPS",
       type: "",
       description: "",
@@ -116,9 +111,7 @@ describe("appendBind / appendEdit / removeAt", () => {
       location: "",
       notes: "",
     });
-    await new Promise((r) => setTimeout(r, 10));
-    removeAt(1);
-    await new Promise((r) => setTimeout(r, 10));
+    await removeAt(1);
     const q = loadQueue();
     expect(q.map((x) => x.id)).toEqual(["ABCDEFGHJKMNPQ", "ABCDEFGHJKMNPS"]);
   });
@@ -157,7 +150,7 @@ describe("summarizeQueue", () => {
 
 describe("clearQueue + saveQueue round-trip", () => {
   it("clearQueue empties the store", async () => {
-    appendBind({
+    await appendBind({
       id: "ABCDEFGHJKMNPQ",
       type: "",
       description: "",
@@ -166,17 +159,15 @@ describe("clearQueue + saveQueue round-trip", () => {
       location: "",
       notes: "",
     });
-    await new Promise((r) => setTimeout(r, 10));
-    clearQueue();
-    await new Promise((r) => setTimeout(r, 10));
+    await clearQueue();
     expect(loadQueue()).toEqual([]);
   });
 
   it("saveQueue accepts the loaded shape verbatim", async () => {
-    appendEdit("ABCDEFGHJKMNPQ", { vendor: "" }, { vendor: "TC" });
-    await new Promise((r) => setTimeout(r, 10));
+    await appendEdit("ABCDEFGHJKMNPQ", { vendor: "" }, { vendor: "TC" });
     const q = loadQueue();
     saveQueue(q);
+    // saveQueue uses fire-and-forget internally (rebuilds from queue items)
     await new Promise((r) => setTimeout(r, 10));
     expect(loadQueue()).toEqual(q);
   });
