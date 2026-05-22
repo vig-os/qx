@@ -5,6 +5,7 @@ import "./style.css";
 import { registerSW } from "virtual:pwa-register";
 
 import { REPO_SLUG } from "./config";
+import { getConfig } from "./config/deploy-config";
 import { createRegistry } from "./registry/registry";
 import type {
   AppContext,
@@ -85,6 +86,9 @@ async function main(): Promise<void> {
 
   syncCanonicalPath(route);
 
+  // Evaluate tabs lazily (after window.__PART_REGISTRY_CONFIG__ is set)
+  const tabs = TABS();
+
   const layout = renderLayout();
   root.append(layout.shell);
 
@@ -121,10 +125,10 @@ async function main(): Promise<void> {
   layout.main.append(tabBar, panel);
 
   const tabEntries = new Map<string, { li: HTMLElement; btn: HTMLButtonElement }>();
-  let activeTabId = route.kind === "home" ? TABS[0]?.id : "lookup";
+  let activeTabId = route.kind === "home" ? tabs[0]?.id : "lookup";
 
   const showTab = async (id: string) => {
-    const tab = TABS.find((t) => t.id === id);
+    const tab = tabs.find((t) => t.id === id);
     if (!tab) return;
     activeTabId = id;
     for (const [k, entry] of tabEntries) {
@@ -136,7 +140,7 @@ async function main(): Promise<void> {
   };
   ctxHolder.showTab = (id) => void showTab(id);
 
-  for (const tab of TABS) {
+  for (const tab of tabs) {
     const btn = button({ class: "tab-btn" }, tab.label);
     btn.addEventListener("click", () => void showTab(tab.id));
     const li = el("li", { class: "tab-item" }, btn);
@@ -277,7 +281,7 @@ async function main(): Promise<void> {
   window.addEventListener("popstate", () => {
     route = parseAppPath(window.location.pathname);
     syncCanonicalPath(route);
-    const nextTabId = route.kind === "home" ? TABS[0]?.id : "lookup";
+    const nextTabId = route.kind === "home" ? tabs[0]?.id : "lookup";
     if (nextTabId) void showTabWithBadges(nextTabId);
   });
 
@@ -358,7 +362,8 @@ function renderLayout() {
   ].join("");
 
   const title = el("h1", { class: "shell__title" });
-  title.append(qrIcon, "part-registry");
+  const appTitle = getConfig().presentation?.appTitle ?? "part-registry";
+  title.append(qrIcon, appTitle);
   const repoLink = el("a", {
     class: "shell__repo",
     href: `https://github.com/${REPO_SLUG}`,
