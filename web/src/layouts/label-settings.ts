@@ -9,6 +9,7 @@
 
 import type { LayoutOptions } from "../core/types";
 import type { WasmFormatId } from "../wasm/loader";
+import { getConfig } from "../config/deploy-config";
 
 // ---- localStorage keys ----
 
@@ -30,11 +31,20 @@ export function loadLabelSettings(): {
   showText: boolean;
   payloadFormat: string;
 } {
+  let cfgDefaults = { codeType: "standard_qr", format: "auto", payloadFormat: "id_only" };
+  try {
+    const cfg = getConfig();
+    cfgDefaults = {
+      codeType: cfg.labels?.defaultCodeType ?? "standard_qr",
+      format: cfg.labels?.defaultTextFormat ?? "auto",
+      payloadFormat: cfg.labels?.defaultPayloadFormat ?? "id_only",
+    };
+  } catch { /* config not loaded yet */ }
   return {
-    codeType: (localStorage.getItem(KEY_CODE_TYPE) as CodeType) || "standard_qr",
-    format: (localStorage.getItem(KEY_FORMAT) as FormatSetting) || "auto",
+    codeType: (localStorage.getItem(KEY_CODE_TYPE) as CodeType) || cfgDefaults.codeType,
+    format: (localStorage.getItem(KEY_FORMAT) as FormatSetting) || cfgDefaults.format,
     showText: localStorage.getItem(KEY_SHOW_TEXT) !== "false",
-    payloadFormat: localStorage.getItem(KEY_PAYLOAD_FORMAT) || "id_only",
+    payloadFormat: localStorage.getItem(KEY_PAYLOAD_FORMAT) || cfgDefaults.payloadFormat,
   };
 }
 

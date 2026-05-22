@@ -32,9 +32,14 @@ function getFeatures(): typeof _features {
   }
 }
 
-export const TABS: Tab[] = ALL_TABS
-  .filter(({ featureKey }) => {
-    const features = getFeatures();
-    return (features as Record<string, boolean>)[featureKey] !== false;
-  })
-  .map(({ tab }) => tab);
+// Lazy evaluation — config is read at first call, not module load time.
+// This allows window.__PART_REGISTRY_CONFIG__ (e.g. via addInitScript
+// in Playwright tests) to be set before tabs are computed.
+export function TABS(): Tab[] {
+  const features = getFeatures();
+  return ALL_TABS
+    .filter(({ featureKey }) => {
+      return (features as Record<string, boolean>)[featureKey] !== false;
+    })
+    .map(({ tab }) => tab);
+}
