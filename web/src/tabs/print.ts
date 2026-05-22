@@ -32,7 +32,7 @@ import {
   type CodeType,
   type FormatSetting,
 } from "../layouts/label-settings";
-import { getAllowedPrintCodeTypes, getConfig } from "../config/deploy-config";
+import { getAllowedPrintCodeTypes, getConfig, toMm } from "../config/deploy-config";
 import {
   events,
   EVENT_REPRINT_REQUEST,
@@ -406,6 +406,60 @@ function buildUI(ctx: AppContext): HTMLElement {
     });
   };
 
+  // ---- Bulk edit toolbar ----
+  const bulkEditBar = el("div", { class: "bulk-edit-bar", style: "display:none;" });
+
+  const buildBulkEditBar = () => {
+    bulkEditBar.innerHTML = "";
+    const plan = loadPlan();
+    if (plan.length < 2) {
+      bulkEditBar.style.display = "none";
+      return;
+    }
+    bulkEditBar.style.display = "";
+
+    const bulkLayoutSel = select([
+      { value: "", label: "— layout —" },
+      ...allLayouts().map((l) => ({ value: l.id, label: l.label })),
+    ]);
+    const bulkSizeIn = numberInput({ value: 0, min: 4, max: 100, step: 0.5 });
+    bulkSizeIn.placeholder = "size";
+    bulkSizeIn.style.width = "70px";
+    const bulkUnitSel = select([
+      { value: "mm", label: "mm" },
+      { value: "pt", label: "pt" },
+      { value: "px", label: "px" },
+    ]);
+    bulkUnitSel.style.width = "55px";
+
+    const applyBtn = button({ class: "secondary small" }, "Apply to all");
+    applyBtn.addEventListener("click", () => {
+      const plan = loadPlan();
+      let changed = false;
+      for (const item of plan) {
+        if (bulkLayoutSel.value) {
+          item.layoutId = bulkLayoutSel.value;
+          changed = true;
+        }
+        const rawSize = parseFloat(bulkSizeIn.value);
+        if (rawSize > 0) {
+          item.size = toMm(rawSize, bulkUnitSel.value as "mm" | "pt" | "px");
+          changed = true;
+        }
+      }
+      if (changed) {
+        savePlan(plan);
+        renderPlan();
+      }
+    });
+
+    bulkEditBar.append(
+      el("span", { class: "muted small" }, "Bulk edit: "),
+      bulkLayoutSel, bulkSizeIn, bulkUnitSel,
+      applyBtn,
+    );
+  };
+
   const renderPlan = () => {
     const plan = loadPlan();
     summary.textContent = planSummary(plan);
@@ -414,6 +468,7 @@ function buildUI(ctx: AppContext): HTMLElement {
       renderPlan();
       refreshPlanSummary();
     }));
+    buildBulkEditBar();
     refreshPlanSummary();
     refreshLivePreview();
     refreshPrintWarning();
@@ -590,6 +645,7 @@ function buildUI(ctx: AppContext): HTMLElement {
   root.append(
     formRow([bulkBtn, clearBtn]),
     summary,
+    bulkEditBar,
     tableWrap,
     livePreviewArea,
     labelSettingsSection,

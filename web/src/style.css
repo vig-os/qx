@@ -627,6 +627,20 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 /* Issue #87: live preview */
 .label-preview--live { margin-top: 12px; }
 
+/* Bulk edit toolbar */
+.bulk-edit-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 8px 0;
+  flex-wrap: wrap;
+}
+.bulk-edit-bar select, .bulk-edit-bar input { font-size: 13px; padding: 4px 6px; }
+
 /* Label settings — compact inline layout */
 .label-settings { margin: 12px 0; }
 .label-settings h3 { margin-bottom: 8px; }
