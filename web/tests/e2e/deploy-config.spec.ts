@@ -107,10 +107,9 @@ test.describe("features", () => {
       features: { enableMintTab: false },
     });
     await page.goto("/");
-    // Wait for tabs to render
-    await page.locator("nav.tabs .tab-btn").first().waitFor({ state: "visible" });
 
-    const tabTexts = await page.locator("nav.tabs .tab-btn").allTextContents();
+    const tabs = page.locator("nav.tabs button");
+    const tabTexts = await tabs.allTextContents();
     const tabNames = tabTexts.map((t) => t.replace(/\d+/g, "").trim());
 
     expect(tabNames).toContain("Lookup");
@@ -124,9 +123,9 @@ test.describe("features", () => {
       features: { enablePrintTab: false },
     });
     await page.goto("/");
-    await page.locator("nav.tabs .tab-btn").first().waitFor({ state: "visible" });
 
-    const tabTexts = await page.locator("nav.tabs .tab-btn").allTextContents();
+    const tabs = page.locator("nav.tabs button");
+    const tabTexts = await tabs.allTextContents();
     const tabNames = tabTexts.map((t) => t.replace(/\d+/g, "").trim());
 
     expect(tabNames).toContain("Lookup");
@@ -173,17 +172,23 @@ test.describe("defaults", () => {
 
 test.describe("payload format preview", () => {
   test("shows encoded payload string in live preview", async ({ page }) => {
-    // Pre-set a plan item before page load
-    await page.addInitScript(() => {
+    await page.goto("/");
+    await page.locator("nav.tabs").getByRole("button", { name: "Print" }).click();
+
+    // Add a plan item via localStorage and reload
+    await page.evaluate(() => {
       const plan = [{ id: "ABCDEFGHJKMNPQ", layoutId: "horz", size: 11, copies: 1, extras: {} }];
       window.localStorage.setItem("part-registry.print-plan", JSON.stringify(plan));
     });
-    await page.goto("/");
-    await page.locator("nav.tabs .tab-btn >> text=Print").click();
+    await page.reload();
+    await page.locator("nav.tabs").getByRole("button", { name: "Print" }).click();
 
-    // Wait for live preview to render (debounced at 200ms)
+    // Wait for live preview
     const preview = page.locator(".label-preview--live");
-    await expect(preview.locator("code")).toContainText("Payload:", { timeout: 5000 });
+    await preview.waitFor({ state: "visible" });
+
+    // Should show payload info
+    await expect(preview.locator("code")).toContainText("Payload:");
     await expect(preview.locator("code")).toContainText("chars");
   });
 });
