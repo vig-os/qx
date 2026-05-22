@@ -44,10 +44,7 @@ test.describe("Bind tab", () => {
     await expect(entryRow.getByRole("button", { name: /Scan/i })).toBeVisible();
   });
 
-  // TODO: appendBind is fire-and-forget async — the session write
-  // hasn't completed before renderTable reads the sync cache. Needs
-  // the same await fix as #138 for the "+ Add row" path.
-  test.skip("add row creates a bind row with editable fields", async ({ page }) => {
+  test("add row creates a bind row with editable fields", async ({ page }) => {
     await page.goto("/");
 
     const tabBar = page.locator("nav.tabs");
@@ -67,7 +64,7 @@ test.describe("Bind tab", () => {
     expect(count).toBeGreaterThanOrEqual(2); // ID + at least one field
   });
 
-  test.skip("preflight banner appears after adding a row with an ID", async ({ page }) => {
+  test("preflight banner appears after adding a row with an ID", async ({ page }) => {
     await page.goto("/");
 
     const tabBar = page.locator("nav.tabs");
