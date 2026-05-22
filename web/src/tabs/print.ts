@@ -776,6 +776,7 @@ function renderJobRow(item: JobItem, index: number, onChange: () => void): HTMLE
   tr.append(layoutCell);
 
   const sizeIn = numberInput({ value: item.size, min: 4, max: 100, step: 0.5 });
+  sizeIn.title = "Short side in mm. Does not change when switching layout.";
   tr.append(el("td", {}, sizeIn));
 
   // Extras cell: layout-specific option fields (cableOd, noMarkers, etc.).
