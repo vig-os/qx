@@ -11,6 +11,7 @@ export function planItemToOpts(item: PlanItem): LayoutOptions {
     size: item.size,
     extra: {
       ...item.extras,
+      codeType: s.codeType,
       micro: s.codeType === "micro",
       format: s.format === "auto" ? undefined : s.format,
       showText: s.showText,

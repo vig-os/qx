@@ -179,13 +179,13 @@ function loadDecoder(): Promise<DecoderHandle> {
       },
     });
     const detector = new ponyfill.BarcodeDetector({
-      formats: ["qr_code", "micro_qr_code"],
+      formats: ["qr_code", "micro_qr_code", "data_matrix"],
     });
     const version = ponyfill.ZXING_WASM_VERSION;
     return {
       detect: (src) =>
         detector.detect(src) as Promise<DetectorMatch[]>,
-      badge: `QR + Micro QR (zxing-wasm ${version})`,
+      badge: `QR + Micro QR + DataMatrix (zxing-wasm ${version})`,
     };
   })();
   // If the load fails, drop the cache so a retry tries again.

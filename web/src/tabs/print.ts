@@ -49,6 +49,7 @@ import {
 import { icon } from "../ui/icons";
 import { openScanner } from "../ui/scanner";
 import { isWasmReady } from "../wasm/loader";
+import { renderDataMatrixAsync, clearCache as clearDmCache } from "../wasm/datamatrix-writer";
 import { loadSession } from "../registry/session";
 import { uncommittedPrintIds } from "../registry/session-registry";
 
@@ -185,6 +186,7 @@ function buildUI(ctx: AppContext): HTMLElement {
   /** Merge global label settings into a per-item extras object. */
   const withLabelSettings = (extras: Record<string, unknown>): Record<string, unknown> => ({
     ...extras,
+    codeType: labelSettings.codeType,
     micro: labelSettings.codeType === "micro",
     format: labelSettings.format === "auto" ? undefined : labelSettings.format,
     showText: labelSettings.showText,
@@ -216,10 +218,33 @@ function buildUI(ctx: AppContext): HTMLElement {
         try {
           const layout = getLayout(first.layoutId);
           if (!layout) return;
+          const extras = withLabelSettings(first.extras);
           const wrap = el("div", { class: "label-preview__item" });
+
+          // DataMatrix: async render, then update
+          if (extras.codeType === "datamatrix") {
+            wrap.innerHTML = `<p class="muted small">Rendering DataMatrix...</p>`;
+            livePreviewArea.append(wrap);
+            void renderDataMatrixAsync(
+              first.id,
+              first.size,
+              extras.showText !== false,
+            ).then((svg) => {
+              wrap.innerHTML = svg;
+              wrap.append(
+                el("div", { class: "muted small" },
+                  `Live preview: ${fmtId(first.id)} \u00b7 ${first.layoutId} \u00b7 ${first.size}mm \u00b7 DataMatrix`),
+              );
+            }).catch(() => {
+              wrap.innerHTML = "";
+              wrap.append(el("p", { class: "muted small" }, "DataMatrix preview failed."));
+            });
+            return;
+          }
+
           wrap.innerHTML = layout.renderSvg(first.id, {
             size: first.size,
-            extra: withLabelSettings(first.extras),
+            extra: extras,
           });
           wrap.append(
             el(
@@ -556,6 +581,7 @@ function buildUI(ctx: AppContext): HTMLElement {
   // ---- Label settings section (code type, text format, show text) ----
   const labelSettingsSection = buildLabelSettingsUI(labelSettings, () => {
     labelSettings = loadLabelSettings();
+    clearDmCache(); // invalidate DataMatrix SVG cache on settings change
     renderPlan();
     refreshPreview();
   });
@@ -1030,10 +1056,11 @@ function buildLabelSettingsUI(
   const section = el("div", { class: "label-settings" });
   section.append(el("h3", {}, "Label settings"));
 
-  // Code type: Standard QR (V1, 21×21) vs Micro QR (M4, 17×17)
+  // Code type: Standard QR (V1) vs Micro QR (M4) vs DataMatrix (ECC200)
   const codeTypeSel = select([
     { value: "standard", label: "Standard QR (V1)" },
     { value: "micro", label: "Micro QR (M4)" },
+    { value: "datamatrix", label: "DataMatrix (ECC200)" },
   ]);
   codeTypeSel.value = initial.codeType;
 
