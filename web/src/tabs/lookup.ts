@@ -343,6 +343,14 @@ function buildUI(ctx: AppContext): HTMLElement {
 
   const updateReprintBtn = () => {
     (reprintSelBtn as HTMLButtonElement).disabled = selectedIds.size === 0;
+    // Update export button label to reflect selection
+    exportCsvBtn.innerHTML = "";
+    exportCsvBtn.append(
+      icon("download"),
+      selectedIds.size > 0
+        ? ` Export ${selectedIds.size} selected`
+        : " Export CSV",
+    );
   };
 
   // ---------- compute filtered + sorted rows ----------
@@ -527,8 +535,7 @@ function buildUI(ctx: AppContext): HTMLElement {
       tr.append(el("td", { class: "row-actions" }, reprintBtn));
       tr.addEventListener("click", () => {
         ctx.showPart(row.id);
-        detailCell.innerHTML = "";
-        detailCell.append(renderDetailView(row, ctx));
+        showDetailModal(row, ctx);
       });
       tbody.append(tr);
     }
@@ -726,10 +733,14 @@ function buildUI(ctx: AppContext): HTMLElement {
 
   // Issue #94: Export filtered view as CSV download.
   exportCsvBtn.addEventListener("click", () => {
-    if (visibleRows.length === 0) return;
+    // Export selected IDs if any are checked, otherwise all visible rows.
+    const rows = selectedIds.size > 0
+      ? visibleRows.filter((r) => selectedIds.has(r.id))
+      : visibleRows;
+    if (rows.length === 0) return;
     const keys = REGISTRY_FIELD_KEYS;
     const csvHeader = keys.join(",");
-    const lines = visibleRows.map((row) =>
+    const lines = rows.map((row) =>
       keys
         .map((k) => {
           const v = (row as unknown as Record<string, string>)[k] ?? "";
@@ -743,7 +754,8 @@ function buildUI(ctx: AppContext): HTMLElement {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `registry-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    const suffix = selectedIds.size > 0 ? `${selectedIds.size}-selected` : "all";
+    a.download = `registry-export-${suffix}-${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.append(a);
     a.click();
     a.remove();
@@ -760,7 +772,7 @@ function buildUI(ctx: AppContext): HTMLElement {
   renderView();
   if (route.kind === "part") {
     const row = ctx.registry.findById(route.id);
-    if (row) detailCell.append(renderDetailView(row, ctx));
+    if (row) showDetailModal(row, ctx);
   }
 
   return root;
@@ -778,6 +790,26 @@ const EDIT_FIELD_KEYS: string[] = [
   "location",
   "notes",
 ];
+
+/** Show the detail view in a modal overlay instead of inline below the table. */
+function showDetailModal(row: RegistryRow, ctx: AppContext): void {
+  // Remove any existing modal
+  document.querySelector(".detail-modal-overlay")?.remove();
+
+  const overlay = el("div", { class: "detail-modal-overlay" });
+  const modal = el("div", { class: "detail-modal" });
+
+  const closeBtn = button({ class: "icon-only detail-modal__close", title: "Close" }, icon("x"));
+  const close = () => overlay.remove();
+  closeBtn.addEventListener("click", close);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) close();
+  });
+
+  modal.append(closeBtn, renderDetailView(row, ctx));
+  overlay.append(modal);
+  document.body.append(overlay);
+}
 
 function renderDetailView(row: RegistryRow, ctx: AppContext): HTMLElement {
   const wrap = el("div", { class: "row-detail" });

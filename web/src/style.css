@@ -490,6 +490,35 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 .chip--status.chip--unbound { background: rgba(56, 142, 60, 0.12); color: #2e7d32; }
 .chip--status.chip--bound { background: rgba(31, 111, 235, 0.12); color: #1f6feb; }
 .chip--status.chip--void { background: rgba(198, 40, 40, 0.12); color: #c62828; }
+/* Detail modal overlay */
+.detail-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.detail-modal {
+  position: relative;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  max-width: 600px;
+  width: 90%;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+}
+.detail-modal__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+.detail-modal .row-detail { margin: 0; padding: 0; border: none; background: transparent; }
+
 .lookup__detail .row-detail { margin-top: 16px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-elev); }
 .row-detail__id { margin: 0 0 8px; font-family: monospace; }
 .row-detail dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
