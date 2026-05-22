@@ -12,7 +12,8 @@ import type {
   LayoutOptionField,
 } from "../core/types";
 import { renderLabelSync, type WasmFormatId } from "../wasm/loader";
-import { resolveFormat, resolveMicro, stripText } from "./label-settings";
+import { resolveFormat, resolveMicro, isDataMatrix, stripText } from "./label-settings";
+import { renderDataMatrixSync } from "../wasm/datamatrix-writer";
 
 const DEFAULT_CABLE_OD_MM = 6;
 
@@ -33,6 +34,11 @@ export const flagLayout: Layout = {
     return { widthMm: 4 * s + wrap, heightMm: s };
   },
   renderSvg(canonical: string, opts: LayoutOptions): string {
+    if (isDataMatrix(opts)) {
+      // Flag layout with DataMatrix falls back to horizontal — the
+      // cable-wrap mirroring is QR-specific geometry.
+      return renderDataMatrixSync(canonical, opts.size, opts.extra?.showText !== false);
+    }
     const fmt: WasmFormatId = resolveFormat(opts);
     const svg = renderLabelSync(canonical, "flag", opts.size, fmt, {
       micro: resolveMicro(opts),

@@ -6,7 +6,8 @@
 
 import type { Layout, LayoutDimensions, LayoutOptions } from "../core/types";
 import { renderLabelSync, type WasmFormatId } from "../wasm/loader";
-import { resolveFormat, resolveMicro, stripText } from "./label-settings";
+import { resolveFormat, resolveMicro, isDataMatrix, stripText } from "./label-settings";
+import { renderDataMatrixSync } from "../wasm/datamatrix-writer";
 
 export const horzLayout: Layout = {
   id: "horz",
@@ -16,6 +17,9 @@ export const horzLayout: Layout = {
     return { widthMm: 2 * opts.size, heightMm: opts.size };
   },
   renderSvg(canonical: string, opts: LayoutOptions): string {
+    if (isDataMatrix(opts)) {
+      return renderDataMatrixSync(canonical, opts.size, opts.extra?.showText !== false);
+    }
     const fmt: WasmFormatId = resolveFormat(opts);
     const svg = renderLabelSync(canonical, "horz", opts.size, fmt, {
       micro: resolveMicro(opts),
