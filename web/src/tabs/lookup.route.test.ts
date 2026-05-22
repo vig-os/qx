@@ -122,10 +122,12 @@ describe("lookupTab data-grid (#10)", () => {
       makeContext([boundRow], () => ({ kind: "part", id: boundRow.id })),
     );
 
-    expect(container.querySelector(".row-detail")?.textContent).toContain(
-      boundRow.type,
-    );
-    expect(container.textContent).toContain(boundRow.location);
+    // Detail view opens in a modal overlay on document.body
+    const modal = document.querySelector(".detail-modal-overlay .row-detail");
+    expect(modal?.textContent).toContain(boundRow.type);
+    expect(modal?.textContent).toContain(boundRow.location);
+    // Clean up modal
+    document.querySelector(".detail-modal-overlay")?.remove();
   });
 
   it("shows the empty-state when no rows match the filter", () => {
@@ -203,17 +205,18 @@ describe("lookup detail Edit affordance (#6)", () => {
       makeContext([boundRow], () => ({ kind: "part", id: boundRow.id })),
     );
 
-    // Pre-condition: read-only detail.
-    expect(container.querySelector(".row-detail dl")).toBeTruthy();
-    expect(container.querySelector(".row-detail--edit")).toBeFalsy();
+    // Detail opens in modal on document.body
+    const modal = document.querySelector(".detail-modal-overlay");
+    expect(modal?.querySelector(".row-detail dl")).toBeTruthy();
+    expect(modal?.querySelector(".row-detail--edit")).toBeFalsy();
 
-    const editBtn = [...container.querySelectorAll(".row-detail button")]
+    const editBtn = [...(modal?.querySelectorAll(".row-detail button") ?? [])]
       .find((b) => b.textContent?.includes("Edit")) as HTMLButtonElement;
     editBtn.click();
 
-    expect(container.querySelector(".row-detail--edit")).toBeTruthy();
-    // Status field is a <select> per #6 (mid-life status changes).
-    expect(container.querySelector(".row-detail__form select")).toBeTruthy();
+    expect(modal?.querySelector(".row-detail--edit")).toBeTruthy();
+    expect(modal?.querySelector(".row-detail__form select")).toBeTruthy();
+    document.querySelector(".detail-modal-overlay")?.remove();
   });
 
   it("Cancel button restores the read-only view without queuing anything", () => {
@@ -223,17 +226,19 @@ describe("lookup detail Edit affordance (#6)", () => {
       makeContext([boundRow], () => ({ kind: "part", id: boundRow.id })),
     );
 
-    const editBtn = [...container.querySelectorAll(".row-detail button")]
+    const modal = document.querySelector(".detail-modal-overlay");
+    const editBtn = [...(modal?.querySelectorAll(".row-detail button") ?? [])]
       .find((b) => b.textContent?.includes("Edit")) as HTMLButtonElement;
     editBtn.click();
 
-    const cancelBtn = [...container.querySelectorAll(".row-detail button")]
+    const cancelBtn = [...(modal?.querySelectorAll(".row-detail button") ?? [])]
       .find((b) => b.textContent === "Cancel") as HTMLButtonElement;
     cancelBtn.click();
 
-    expect(container.querySelector(".row-detail--edit")).toBeFalsy();
-    expect(container.querySelector(".row-detail dl")).toBeTruthy();
+    expect(modal?.querySelector(".row-detail--edit")).toBeFalsy();
+    expect(modal?.querySelector(".row-detail dl")).toBeTruthy();
     expect(loadQueue()).toEqual([]);
+    document.querySelector(".detail-modal-overlay")?.remove();
   });
 
   // TODO: queue is now a session facade; these tests need full session store
