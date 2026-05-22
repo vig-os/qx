@@ -913,13 +913,13 @@ function renderVoidConfirm(row: RegistryRow, ctx: AppContext): HTMLElement {
   wrap.append(errMsg);
 
   const confirmBtn = button({ class: "destructive row-detail__void" }, "Confirm void");
-  confirmBtn.addEventListener("click", () => {
+  confirmBtn.addEventListener("click", async () => {
     const reason = reasonTextarea.value.trim();
     if (!reason) {
       errMsg.textContent = "A reason is required to void a part.";
       return;
     }
-    appendVoid(row.id, reason);
+    await appendVoid(row.id, reason);
     ctx.showTab("bind");
   });
 
@@ -1012,7 +1012,7 @@ function renderDetailEdit(row: RegistryRow, ctx: AppContext): HTMLElement {
   wrap.append(errMsg);
 
   const saveBtn = button({ class: "primary", type: "button" }, icon("plus"), " Queue edit");
-  saveBtn.addEventListener("click", () => {
+  saveBtn.addEventListener("click", async () => {
     const changes: Partial<RegistryRow> = {};
     const before: Partial<RegistryRow> = {};
     for (const key of EDIT_FIELD_KEYS) {
@@ -1038,7 +1038,7 @@ function renderDetailEdit(row: RegistryRow, ctx: AppContext): HTMLElement {
         return;
       }
     }
-    appendEdit(row.id, before, changes);
+    await appendEdit(row.id, before, changes);
     ctx.showTab("bind");
   });
 

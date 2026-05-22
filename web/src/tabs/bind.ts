@@ -648,8 +648,8 @@ function renderBindRow(
   );
 
   const trashBtn = button({ class: "icon-only", title: "Remove from queue" }, icon("trash"));
-  trashBtn.addEventListener("click", () => {
-    removeAt(index);
+  trashBtn.addEventListener("click", async () => {
+    await removeAt(index);
     onChange();
   });
   tr.append(el("td", { class: "row-actions" }, trashBtn));
@@ -695,8 +695,8 @@ function renderEditRow(
   );
 
   const trashBtn = button({ class: "icon-only", title: "Remove from queue" }, icon("trash"));
-  trashBtn.addEventListener("click", () => {
-    removeAt(index);
+  trashBtn.addEventListener("click", async () => {
+    await removeAt(index);
     onChange();
   });
   tr.append(el("td", { class: "row-actions" }, trashBtn));
@@ -718,11 +718,11 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
   const addCell = el("td", { colspan: String(totalCols), style: "text-align: center;" });
 
   const addBlankBtn = button({ class: "secondary small", title: "Add blank row to queue" }, icon("plus"), " Add row");
-  addBlankBtn.addEventListener("click", () => {
+  addBlankBtn.addEventListener("click", async () => {
     const fields = repeatMode && lastBindFields
       ? { ...lastBindFields }
       : emptyBindFields();
-    appendBind({ id: "", ...fields });
+    await appendBind({ id: "", ...fields });
     onAdd();
     // Focus the ID input of the newly added row (last queue row)
     requestAnimationFrame(() => {
