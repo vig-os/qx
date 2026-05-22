@@ -1,34 +1,45 @@
-# HANDOFF — part-registry full implementation
+# HANDOFF — deploy-config refactor (issue #153)
 
-## Goal
-Work through all open issues, deploy to test repo, write comprehensive tests.
+## Current goal
+Implement P0+P1 of issue #153: unified `schema/deploy-config.json` + `schema/code-types.json` SSoT, replacing 5+ hardcoded places. Tape presets deprecated → `<value> <mm|pt|px>` unit selector + `printerDpi` from config.
 
-## What's done
-- **Phase 0**: All 5 FE PRs merged (#62-68). Issues #6, #7, #10, #23 closed.
-- **Phase 1**: 6 milestones created, all issues assigned.
-- **Phase 2 (partial)**: #38, #44, #52, #53 implemented and merged (PRs #69-72 + #70). CI fixes for bind.ts type mismatch (PR #73) and pages.yml wasm-bindgen (PR #74) merged.
+## What's done (this session)
+- v0.8.1 deployed: DataMatrix encode+decode, detail modal, CSV selection, error cards, version display
+- Issue #153 filed with full spike + 5 agent reviews (12-factor, domain, SOLID, DX, config scope)
+- Architecture decided and consolidated from reviews
 
-## What's in flight
-- **Agent (SOUP harnesses)**: Working on #45 + #46 in worktree. SOUP H1 (ID alphabet/collision) and H2 (QR roundtrip/golden).
-- **Agent (Schema + CLI)**: Working on #18 + #56 in worktree. Schema additions (minted_by/bound_by/last_edited) + CLI void-notes parity.
+## Architecture decisions
+- **Separate file**: `deploy-config.json` in `schema/` (NOT in registry-contract.json)
+- **Code types SSoT**: `code-types.json` array with id, displayLabel, scannerFormat, encoderFamily, ecLevel, minModuleSizeMm
+- **Family+EC axis**: config says `micro_qr:M` not `micro_qr_m4` — encoder auto-selects version
+- **Capacity validation**: reject impossible combos at config load time
+- **Scanner**: read list append-only, decode silently, no warnings on legacy labels
+- **Build-time**: Vite import alias `@deploy-config`, env var overrides for repo settings
+- **Runtime override**: `window.__PART_REGISTRY_CONFIG__` for standalone app deployments
+- **Backward compat**: absent config = all types allowed, all features enabled
+- **Tape presets deprecated**: replaced by printerDpi config + unit selector (mm/pt/px)
+- **Contract stays data schema only**: fields, statuses, ID rules — no deploy policy
 
-## What's next
-- **#43** (coverage binary): Depends on #44 (done) + #45/#46 (in flight). Implement after harnesses land.
-- **Phase 4** (#14, #20, #5, #1): Web app features — always-on decoder, scanner multi-pick, proposal broker.
-- **Phase 5** (#15, #11): Print/layout — flag options, matrix studio.
-- **Phase 6**: Comprehensive Playwright test suite (SSoT-driven from registry-contract.json).
-- **Phase 7**: CI portability + SSoT enforcement tests.
-- **Phase 8**: Deploy to exo-pet/exopet-registry-sandbox.
-- **Phase 9**: Housekeeping (#16, #17), defer #13/#19.
+## Files to create
+- `schema/deploy-config.json` — default config with all settings
+- `schema/deploy-config.schema.json` — JSON Schema for validation
+- `schema/code-types.json` — SSoT for barcode symbology metadata
+- `web/src/config/deploy-config.ts` — typed loader + validation
 
-## Key files
-- `schema/registry-contract.json` — SSoT
-- `crates/domain/src/lib.rs` — Part struct, PartId
-- `crates/validators/src/lib.rs` — REGISTRY_HEADER
-- `crates/config/src/lib.rs` — typed adapter enums (StorageAdapterChoice etc.)
-- `crates/observability/src/lib.rs` — OperatorGuard
-- `web/src/tabs/bind.ts` — fixed type mismatch
-- `.github/workflows/pages.yml` — fixed wasm-bindgen install
+## Files to refactor
+- `web/src/config.ts` — read from deploy-config instead of hardcodes
+- `web/src/ui/scanner.ts:182` — format filter from config
+- `web/src/tabs/print.ts:1035-1038` — dropdown from code-types.json
+- `web/src/layouts/label-settings.ts:19` — CodeType derived from code-types
+- `web/src/output/plan-opts.ts` — label settings injection
+- `web/src/tabs/print.ts` — TAPE_SIZES → unit selector + printerDpi
+- `crates/codec/src/qr.rs:110-115` — Rust decoder from config (P1)
 
-## Plan file
-`/home/larsgerchow/.claude/plans/tidy-toasting-popcorn.md`
+## Open issues
+- #153 — spike: 12-factor barcode type config (this work)
+- #149 — print auto-size guard
+- #148 — multi-row editing + filters
+- #133 — device flow auth
+
+## Previous phases (completed)
+All FE PRs merged, milestones created, SOUP harnesses done, schema additions done, Playwright tests, CI fixes, sandbox deployed through v0.8.1.

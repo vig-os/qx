@@ -1,0 +1,38 @@
+[
+  {
+    "id": "standard_qr",
+    "displayLabel": "Standard QR",
+    "scannerFormat": "qr_code",
+    "encoderFamily": "qr",
+    "ecLevels": ["L", "M", "Q", "H"],
+    "defaultEcLevel": "M",
+    "minModuleSizeMm": 0.25,
+    "minPayloadAlphanumeric": 25,
+    "quietZoneModules": 4,
+    "description": "QR Code (ISO 18004). Version auto-selected by encoder. Best general-purpose choice."
+  },
+  {
+    "id": "micro_qr",
+    "displayLabel": "Micro QR",
+    "scannerFormat": "micro_qr_code",
+    "encoderFamily": "micro_qr",
+    "ecLevels": ["L", "M"],
+    "defaultEcLevel": "M",
+    "minModuleSizeMm": 0.25,
+    "minPayloadAlphanumeric": 15,
+    "quietZoneModules": 2,
+    "description": "Micro QR (M4, ISO 18004 Annex D). Smaller than standard QR — good for tight spaces. Max 15 alphanumeric at EC M."
+  },
+  {
+    "id": "data_matrix",
+    "displayLabel": "DataMatrix",
+    "scannerFormat": "data_matrix",
+    "encoderFamily": "data_matrix",
+    "ecLevels": ["ECC200"],
+    "defaultEcLevel": "ECC200",
+    "minModuleSizeMm": 0.2,
+    "minPayloadAlphanumeric": 2335,
+    "quietZoneModules": 1,
+    "description": "DataMatrix (ECC200, ISO 16022). Square or rectangular. Best for curved surfaces and industrial marking."
+  }
+]
