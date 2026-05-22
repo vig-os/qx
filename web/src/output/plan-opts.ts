@@ -12,7 +12,7 @@ export function planItemToOpts(item: PlanItem): LayoutOptions {
     extra: {
       ...item.extras,
       codeType: s.codeType,
-      micro: s.codeType === "micro",
+      micro: s.codeType === "micro_qr" || s.codeType === "micro",
       format: s.format === "auto" ? undefined : s.format,
       showText: s.showText,
     },

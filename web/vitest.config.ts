@@ -9,6 +9,14 @@ export default defineConfig({
         __dirname,
         "../schema/registry-contract.json",
       ),
+      "@deploy-config": resolve(
+        __dirname,
+        "../schema/deploy-config.json",
+      ),
+      "@code-types": resolve(
+        __dirname,
+        "../schema/code-types.json",
+      ),
     },
   },
   test: {

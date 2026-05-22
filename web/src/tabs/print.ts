@@ -32,6 +32,7 @@ import {
   type CodeType,
   type FormatSetting,
 } from "../layouts/label-settings";
+import { getAllowedPrintCodeTypes, getConfig } from "../config/deploy-config";
 import {
   events,
   EVENT_REPRINT_REQUEST,
@@ -1056,21 +1057,26 @@ function buildLabelSettingsUI(
   const section = el("div", { class: "label-settings" });
   section.append(el("h3", {}, "Label settings"));
 
-  // Code type: Standard QR (V1) vs Micro QR (M4) vs DataMatrix (ECC200)
-  const codeTypeSel = select([
-    { value: "standard", label: "Standard QR (V1)" },
-    { value: "micro", label: "Micro QR (M4)" },
-    { value: "datamatrix", label: "DataMatrix (ECC200)" },
-  ]);
+  // Code type dropdown — driven by deploy config + code-types.json
+  const allowedTypes = getAllowedPrintCodeTypes();
+  const codeTypeSel = select(
+    allowedTypes.map((ct) => ({ value: ct.id, label: ct.displayLabel })),
+  );
+  // Disable dropdown if only one option (locked by admin)
+  if (allowedTypes.length <= 1) codeTypeSel.disabled = true;
   codeTypeSel.value = initial.codeType;
 
-  // Text format
-  const formatSel = select([
-    { value: "auto", label: "Auto (by size)" },
-    { value: "4/4", label: "4/4 (8 chars, 2 rows)" },
-    { value: "4/4/4", label: "4/4/4 (12 chars, 3 rows)" },
-    { value: "5/5/4", label: "5/5/4 (14 chars, full ID)" },
-  ]);
+  // Text format — from deploy config
+  const deployCfg = getConfig();
+  const fmtOptions = deployCfg.labels.allowedTextFormats.map((f: string) => ({
+    value: f,
+    label: f === "auto" ? "Auto (by size)"
+      : f === "4/4" ? "4/4 (8 chars, 2 rows)"
+      : f === "4/4/4" ? "4/4/4 (12 chars, 3 rows)"
+      : f === "5/5/4" ? "5/5/4 (14 chars, full ID)"
+      : f,
+  }));
+  const formatSel = select(fmtOptions);
   formatSel.value = initial.format;
 
   // Show text toggle

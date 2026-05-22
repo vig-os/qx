@@ -16,7 +16,9 @@ const KEY_CODE_TYPE = "part-registry.label.codeType";
 const KEY_FORMAT = "part-registry.label.format";
 const KEY_SHOW_TEXT = "part-registry.label.showText";
 
-export type CodeType = "standard" | "micro" | "datamatrix";
+// Code type IDs match the `id` field in code-types.json.
+// "standard_qr" | "micro_qr" | "data_matrix" (or any future type).
+export type CodeType = string;
 export type FormatSetting = "auto" | WasmFormatId;
 
 // ---- Persistence ----
@@ -56,13 +58,13 @@ export function resolveFormat(opts: LayoutOptions): WasmFormatId {
 
 /** Resolve the micro flag from opts.extra. */
 export function resolveMicro(opts: LayoutOptions): boolean {
-  return opts.extra?.micro === true;
+  return opts.extra?.codeType === "micro_qr" || opts.extra?.micro === true;
 }
 
 /** Check if the code type is DataMatrix. */
 export function isDataMatrix(opts: LayoutOptions): boolean {
-  return opts.extra?.micro === "datamatrix" ||
-    (typeof opts.extra?.codeType === "string" && opts.extra.codeType === "datamatrix");
+  return opts.extra?.codeType === "data_matrix" ||
+    opts.extra?.codeType === "datamatrix"; // back-compat with old localStorage values
 }
 
 /**

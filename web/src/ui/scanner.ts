@@ -178,14 +178,17 @@ function loadDecoder(): Promise<DecoderHandle> {
           path.endsWith(".wasm") ? wasmUrl : prefix + path,
       },
     });
-    const detector = new ponyfill.BarcodeDetector({
-      formats: ["qr_code", "micro_qr_code", "data_matrix"],
-    });
+    const { getAllowedScanFormats } = await import("../config/deploy-config");
+    const formats = getAllowedScanFormats() as Array<"qr_code" | "micro_qr_code" | "data_matrix">;
+    const detector = new ponyfill.BarcodeDetector({ formats });
     const version = ponyfill.ZXING_WASM_VERSION;
+    const formatNames = formats.map((f: string) =>
+      f.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()),
+    ).join(" + ");
     return {
       detect: (src) =>
         detector.detect(src) as Promise<DetectorMatch[]>,
-      badge: `QR + Micro QR + DataMatrix (zxing-wasm ${version})`,
+      badge: `${formatNames} (zxing-wasm ${version})`,
     };
   })();
   // If the load fails, drop the cache so a retry tries again.
