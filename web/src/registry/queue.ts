@@ -29,6 +29,7 @@ export type EditableKey =
   | "part_number"
   | "location"
   | "notes"
+  | "components"
   | "status";
 
 export interface QueuedBind {
