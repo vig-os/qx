@@ -20,6 +20,7 @@ import Fuse from "fuse.js";
 
 import { ID_LENGTH, ID_REGEX, DATA_REPO_SLUG, DEFAULT_BRANCH, DEFAULT_SIZE_MM } from "../config";
 import { FIELDS, REGISTRY_FIELD_KEYS, type RegistryRow, type Status } from "../registry/schema";
+import { parseComponents, isAssembly, buildParentMap } from "../registry/assembly-graph";
 import { appendEdit, appendVoid } from "../registry/queue";
 import type { AppContext, Tab } from "../core/types";
 import { normalizeCanonicalId } from "../routing/route";
@@ -502,6 +503,10 @@ function buildUI(ctx: AppContext): HTMLElement {
         if (col.key === "id") {
           cell = el("td", { class: "id-cell" });
           cell.append(fmtId(row.id));
+          if (isAssembly(row)) {
+            const count = parseComponents(row.components).length;
+            cell.append(el("span", { class: "assembly-badge", title: `Assembly with ${count} component(s)` }, `[${count}]`));
+          }
         } else if (col.key === "status") {
           cell = el("td");
           cell.append(
@@ -829,6 +834,50 @@ function renderDetailView(row: RegistryRow, ctx: AppContext): HTMLElement {
     );
   }
   wrap.append(dl);
+
+  // #168: Components section — shown for assemblies
+  const childIds = parseComponents(row.components);
+  if (childIds.length > 0) {
+    const compSection = el("div", { class: "row-detail__components" });
+    compSection.append(el("h4", {}, `Components (${childIds.length})`));
+    const compList = el("div", { class: "component-chips" });
+    for (const childId of childIds) {
+      const childRow = ctx.registry.findById(childId);
+      const chipClass = childRow
+        ? `component-chip component-chip--${childRow.status}`
+        : "component-chip component-chip--unknown";
+      const chipEl = el("a", {
+        class: chipClass,
+        href: "#",
+        title: childRow
+          ? `${childRow.type || childRow.description || childId} (${childRow.status})`
+          : `${childId} (not in registry)`,
+      }, fmtId(childId));
+      chipEl.addEventListener("click", (e) => {
+        e.preventDefault();
+        ctx.showPart(childId);
+        ctx.showTab("lookup");
+      });
+      compList.append(chipEl);
+    }
+    compSection.append(compList);
+    wrap.append(compSection);
+  }
+
+  // #168: Reverse lookup — show if this part is a component of an assembly
+  const parentMap = buildParentMap(ctx.registry.all());
+  const parentId = parentMap.get(row.id);
+  if (parentId) {
+    const parentRow = ctx.registry.findById(parentId);
+    const parentLink = el("a", { href: "#", class: "row-detail__parent-link" },
+      `Part of: ${fmtId(parentId)}${parentRow ? ` (${parentRow.type || parentRow.description || ""})` : ""}`);
+    parentLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      ctx.showPart(parentId);
+      ctx.showTab("lookup");
+    });
+    wrap.append(el("div", { class: "row-detail__parent" }, parentLink));
+  }
 
   // Issue #95: Audit trail
   const auditFields: { label: string; value: string }[] = [
