@@ -33,6 +33,8 @@ import {
   User,
   ExternalLink,
   Shield,
+  Eye,
+  EyeOff,
   type IconNode,
 } from "lucide";
 
@@ -60,6 +62,8 @@ const ICONS: Record<string, IconNode> = {
   user: User,
   "external-link": ExternalLink,
   shield: Shield,
+  eye: Eye,
+  "eye-off": EyeOff,
 };
 
 export type IconName = keyof typeof ICONS;

@@ -39,27 +39,39 @@ export function showAuthModal(): Promise<AuthModalResult | null> {
   return new Promise((resolve) => {
     const existing = getStoredToken();
 
+    // ---- Shared cleanup — removes overlay + Escape listener ----
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    const close = () => {
+      document.removeEventListener("keydown", onEsc);
+      overlay.remove();
+      resolve(null);
+    };
+
     // ---- Build the modal ----
     const overlay = el("div", { class: "auth-modal-overlay" });
 
-    const modal = el("div", { class: "auth-modal" });
+    const modal = el("div", {
+      class: "auth-modal",
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-labelledby": "auth-modal-title",
+    });
 
     // Close button
     const closeBtn = button(
       { class: "auth-modal__close icon-only", title: "Cancel" },
       icon("x"),
     );
-    closeBtn.addEventListener("click", () => {
-      overlay.remove();
-      resolve(null);
-    });
+    closeBtn.addEventListener("click", close);
 
     // Header
     const header = el(
       "div",
       { class: "auth-modal__header" },
       icon("shield", { size: 24 }),
-      el("h3", {}, existing ? "Update GitHub token" : "Connect to GitHub"),
+      el("h3", { id: "auth-modal-title" }, existing ? "Update GitHub token" : "Connect to GitHub"),
     );
 
     // Instructions
@@ -120,13 +132,15 @@ export function showAuthModal(): Promise<AuthModalResult | null> {
 
     // Toggle visibility button
     const toggleBtn = button(
-      { class: "auth-modal__toggle icon-only", title: "Show/hide token" },
-      icon("user"),
+      { class: "auth-modal__toggle icon-only", title: "Show token" },
+      icon("eye"),
     );
     toggleBtn.addEventListener("click", () => {
       const isPassword = tokenInput.type === "password";
       tokenInput.type = isPassword ? "text" : "password";
       toggleBtn.title = isPassword ? "Hide token" : "Show token";
+      toggleBtn.innerHTML = "";
+      toggleBtn.append(icon(isPassword ? "eye-off" : "eye"));
     });
 
     const inputRow = el(
@@ -147,10 +161,7 @@ export function showAuthModal(): Promise<AuthModalResult | null> {
     );
 
     const cancelBtn = button({}, "Cancel");
-    cancelBtn.addEventListener("click", () => {
-      overlay.remove();
-      resolve(null);
-    });
+    cancelBtn.addEventListener("click", close);
 
     const actions = el(
       "div",
@@ -251,6 +262,7 @@ export function showAuthModal(): Promise<AuthModalResult | null> {
       await sendTokenToSW(token, validatedUser ?? "");
 
       emitAuthStateChanged();
+      document.removeEventListener("keydown", onEsc);
       overlay.remove();
       resolve({
         token,
@@ -267,20 +279,10 @@ export function showAuthModal(): Promise<AuthModalResult | null> {
 
     // Close on backdrop click
     overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) {
-        overlay.remove();
-        resolve(null);
-      }
+      if (e.target === overlay) close();
     });
 
-    // Close on Escape
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        document.removeEventListener("keydown", onEsc);
-        overlay.remove();
-        resolve(null);
-      }
-    };
+    // Close on Escape (listener cleaned up by close())
     document.addEventListener("keydown", onEsc);
 
     // ---- Assemble & show ----

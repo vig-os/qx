@@ -25,8 +25,14 @@ precacheAndRoute(self.__WB_MANIFEST);
 
 // ---- SPA navigation fallback ----
 // Serve index.html for all navigation requests (SPA routing).
-const handler = createHandlerBoundToURL("index.html");
-const navigationRoute = new NavigationRoute(handler);
+// The URL must match the precache manifest key, which includes the
+// base path (e.g. /part-registry/index.html). self.registration.scope
+// gives us the base URL at runtime. Fallback to "/" for dev.
+const scope = self.registration?.scope ?? "/";
+const basePath = new URL(scope).pathname;
+const fallbackUrl = `${basePath}${basePath.endsWith("/") ? "" : "/"}index.html`;
+const navHandler = createHandlerBoundToURL(fallbackUrl);
+const navigationRoute = new NavigationRoute(navHandler);
 registerRoute(navigationRoute);
 
 // ---- Runtime caching for registry CSV ----
@@ -138,13 +144,21 @@ async function handleGhFetch(
       return;
     }
 
+    // Strip Authorization from caller-supplied headers — the SW is the
+    // sole source of truth for the credential. If caller-supplied headers
+    // could override Authorization, the enclave is bypassed.
+    const callerHeaders = { ...(data.init?.headers ?? {}) } as Record<string, string>;
+    delete callerHeaders["Authorization"];
+    delete callerHeaders["authorization"];
+
     const res = await fetch(data.url, {
       ...data.init,
       headers: {
         Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${_ghToken}`,
         "X-GitHub-Api-Version": "2022-11-28",
-        ...(data.init?.headers ?? {}),
+        ...callerHeaders,
+        // Applied last — non-overridable.
+        Authorization: `Bearer ${_ghToken}`,
       },
     });
 
