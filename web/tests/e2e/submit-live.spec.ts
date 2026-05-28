@@ -96,38 +96,51 @@ test.describe("Live submit pipeline", () => {
     const userData = (await userRes.json()) as { login: string };
     const username = userData.login;
 
-    // Pre-inject username too
+    // Pre-inject username and a valid session with a bind item via
+    // localStorage (the session module migrates it to IndexedDB on load).
+    // This bypasses the bind form entirely — we're testing the GitHub
+    // API pipeline, not the form.
     await page.addInitScript(
       ([user]) => {
         window.sessionStorage.setItem("part-registry.github-user", user);
+        // Pre-populate a session with one bind item using the old
+        // localStorage key that session.ts migrates from
+        const session = {
+          id: "test-session-" + Date.now(),
+          createdAt: new Date().toISOString(),
+          items: [{
+            kind: "bind",
+            id: "23456789ABCDEF",
+            fields: { type: "Test part", description: "e2e submit test" },
+            createdAt: new Date().toISOString(),
+          }],
+        };
+        // Write to IndexedDB via a micro-script
+        const req = indexedDB.open("part-registry", 1);
+        req.onupgradeneeded = () => {
+          req.result.createObjectStore("session");
+        };
+        req.onsuccess = () => {
+          const tx = req.result.transaction("session", "readwrite");
+          tx.objectStore("session").put(session, "current");
+        };
       },
       [username],
     );
 
     await page.goto("/");
 
-    // Navigate to Bind tab
+    // Navigate to Bind tab — the pre-populated session should show
     await page.locator("nav.tabs").getByRole("button", { name: "Bind" }).click();
 
-    // Add a bind row with an unbound ID from the fixture
-    const addBtn = page.locator(".entry-row").getByRole("button", { name: /Add row/i });
-    await addBtn.click();
-
-    const queueRow = page.locator(".queue-row--bind");
-    await expect(queueRow).toHaveCount(1, { timeout: 5_000 });
-
-    const idInput = queueRow.locator(".id-cell input").first();
-    await idInput.fill("2345-6789-ABCD-EF");
-    await idInput.dispatchEvent("change");
-
-    // Force-click Submit — preflight may block the button depending on
-    // WASM policy evaluation, but this test is about the GitHub API flow.
+    // Wait for the session to load and the submit button to appear
     const submitBtn = page.getByRole("button", { name: /Submit session/i });
+    await expect(submitBtn).toBeVisible({ timeout: 10_000 });
 
     // Accept the confirmation dialog
     page.on("dialog", (d) => d.accept());
 
-    // Click Submit — force-click past preflight, this hits the real GitHub API
+    // Click Submit — force-click past any preflight block
     await submitBtn.click({ force: true });
 
     // Wait for the success card with a PR link
