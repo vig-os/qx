@@ -119,6 +119,17 @@
       "label": "Last edited by",
       "type": "string",
       "editable": false
+    },
+    {
+      "key": "components",
+      "label": "Components",
+      "type": "string",
+      "editable": true,
+      "meaningfulFrom": "bound",
+      "validation": {
+        "maxLength": 1000,
+        "pattern": "^$|^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{14}(;[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{14})*$"
+      }
     }
   ]
 }

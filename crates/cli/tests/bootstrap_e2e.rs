@@ -22,7 +22,7 @@ fn make_remote(tmp: &Path) -> std::path::PathBuf {
     git(&["init", "--initial-branch=main"], &work);
     fs::write(
         work.join("registry.csv"),
-        "id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,signatures,chain_hash\n",
+        "id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,components,signatures,chain_hash\n",
     )
     .unwrap();
     // Use deterministic identity so the commit doesn't depend on the

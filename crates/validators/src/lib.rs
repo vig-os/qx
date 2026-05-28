@@ -57,6 +57,7 @@ pub const REGISTRY_HEADER: &[&str] = &[
     "bound_by",
     "last_edited_at",
     "last_edited_by",
+    "components",
 ];
 
 /// Canonical `print_log.csv` column order per ADR-015 §"Schema".
@@ -475,6 +476,7 @@ mod tests {
             bound_by: None,
             last_edited_at: None,
             last_edited_by: None,
+            components: vec![],
             signatures: vec![],
             chain_hash: None,
         }
