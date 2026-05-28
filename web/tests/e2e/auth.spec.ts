@@ -32,8 +32,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe("Auth onboarding modal", () => {
-  test("Submit session button opens auth modal when no token is stored", async ({ page }) => {
-    // Mock the GitHub user endpoint for token validation
+  test("toolbar Connect button opens auth modal with instructions", async ({ page }) => {
     await page.route("https://api.github.com/user", async (route) => {
       await route.fulfill({
         status: 200,
@@ -44,27 +43,10 @@ test.describe("Auth onboarding modal", () => {
 
     await page.goto("/");
 
-    // Navigate to Bind tab
-    const tabBar = page.locator("nav.tabs");
-    await tabBar.getByRole("button", { name: "Bind" }).click();
-
-    // Add a row with an unbound ID from the fixture so preflight allows submit
-    const addBtn = page.locator(".entry-row").getByRole("button", { name: /Add row/i });
-    await addBtn.click();
-
-    const queueRow = page.locator(".queue-row--bind");
-    await expect(queueRow).toHaveCount(1, { timeout: 5_000 });
-    const idInput = queueRow.locator(".id-cell input").first();
-    // Use an unbound ID from fixtures/registry.csv
-    await idInput.fill("2345-6789-ABCD-EF");
-    await idInput.dispatchEvent("change");
-
-    // Wait for preflight to allow submit
-    const submitBtn = page.getByRole("button", { name: /Submit session/i });
-    await expect(submitBtn).toBeEnabled({ timeout: 10_000 });
-
-    // Click Submit — should open the auth modal (not a prompt())
-    await submitBtn.click();
+    // Click the toolbar connect button (no token stored → shows connect button)
+    const connectBtn = page.locator(".auth-indicator button[title='Connect to GitHub']");
+    await expect(connectBtn).toBeVisible({ timeout: 5_000 });
+    await connectBtn.click();
 
     // Auth modal should be visible
     const modal = page.locator(".auth-modal-overlay");
@@ -74,6 +56,10 @@ test.describe("Auth onboarding modal", () => {
     await expect(modal.locator("h3")).toContainText("Connect to GitHub");
     await expect(modal.locator("ol")).toBeVisible(); // instructions list
     await expect(modal.locator("input[type='password']")).toBeVisible(); // masked input
+
+    // Verify ARIA attributes
+    const dialog = modal.locator("[role='dialog']");
+    await expect(dialog).toHaveAttribute("aria-modal", "true");
 
     // Verify security note is present
     await expect(modal.locator(".auth-modal__sec-note")).toContainText("session memory");
