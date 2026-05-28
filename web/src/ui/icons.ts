@@ -28,6 +28,11 @@ import {
   ListChecks,
   Check,
   Settings,
+  LogIn,
+  LogOut,
+  User,
+  ExternalLink,
+  Shield,
   type IconNode,
 } from "lucide";
 
@@ -50,6 +55,11 @@ const ICONS: Record<string, IconNode> = {
   "list-checks": ListChecks,
   check: Check,
   settings: Settings,
+  "log-in": LogIn,
+  "log-out": LogOut,
+  user: User,
+  "external-link": ExternalLink,
+  shield: Shield,
 };
 
 export type IconName = keyof typeof ICONS;

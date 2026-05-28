@@ -100,15 +100,19 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: "autoUpdate",
-      strategies: "generateSW",
+      // injectManifest: custom SW with token enclave for GitHub API
+      // auth (#133). The precache manifest is injected via
+      // self.__WB_MANIFEST at build time; runtime caching for
+      // registry CSV is configured in the SW source.
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.ts",
       includeAssets: ["icon.svg", "icon-maskable.svg"],
       manifest: {
         name: "part-registry",
         short_name: "parts",
         description:
           "Scan QRs, look up parts, print labels, queue binds for batched PR submission.",
-        // Use BASE so the manifest works for both code-repo and data-
-        // repo Pages deployments without manual tweaking.
         start_url: BASE,
         scope: BASE,
         display: "standalone",
@@ -130,38 +134,9 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
-        // Globs collected from `dist/` at build time. Excludes the
-        // .map files (sourcemaps) and the registry CSV (which is
-        // fetched from the data-repo, not bundled).
+      injectManifest: {
         globPatterns: ["**/*.{js,css,html,svg,wasm,woff2,png,ico}"],
-        // Bumped from the 2 MB default because zxing's reader.wasm
-        // alone is ~1 MB raw. Capping at 8 MB keeps room for the
-        // full SPA + both WASM artifacts.
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
-        runtimeCaching: [
-          {
-            // Registry / audit / print log live in the data repo on
-            // raw.githubusercontent.com — fetch fresh when online,
-            // fall through to cache when offline. Keeps the audit-
-            // of-record property: a cached read never overrides a
-            // fresh write.
-            urlPattern:
-              /^https:\/\/raw\.githubusercontent\.com\/.+\.csv$/,
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "registry-data",
-              networkTimeoutSeconds: 5,
-              expiration: {
-                maxEntries: 32,
-                maxAgeSeconds: 60 * 60 * 24,
-              },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-        ],
-        navigateFallback: `${BASE}index.html`,
-        cleanupOutdatedCaches: true,
       },
       devOptions: {
         enabled: false,
