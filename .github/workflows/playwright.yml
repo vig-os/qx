@@ -61,6 +61,8 @@ jobs:
       - name: Run Playwright e2e
         working-directory: web
         run: npm run e2e
+        env:
+          PARTREG_TEST_PAT: ${{ secrets.PARTREG_TEST_PAT }}
 
       - name: Upload Playwright traces on failure
         if: failure()
