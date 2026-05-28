@@ -48,19 +48,23 @@ test.describe("Auth onboarding modal", () => {
     const tabBar = page.locator("nav.tabs");
     await tabBar.getByRole("button", { name: "Bind" }).click();
 
-    // Add a row so we have something to submit
+    // Add a row with an unbound ID from the fixture so preflight allows submit
     const addBtn = page.locator(".entry-row").getByRole("button", { name: /Add row/i });
     await addBtn.click();
 
-    // Fill the ID in the new bind row
     const queueRow = page.locator(".queue-row--bind");
     await expect(queueRow).toHaveCount(1, { timeout: 5_000 });
     const idInput = queueRow.locator(".id-cell input").first();
-    await idInput.fill("ABCD-EFGH-JKMN-PQ");
+    // Use an unbound ID from fixtures/registry.csv
+    await idInput.fill("2345-6789-ABCD-EF");
     await idInput.dispatchEvent("change");
 
+    // Wait for preflight to allow submit
+    const submitBtn = page.getByRole("button", { name: /Submit session/i });
+    await expect(submitBtn).toBeEnabled({ timeout: 10_000 });
+
     // Click Submit — should open the auth modal (not a prompt())
-    await page.getByRole("button", { name: /Submit session/i }).click();
+    await submitBtn.click();
 
     // Auth modal should be visible
     const modal = page.locator(".auth-modal-overlay");
