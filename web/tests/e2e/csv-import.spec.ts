@@ -70,6 +70,13 @@ test.describe("Bulk CSV import (#176 P0)", () => {
 
     await expect(page.locator(".queue-row--mint")).toHaveCount(2, { timeout: 5_000 });
     await expect(page.locator(".queue-row--bind")).toHaveCount(2);
+
+    // Regression (#176): a bind queued in the same session as its mint
+    // must NOT be flagged unknown_id / block submit. The freshly-minted
+    // IDs aren't in the loaded registry, but the preflight treats pending
+    // mints as known, so Submit stays enabled.
+    await expect(page.getByRole("button", { name: /Submit session/i })).toBeEnabled();
+    await expect(page.locator(".preflight-card")).not.toContainText("unknown_id");
   });
 
   test("a valid canonical ID column produces bind-only rows", async ({ page }) => {
