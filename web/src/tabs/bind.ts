@@ -253,7 +253,7 @@ function buildUI(ctx: AppContext): HTMLElement {
     // Ensure we have a PAT.
     let token = getStoredToken();
     if (!token) {
-      token = promptForToken();
+      token = await promptForToken();
       if (!token) return; // cancelled
     }
 

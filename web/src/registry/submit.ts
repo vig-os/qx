@@ -19,6 +19,7 @@
 import type { QueuedBind, QueuedEdit, QueueItem } from "./queue";
 import type { Session } from "./session";
 import { sessionToSubmitPayload, applyMints, buildSessionCommitMessage } from "./session-submit";
+import { sendTokenToSW, clearTokenInSW } from "./sw-bridge";
 
 export interface SubmitResult {
   prUrl: string;
@@ -65,11 +66,15 @@ export function getStoredToken(): string | null {
 
 export function storeToken(token: string): void {
   sessionStorage.setItem(PAT_KEY, token);
+  // Also send to SW enclave for secure storage
+  const user = getStoredUser();
+  void sendTokenToSW(token, user ?? "");
 }
 
 export function clearToken(): void {
   sessionStorage.removeItem(PAT_KEY);
   sessionStorage.removeItem(USER_KEY);
+  clearTokenInSW();
 }
 
 /** Return the cached GitHub username, or null if not yet fetched. */
@@ -88,29 +93,27 @@ export async function fetchAndCacheUser(token: string): Promise<string | null> {
     if (!res.ok) return null;
     const data = (await res.json()) as { login?: string };
     const login = data.login ?? null;
-    if (login) sessionStorage.setItem(USER_KEY, login);
+    if (login) {
+      sessionStorage.setItem(USER_KEY, login);
+      // Update SW enclave with the username
+      void sendTokenToSW(token, login);
+    }
     return login;
   } catch {
     return null;
   }
 }
 
-/** Prompt the operator for a GitHub PAT. Returns the token or null
- *  if cancelled. On success, fetches and caches the GitHub username. */
-export function promptForToken(): string | null {
-  const existing = getStoredToken();
-  const token = prompt(
-    "Enter a GitHub Personal Access Token (fine-grained) with contents:write + pull_requests:write on the data repo." +
-      (existing ? "\n\nA token is saved for this session. Leave blank to keep it, or paste a new one." : ""),
-    "",
-  );
-  if (token === null) return null; // cancelled
-  if (token.trim() === "" && existing) return existing;
-  if (token.trim() === "") return null;
-  storeToken(token.trim());
-  // Fire-and-forget: fetch username in background
-  void fetchAndCacheUser(token.trim());
-  return token.trim();
+/**
+ * Show the PAT onboarding modal. Returns the validated token or null
+ * if cancelled. Replaces the old prompt()-based flow with a proper
+ * modal that includes setup instructions, token validation, and
+ * identity confirmation.
+ */
+export async function promptForToken(): Promise<string | null> {
+  const { showAuthModal } = await import("../ui/auth-modal");
+  const result = await showAuthModal();
+  return result?.token ?? null;
 }
 
 // ---- GitHub REST API helpers ----

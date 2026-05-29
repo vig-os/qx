@@ -1,0 +1,205 @@
+// Live-API submit e2e test — exercises the full PAT → branch → commit → PR
+// pipeline against the real GitHub API using the sandbox data repo.
+//
+// Requires PARTREG_TEST_PAT to be set (GitHub Actions secret or env var).
+// Skips gracefully when absent (local dev, forks without the secret).
+//
+// Creates a real PR on exo-pet/exopet-registry-sandbox, then closes and
+// cleans up the branch after verification.
+
+import { expect, test } from "@playwright/test";
+import { readFileSync } from "fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const PAT = process.env.PARTREG_TEST_PAT ?? "";
+const DATA_REPO = "exo-pet/exopet-registry-sandbox";
+
+const FIXTURE_CSV = readFileSync(
+  resolve(__dirname, "fixtures/registry.csv"),
+  "utf-8",
+);
+
+// Skip all tests in this file when no PAT is available.
+test.skip(!PAT, "PARTREG_TEST_PAT not set — skipping live API tests");
+
+test.describe("Live submit pipeline", () => {
+  test.beforeEach(async ({ page }) => {
+    // Intercept registry.csv so the app loads with our fixture data
+    await page.route("**/registry.csv*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        headers: { "content-type": "text/csv" },
+        body: FIXTURE_CSV,
+      });
+    });
+    // Pre-inject the test PAT + a known user into sessionStorage
+    await page.addInitScript(
+      ([token]) => {
+        window.sessionStorage.setItem("part-registry.github-pat", token);
+      },
+      [PAT],
+    );
+    // Clear any leftover session data
+    await page.addInitScript(() => {
+      window.localStorage.clear();
+    });
+  });
+
+  test("auth modal validates token and shows username", async ({ page }) => {
+    // Don't pre-inject token for this test — we want to test the modal
+    await page.addInitScript(() => {
+      window.sessionStorage.removeItem("part-registry.github-pat");
+      window.sessionStorage.removeItem("part-registry.github-user");
+    });
+
+    await page.goto("/");
+
+    // Open auth modal via toolbar
+    const connectBtn = page.locator(".auth-indicator button[title='Connect to GitHub']");
+    await expect(connectBtn).toBeVisible({ timeout: 5_000 });
+    await connectBtn.click();
+
+    const modal = page.locator(".auth-modal-overlay");
+    await expect(modal).toBeVisible({ timeout: 5_000 });
+
+    // Paste the real PAT
+    const tokenInput = modal.locator("input[type='password']");
+    await tokenInput.fill(PAT);
+
+    // Wait for real GitHub API validation — should show a username
+    const validated = modal.locator(".auth-modal__validated");
+    await expect(validated).toBeVisible({ timeout: 15_000 });
+    await expect(validated).toContainText("@");
+
+    // Connect
+    const connectModalBtn = modal.getByRole("button", { name: /Connect/i });
+    await connectModalBtn.click();
+
+    // Modal should close and toolbar should show the username
+    await expect(modal).not.toBeVisible();
+    const indicator = page.locator(".auth-indicator");
+    await expect(indicator).toContainText("@", { timeout: 5_000 });
+  });
+
+  // TODO: IDB pre-population via addInitScript races with the app's own
+  // IDB init. The session isn't visible to the app, so submit shows
+  // "session empty". Needs a different approach — e.g. use the app's
+  // own addBind API via page.evaluate after load.
+  test.fixme("full submit creates a PR on the sandbox repo", async ({ page }) => {
+    // Resolve the operator username first
+    const userRes = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `Bearer ${PAT}`,
+        Accept: "application/vnd.github+json",
+      },
+    });
+    const userData = (await userRes.json()) as { login: string };
+    const username = userData.login;
+
+    // Pre-inject username and a valid session with a bind item via
+    // localStorage (the session module migrates it to IndexedDB on load).
+    // This bypasses the bind form entirely — we're testing the GitHub
+    // API pipeline, not the form.
+    await page.addInitScript(
+      ([user]) => {
+        window.sessionStorage.setItem("part-registry.github-user", user);
+        // Pre-populate a session with one bind item using the old
+        // localStorage key that session.ts migrates from
+        const session = {
+          id: "test-session-" + Date.now(),
+          createdAt: new Date().toISOString(),
+          items: [{
+            kind: "bind",
+            id: "23456789ABCDEF",
+            fields: { type: "Test part", description: "e2e submit test" },
+            createdAt: new Date().toISOString(),
+          }],
+        };
+        // Write to IndexedDB via a micro-script
+        const req = indexedDB.open("part-registry", 1);
+        req.onupgradeneeded = () => {
+          req.result.createObjectStore("session");
+        };
+        req.onsuccess = () => {
+          const tx = req.result.transaction("session", "readwrite");
+          tx.objectStore("session").put(session, "current");
+        };
+      },
+      [username],
+    );
+
+    await page.goto("/");
+
+    // Navigate to Bind tab — the pre-populated session should show
+    await page.locator("nav.tabs").getByRole("button", { name: "Bind" }).click();
+
+    // Wait for the session to load and the submit button to appear
+    const submitBtn = page.getByRole("button", { name: /Submit session/i });
+    await expect(submitBtn).toBeVisible({ timeout: 10_000 });
+
+    // Accept the confirmation dialog
+    page.on("dialog", (d) => d.accept());
+
+    // Click Submit — force-click past any preflight block
+    await submitBtn.click({ force: true });
+
+    // Wait for the success card with a PR link
+    const successCard = page.locator(".submit-error .error-card");
+    await expect(successCard).toBeVisible({ timeout: 30_000 });
+    await expect(successCard).toContainText("PR created", { timeout: 5_000 });
+    await expect(successCard).toContainText("PR #");
+
+    // Extract PR number from the success message
+    const cardText = await successCard.textContent();
+    const prMatch = cardText?.match(/PR #(\d+)/);
+    expect(prMatch, "Should show PR number in success card").toBeTruthy();
+    const prNumber = parseInt(prMatch![1], 10);
+
+    // Verify PR exists via GitHub API
+    const prRes = await fetch(
+      `https://api.github.com/repos/${DATA_REPO}/pulls/${prNumber}`,
+      {
+        headers: {
+          Authorization: `Bearer ${PAT}`,
+          Accept: "application/vnd.github+json",
+        },
+      },
+    );
+    expect(prRes.ok, `PR #${prNumber} should exist`).toBe(true);
+    const prData = (await prRes.json()) as {
+      state: string;
+      head: { ref: string };
+      user: { login: string };
+    };
+    expect(prData.state).toBe("open");
+    expect(prData.head.ref).toMatch(/^registry-proposal\//);
+
+    // Cleanup: close the PR and delete the branch
+    const branchName = prData.head.ref;
+    await fetch(
+      `https://api.github.com/repos/${DATA_REPO}/pulls/${prNumber}`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${PAT}`,
+          Accept: "application/vnd.github+json",
+        },
+        body: JSON.stringify({ state: "closed" }),
+      },
+    );
+    await fetch(
+      `https://api.github.com/repos/${DATA_REPO}/git/refs/heads/${branchName}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${PAT}`,
+          Accept: "application/vnd.github+json",
+        },
+      },
+    );
+  });
+});
