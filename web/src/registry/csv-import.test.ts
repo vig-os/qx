@@ -32,9 +32,45 @@ describe("parseDelimited", () => {
     expect(t.rows[0]).toEqual(["Omega", "a, b, c"]);
   });
 
-  it("pads ragged rows to header width", () => {
+  it("pads short rows to header width and counts them ragged", () => {
     const t = parseDelimited("a,b,c\n1,2");
     expect(t.rows[0]).toEqual(["1", "2", ""]);
+    expect(t.raggedRows).toBe(1);
+  });
+
+  it("truncates rows wider than the header and counts them ragged", () => {
+    const t = parseDelimited("a,b\n1,2,3");
+    expect(t.rows[0]).toEqual(["1", "2"]); // column 3 dropped
+    expect(t.raggedRows).toBe(1);
+  });
+
+  it("reports raggedRows=0 when every row matches the header width", () => {
+    const t = parseDelimited("a,b\n1,2\n3,4");
+    expect(t.raggedRows).toBe(0);
+  });
+
+  it("keeps duplicate headers as separate positional columns", () => {
+    const t = parseDelimited("a,a\n1,2");
+    expect(t.headers).toEqual(["a", "a"]);
+    expect(t.rows[0]).toEqual(["1", "2"]);
+  });
+
+  it("parses a single-column paste (no delimiter)", () => {
+    const t = parseDelimited("id\n89ABCDEFGHJKMN\nABCDEFGHJKMNPQ");
+    expect(t.headers).toEqual(["id"]);
+    expect(t.rows).toEqual([["89ABCDEFGHJKMN"], ["ABCDEFGHJKMNPQ"]]);
+  });
+
+  it("handles CRLF line endings without leaking \\r into cells", () => {
+    const t = parseDelimited("vendor,loc\r\nOmega,Lab-1\r\n");
+    expect(t.headers).toEqual(["vendor", "loc"]);
+    expect(t.rows).toEqual([["Omega", "Lab-1"]]);
+  });
+
+  it("returns no data rows for a header-only paste", () => {
+    const t = parseDelimited("vendor,loc");
+    expect(t.headers).toEqual(["vendor", "loc"]);
+    expect(t.rows).toEqual([]);
   });
 
   it("skips blank lines and trims headers", () => {
@@ -44,8 +80,8 @@ describe("parseDelimited", () => {
   });
 
   it("returns empty for empty input", () => {
-    expect(parseDelimited("")).toEqual({ headers: [], rows: [] });
-    expect(parseDelimited("   \n  ")).toEqual({ headers: [], rows: [] });
+    expect(parseDelimited("")).toEqual({ headers: [], rows: [], raggedRows: 0 });
+    expect(parseDelimited("   \n  ")).toEqual({ headers: [], rows: [], raggedRows: 0 });
   });
 });
 
@@ -114,6 +150,19 @@ describe("parseTargetValue / targetOptions", () => {
     expect(parseTargetValue("")).toEqual({ kind: "ignore" });
   });
 
+  it("treats malformed target values as ignore", () => {
+    expect(parseTargetValue("field")).toEqual({ kind: "ignore" });   // no colon
+    expect(parseTargetValue("metadata:")).toEqual({ kind: "ignore" }); // empty key
+    expect(parseTargetValue("bogus:x")).toEqual({ kind: "ignore" });  // unknown kind
+    expect(parseTargetValue(":vendor")).toEqual({ kind: "ignore" });  // empty kind
+  });
+
+  it("a value mapped to a metadata key serializes (not a top-level field)", () => {
+    const rows = buildImportedRows({ rows: [["100"]] }, ["metadata:resistance_0c"]);
+    expect(rows[0].fields.resistance_0c).toBeUndefined();
+    expect(JSON.parse(rows[0].fields.metadata)).toEqual({ resistance_0c: "100" });
+  });
+
   it("offers ignore + every importable field + flattened metadata props", () => {
     const opts = targetOptions();
     expect(opts[0].value).toBe("ignore");
@@ -168,8 +217,17 @@ describe("buildImportedRows", () => {
       "metadata:accuracy_class",
     ]);
     expect(rows[0].fields.type).toBe("PT100");
-    // Sorted keys (serializeMetadata) for stable diffs.
-    expect(rows[0].fields.metadata).toBe('{"accuracy_class":"A","resistance_0c":"100"}');
+    // Parse + compare (don't couple to key-ordering/quoting).
+    expect(JSON.parse(rows[0].fields.metadata)).toEqual({
+      resistance_0c: "100",
+      accuracy_class: "A",
+    });
+  });
+
+  it("last-mapped column wins when two columns map to the same field", () => {
+    const table = { rows: [["first", "second"]] };
+    const rows = buildImportedRows(table, ["field:vendor", "field:vendor"]);
+    expect(rows[0].fields.vendor).toBe("second");
   });
 
   it("captures batch for mint and ignores ignored columns", () => {

@@ -263,6 +263,19 @@ export async function addBind(
   await saveSession(session);
 }
 
+/**
+ * Append many items in a single read-modify-write (#176). Bulk import
+ * builds N mint+bind pairs; calling addMint/addBind per row would
+ * re-serialize the whole session ~2N times (O(n²)). This does one
+ * load → push-all → save. Items must already carry their `createdAt`.
+ */
+export async function addItems(items: SessionItem[]): Promise<void> {
+  if (items.length === 0) return;
+  const session = await loadSession();
+  session.items.push(...items);
+  await saveSession(session);
+}
+
 export async function addEdit(
   id: string,
   before: Record<string, string>,

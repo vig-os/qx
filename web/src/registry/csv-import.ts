@@ -76,12 +76,19 @@ export function targetOptions(): TargetOption[] {
   return opts;
 }
 
-/** Resolve a dropdown value back to its ImportTarget. */
+/** Resolve a dropdown value back to its ImportTarget. Malformed values
+ *  (no key, unknown kind) resolve to "ignore" rather than producing a
+ *  field with an undefined/empty key. */
 export function parseTargetValue(value: string): ImportTarget {
   if (value === "ignore" || value === "") return { kind: "ignore" };
-  const [kind, key] = value.split(":", 2);
+  const idx = value.indexOf(":");
+  if (idx <= 0) return { kind: "ignore" };
+  const kind = value.slice(0, idx);
+  const key = value.slice(idx + 1);
+  if (!key) return { kind: "ignore" };
   if (kind === "metadata") return { kind: "metadata", key };
-  return { kind: "field", key };
+  if (kind === "field") return { kind: "field", key };
+  return { kind: "ignore" };
 }
 
 // ---- Parsing ----
@@ -89,6 +96,10 @@ export function parseTargetValue(value: string): ImportTarget {
 export interface ParsedTable {
   headers: string[];
   rows: string[][];
+  /** Count of source rows whose column count differed from the header
+   *  width (padded if short, truncated if long). >0 → surface a warning
+   *  so silent column drop/gain is visible (#176 hardening). */
+  raggedRows: number;
 }
 
 /**
@@ -103,15 +114,17 @@ export function parseDelimited(text: string): ParsedTable {
     skipEmptyLines: "greedy",
   });
   const data = (result.data as string[][]).filter((r) => r.length > 0);
-  if (data.length === 0) return { headers: [], rows: [] };
+  if (data.length === 0) return { headers: [], rows: [], raggedRows: 0 };
   const headers = data[0].map((h) => h.trim());
   const width = headers.length;
+  let raggedRows = 0;
   const rows = data.slice(1).map((r) => {
+    if (r.length !== width) raggedRows++;
     const padded = r.slice(0, width);
     while (padded.length < width) padded.push("");
     return padded.map((c) => c ?? "");
   });
-  return { headers, rows };
+  return { headers, rows, raggedRows };
 }
 
 // ---- CSV-injection escaping ----
@@ -232,7 +245,7 @@ export interface ImportedRow {
  * ID_REGEX → bind-only (mint=false); any other case → mint a fresh ID.
  */
 export function buildImportedRows(
-  table: ParsedTable,
+  table: Pick<ParsedTable, "rows">,
   mapping: string[],
 ): ImportedRow[] {
   const targets = mapping.map(parseTargetValue);
