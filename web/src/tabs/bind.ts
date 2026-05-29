@@ -147,14 +147,24 @@ function buildUI(ctx: AppContext): HTMLElement {
             part_number: q.part_number,
             location: q.location,
             notes: q.notes,
+            components: q.components,
           },
         }));
       const result = runPreflight(items, registry);
       preflightContainer.append(renderPreflight(result));
-      // Block submit on policy block OR unknown-id (FE-local).
+      // Block submit on policy block OR an FE-local definite error:
+      // unknown id, or an assembly component that's unknown/void/self
+      // (#176 — merging into an assembly via mint+bind). These are
+      // factual errors, not policy judgments, so blocking is safe.
+      const BLOCKING_ISSUES = new Set([
+        "unknown_id",
+        "unknown_component",
+        "void_component",
+        "self_component",
+      ]);
       const blocked =
         result.decision.kind === "block" ||
-        result.localIssues.some((i) => i.kind === "unknown_id");
+        result.localIssues.some((i) => BLOCKING_ISSUES.has(i.kind));
       (submitBtn as HTMLButtonElement).disabled = blocked;
       submitBtn.setAttribute("data-preflight", blocked ? "blocked" : "ok");
     } catch (e) {
