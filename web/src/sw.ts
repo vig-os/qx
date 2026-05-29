@@ -13,7 +13,7 @@
 
 import { cleanupOutdatedCaches, precacheAndRoute, createHandlerBoundToURL } from "workbox-precaching";
 import { registerRoute, NavigationRoute } from "workbox-routing";
-import { NetworkFirst } from "workbox-strategies";
+import { NetworkFirst, CacheFirst } from "workbox-strategies";
 import { ExpirationPlugin } from "workbox-expiration";
 import { CacheableResponsePlugin } from "workbox-cacheable-response";
 
@@ -46,6 +46,32 @@ registerRoute(
         maxEntries: 32,
         maxAgeSeconds: 60 * 60 * 24,
       }),
+      new CacheableResponsePlugin({ statuses: [0, 200] }),
+    ],
+  }),
+);
+
+// ---- OCR assets (#171 P2) ----
+// tesseract.js lazy-loads its worker + core wasm from jsDelivr and its
+// language data from tessdata.projectnaptha.com on first OCR scan.
+// CacheFirst so subsequent scans (and offline use) reuse the cached
+// ~6 MB of assets instead of re-fetching.
+registerRoute(
+  /^https:\/\/cdn\.jsdelivr\.net\/npm\/tesseract\.js.*/,
+  new CacheFirst({
+    cacheName: "tesseract-assets",
+    plugins: [
+      new ExpirationPlugin({ maxEntries: 12, maxAgeSeconds: 60 * 60 * 24 * 30 }),
+      new CacheableResponsePlugin({ statuses: [0, 200] }),
+    ],
+  }),
+);
+registerRoute(
+  /^https:\/\/tessdata\.projectnaptha\.com\/.*/,
+  new CacheFirst({
+    cacheName: "tesseract-langdata",
+    plugins: [
+      new ExpirationPlugin({ maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 90 }),
       new CacheableResponsePlugin({ statuses: [0, 200] }),
     ],
   }),
