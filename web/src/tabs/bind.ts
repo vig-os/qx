@@ -430,6 +430,18 @@ function buildUI(ctx: AppContext): HTMLElement {
     }
   });
 
+  // #176 P0: bulk import — paste/upload a CSV/TSV, map columns, commit
+  // mint+bind rows into the queue.
+  const importBtn = button({ class: "secondary" }, icon("upload"), " Import list");
+  importBtn.addEventListener("click", async () => {
+    const { openImportModal } = await import("../ui/import-modal");
+    const existingIds = new Set(ctx.registry.all().map((r) => r.id));
+    const result = await openImportModal({ existingIds });
+    if (result) {
+      renderTable();
+    }
+  });
+
   // #92: Repeat mode toggle
   const repeatLabel = el("label", { class: "repeat-mode-toggle" });
   const repeatCb = document.createElement("input");
@@ -444,7 +456,7 @@ function buildUI(ctx: AppContext): HTMLElement {
   root.append(
     formRow([submitBtn, clearBtn, summaryEl]),
     submitErrorContainer,
-    formRow([uploadBtn, rollingBtn, ocrBtn]),
+    formRow([uploadBtn, rollingBtn, ocrBtn, importBtn]),
     formRow([repeatLabel]),
     preflightContainer,
     tableContainer,
