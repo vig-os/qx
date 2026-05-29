@@ -12,6 +12,8 @@
 // arrive from the Lookup tab; they're not added from here.
 
 import { FIELDS, type RegistryRow, type FieldDef } from "../registry/schema";
+import { REGISTRY_CONTRACT, type TypeField } from "../registry/contract";
+import { parseMetadata, serializeMetadata } from "../registry/metadata";
 import { runPreflight, type QueueItem } from "../registry/preflight";
 import {
   appendBind,
@@ -51,7 +53,7 @@ const BIND_FIELDS = FIELDS.filter((f) => f.editable && f.type !== "json");
 
 function emptyBindFields(): Pick<
   QueuedBind,
-  "type" | "description" | "vendor" | "part_number" | "location" | "notes" | "components"
+  "type" | "description" | "vendor" | "part_number" | "location" | "notes" | "components" | "manufacturer_id" | "metadata"
 > {
   return {
     type: "",
@@ -61,6 +63,8 @@ function emptyBindFields(): Pick<
     location: "",
     notes: "",
     components: "",
+    manufacturer_id: "",
+    metadata: "",
   };
 }
 
@@ -560,7 +564,8 @@ function renderBindRow(
   item: QueuedBind,
   index: number,
   onChange: () => void,
-): HTMLElement {
+): DocumentFragment {
+  const frag = document.createDocumentFragment();
   const tr = el("tr", { class: "queue-row queue-row--bind", "data-kind": "bind", "data-id": item.id });
   tr.append(el("td", {}, el("span", { class: "chip chip--kind chip--bind" }, "bind")));
 
@@ -633,6 +638,27 @@ function renderBindRow(
 
     fieldInput.addEventListener("change", () => {
       const val = fieldInput instanceof HTMLSelectElement ? fieldInput.value : (fieldInput as HTMLInputElement).value;
+      // #171: changing `type` can change which type-specific properties
+      // apply. Warn before discarding existing metadata, then re-render
+      // so the Properties sub-row reflects the new type.
+      if (key === "type" && val !== item.type) {
+        const hadMeta = Object.keys(parseMetadata(item.metadata)).length > 0;
+        if (hadMeta && !confirm(`Changing type from "${item.type}" to "${val}" will discard the current properties. Continue?`)) {
+          (fieldInput as HTMLInputElement).value = item.type;
+          return;
+        }
+        persistValue(val);
+        if (hadMeta) {
+          const queue = loadQueue();
+          const current = queue[index];
+          if (current && current.kind === "bind") {
+            current.metadata = "";
+            saveQueue(queue);
+          }
+        }
+        onChange(); // rebuild row → Properties sub-row matches new type
+        return;
+      }
       persistValue(val);
       runValidation(val);
     });
@@ -660,7 +686,102 @@ function renderBindRow(
   });
   tr.append(el("td", { class: "row-actions" }, trashBtn));
 
+  frag.append(tr);
+
+  // #171: type-specific Properties sub-row, shown when the row's type
+  // has typeFields defined in the contract.
+  const typeFields = REGISTRY_CONTRACT.typeFields?.[item.type] ?? [];
+  if (typeFields.length > 0) {
+    frag.append(renderPropsRow(item, index, typeFields));
+  }
+
+  return frag;
+}
+
+// #171: full-width sub-row holding type-specific metadata inputs.
+function renderPropsRow(
+  item: QueuedBind,
+  index: number,
+  typeFields: TypeField[],
+): HTMLElement {
+  // Span: Kind + ID + BIND_FIELDS + Queued + actions.
+  const totalCols = BIND_FIELDS.length + 4;
+  const tr = el("tr", { class: "queue-row--props", "data-props-for": item.id });
+  const td = el("td", { colspan: String(totalCols) });
+  const wrap = el("div", { class: "props-editor" });
+  wrap.append(el("span", { class: "props-editor__label muted small" }, `${item.type} properties:`));
+
+  const meta = parseMetadata(item.metadata);
+
+  for (const tf of typeFields) {
+    const field = el("label", { class: "props-editor__field" });
+    field.append(el("span", { class: "props-editor__field-label" },
+      `${tf.label}${tf.unit ? ` (${tf.unit})` : ""}`));
+    const current = meta[tf.key] != null ? String(meta[tf.key]) : "";
+    const inp = createTypeFieldInput(tf, current);
+
+    const persist = (raw: string) => {
+      const queue = loadQueue();
+      const current2 = queue[index];
+      if (current2 && current2.kind === "bind") {
+        const m = parseMetadata(current2.metadata);
+        if (raw === "") {
+          delete m[tf.key];
+        } else {
+          m[tf.key] = tf.type === "number" ? Number(raw) : raw;
+        }
+        current2.metadata = serializeMetadata(m);
+        saveQueue(queue);
+      }
+    };
+
+    inp.addEventListener("change", () => {
+      const v = inp instanceof HTMLSelectElement ? inp.value
+        : inp.type === "checkbox" ? (inp.checked ? "yes" : "")
+        : inp.value;
+      persist(v);
+    });
+
+    field.append(inp);
+    wrap.append(field);
+  }
+
+  td.append(wrap);
+  tr.append(td);
   return tr;
+}
+
+/** Build an input for a type-specific field (#171). */
+function createTypeFieldInput(tf: TypeField, value: string): HTMLInputElement | HTMLSelectElement {
+  switch (tf.type) {
+    case "dropdown": {
+      const sel = document.createElement("select");
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = `-- ${tf.label} --`;
+      sel.append(empty);
+      for (const opt of tf.options ?? []) {
+        const o = document.createElement("option");
+        o.value = opt;
+        o.textContent = opt;
+        if (opt === value) o.selected = true;
+        sel.append(o);
+      }
+      return sel;
+    }
+    case "yes-no": {
+      const inp = document.createElement("input");
+      inp.type = "checkbox";
+      inp.checked = value === "true" || value === "yes" || value === "1";
+      return inp;
+    }
+    case "number":
+      return input({ type: "number", value });
+    case "date":
+      return input({ type: "date", value: value.slice(0, 10) });
+    default:
+      return input({ type: "text", value });
+  }
 }
 
 function renderEditRow(

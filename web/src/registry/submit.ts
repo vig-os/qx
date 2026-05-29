@@ -258,6 +258,8 @@ export function applyBind(
   if (bind.location) obj.location = bind.location;
   if (bind.notes) obj.notes = bind.notes;
   if (bind.components) obj.components = bind.components;
+  if (bind.manufacturer_id) obj.manufacturer_id = bind.manufacturer_id;
+  if (bind.metadata) obj.metadata = bind.metadata;
   if (operator) obj.bound_by = operator;
   obj.last_edited_at = new Date().toISOString();
   if (operator) obj.last_edited_by = operator;

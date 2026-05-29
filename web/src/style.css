@@ -1092,6 +1092,15 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 .row-detail__properties-dl dt { font-weight: 600; }
 .row-detail__properties-dl dd { margin: 0; font-family: ui-monospace, monospace; font-size: 13px; }
 
+/* #171: type-specific Properties sub-row in the bind queue */
+.queue-row--props > td { background: var(--bg); padding: 8px 12px; }
+.props-editor { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.props-editor__label { align-self: center; }
+.props-editor__field { display: flex; flex-direction: column; gap: 2px; }
+.props-editor__field-label { font-size: 11px; color: var(--muted); }
+.props-editor__field input,
+.props-editor__field select { font-size: 13px; }
+
 /* Components input in bind form */
 .components-input { margin-top: 8px; }
 .components-input__label { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
