@@ -25,3 +25,8 @@ target/
 .direnv/
 result
 result-*
+
+# Claude Code session scratch — per-process runtime locks (sessionId/pid)
+# and pre-compaction handoff notes. Never meant to be tracked.
+.claude/*.lock
+HANDOFF.md
