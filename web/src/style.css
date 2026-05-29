@@ -1047,6 +1047,58 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
   text-overflow: ellipsis;
 }
 
+/* ---- Assembly / BOM (#168) ---- */
+.assembly-badge {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 4px;
+  vertical-align: middle;
+  font-family: monospace;
+}
+.row-detail__components { margin: 12px 0; }
+.row-detail__components h4 { margin: 0 0 6px; font-size: 14px; }
+.component-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.component-chip {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  font-family: monospace;
+  font-size: 12px;
+  text-decoration: none;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+}
+.component-chip:hover { border-color: var(--accent); color: var(--accent); }
+.component-chip--bound { border-color: #2ea043; }
+.component-chip--unbound { border-color: var(--warn); }
+.component-chip--void { border-color: var(--error); opacity: 0.6; text-decoration: line-through; }
+.component-chip--unknown { border-color: var(--error); border-style: dashed; }
+.row-detail__parent { margin: 8px 0; font-size: 13px; }
+.row-detail__parent-link { color: var(--accent); text-decoration: none; }
+.row-detail__parent-link:hover { text-decoration: underline; }
+
+/* Components input in bind form */
+.components-input { margin-top: 8px; }
+.components-input__label { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.components-input__chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.components-input__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  font-family: monospace;
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.components-input__chip button { all: unset; cursor: pointer; color: var(--muted); font-size: 14px; line-height: 1; }
+.components-input__chip button:hover { color: var(--error); }
+.components-input__error { color: var(--error); font-size: 12px; margin-top: 4px; }
+
 /* ---- Print tab unsubmitted warning (#117) ---- */
 .print-warning {
   padding: 8px 12px;

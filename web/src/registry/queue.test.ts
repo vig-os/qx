@@ -69,6 +69,7 @@ describe("appendBind / appendEdit / removeAt", () => {
       part_number: "",
       location: "",
       notes: "",
+      components: "",
     });
     const q = loadQueue();
     expect(q).toHaveLength(1);
@@ -100,6 +101,7 @@ describe("appendBind / appendEdit / removeAt", () => {
       part_number: "",
       location: "",
       notes: "",
+      components: "",
     });
     await appendEdit("ABCDEFGHJKMNPR", {}, { location: "lab" });
     await appendBind({
@@ -110,6 +112,7 @@ describe("appendBind / appendEdit / removeAt", () => {
       part_number: "",
       location: "",
       notes: "",
+      components: "",
     });
     await removeAt(1);
     const q = loadQueue();
@@ -129,6 +132,7 @@ describe("summarizeQueue", () => {
       part_number: "",
       location: "",
       notes: "",
+      components: "",
     };
     const edit: QueueItem = {
       kind: "edit",
@@ -158,6 +162,7 @@ describe("clearQueue + saveQueue round-trip", () => {
       part_number: "",
       location: "",
       notes: "",
+      components: "",
     });
     await clearQueue();
     expect(loadQueue()).toEqual([]);

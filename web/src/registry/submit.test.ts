@@ -125,6 +125,7 @@ describe("applyBind", () => {
       part_number: "X-42",
       location: "loop A",
       notes: "test note",
+      components: "",
     };
     applyBind(HEADER_COLS, rows, bind);
     const line = rows.get("ABC")!;
@@ -150,6 +151,7 @@ describe("applyBind", () => {
       part_number: "",
       location: "",
       notes: "",
+      components: "",
     };
     applyBind(HEADER_COLS, rows, bind);
     // Row unchanged.
@@ -172,6 +174,7 @@ describe("applyBind", () => {
       part_number: "",
       location: "",
       notes: "",
+      components: "",
     };
     applyBind(HEADER_COLS, rows, bind);
     const fields = splitCsvLine(rows.get("ABC")!);

@@ -58,7 +58,7 @@ use time::OffsetDateTime;
 /// `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (Crockford-style: no `0`/`O`,
 /// no `1`/`I`/`L`). Constructors validate; field is private to make
 /// the invariant unforgeable from outside the crate.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct PartId(String);
 
@@ -694,12 +694,23 @@ pub struct Part {
     pub bound_by: Option<String>,
     pub last_edited_at: Option<String>,
     pub last_edited_by: Option<String>,
+    /// Semicolon-separated child part IDs (#168). Non-empty = assembly.
+    /// Sorted alphabetically on write for deterministic CSV diffs.
+    #[serde(default)]
+    pub components: Vec<PartId>,
     /// ADR-023 forward-compat. Default `vec![]` round-trips correctly.
     #[serde(default)]
     pub signatures: Vec<Signature>,
     /// ADR-023 forward-compat. `None` at MVP.
     #[serde(default)]
     pub chain_hash: Option<Hash>,
+}
+
+impl Part {
+    /// True when this part has child components — making it an assembly.
+    pub fn is_assembly(&self) -> bool {
+        !self.components.is_empty()
+    }
 }
 
 /// One row of `print_log.csv` per ADR-015.
@@ -1186,6 +1197,7 @@ mod tests {
             bound_by: None,
             last_edited_at: None,
             last_edited_by: None,
+            components: vec![],
             signatures,
             chain_hash: None,
         }

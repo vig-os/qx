@@ -29,6 +29,7 @@ export type EditableKey =
   | "part_number"
   | "location"
   | "notes"
+  | "components"
   | "status";
 
 export interface QueuedBind {
@@ -41,6 +42,7 @@ export interface QueuedBind {
   part_number: string;
   location: string;
   notes: string;
+  components: string;
 }
 
 export interface QueuedEdit {
@@ -72,6 +74,7 @@ function sessionItemToQueueItem(item: SessionItem): QueueItem | null {
         part_number: (item as SessionBind).fields.part_number ?? "",
         location: (item as SessionBind).fields.location ?? "",
         notes: (item as SessionBind).fields.notes ?? "",
+        components: (item as SessionBind).fields.components ?? "",
       };
     case "edit":
       return {
@@ -135,6 +138,7 @@ export function saveQueue(q: QueueItem[]): void {
           part_number: item.part_number,
           location: item.location,
           notes: item.notes,
+          components: item.components,
         },
         createdAt: item.queued_at,
       });
@@ -169,7 +173,7 @@ export function saveQueue(q: QueueItem[]): void {
 
 export async function appendBind(entry: Omit<QueuedBind, "kind" | "queued_at">): Promise<void> {
   const fields: Record<string, string> = {};
-  for (const key of ["type", "description", "vendor", "part_number", "location", "notes"] as const) {
+  for (const key of ["type", "description", "vendor", "part_number", "location", "notes", "components"] as const) {
     if (entry[key]) fields[key] = entry[key];
   }
   await sessionAddBind(entry.id, fields);

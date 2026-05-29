@@ -38,7 +38,7 @@ fn init_data_repo(path: &std::path::Path) {
     // Initialise a real git repo so commit_on_write works.
     fs::write(
         path.join("registry.csv"),
-        "id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,signatures,chain_hash\n",
+        "id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,components,signatures,chain_hash\n",
     )
     .unwrap();
     let _ = Command::new("git").arg("init").current_dir(path).output();

@@ -46,7 +46,7 @@ import { DATA_REPO_SLUG } from "../config";
 
 function emptyBindFields(): Pick<
   QueuedBind,
-  "type" | "description" | "vendor" | "part_number" | "location" | "notes"
+  "type" | "description" | "vendor" | "part_number" | "location" | "notes" | "components"
 > {
   return {
     type: "",
@@ -55,6 +55,7 @@ function emptyBindFields(): Pick<
     part_number: "",
     location: "",
     notes: "",
+    components: "",
   };
 }
 

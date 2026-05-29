@@ -420,7 +420,7 @@ fn status_order(s: PartStatus) -> u8 {
 // reviewable per ADR-018.
 
 // --- registry.csv ---
-// header: id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,minted_by,bound_by,last_edited_at,last_edited_by,signatures,chain_hash
+// header: id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,minted_by,bound_by,last_edited_at,last_edited_by,components,signatures,chain_hash
 
 #[derive(Debug, Serialize, Deserialize)]
 struct PartRow {
@@ -444,6 +444,9 @@ struct PartRow {
     last_edited_at: String,
     #[serde(default)]
     last_edited_by: String,
+    // #168: semicolon-separated child part IDs. Empty = not an assembly.
+    #[serde(default)]
+    components: String,
     // ADR-023 forward-compat. Optional in the CSV header so the
     // existing on-disk `registry.csv` (which predates this ADR)
     // continues to deserialise without these columns.
@@ -498,6 +501,18 @@ impl PartRow {
             bound_by: opt(self.bound_by),
             last_edited_at: opt(self.last_edited_at),
             last_edited_by: opt(self.last_edited_by),
+            components: if self.components.is_empty() {
+                Vec::new()
+            } else {
+                let mut ids: Vec<PartId> = self
+                    .components
+                    .split(';')
+                    .map(|s| PartId::new(s.trim().to_string()))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| RepoError::SchemaMismatch(format!("invalid component id: {e}")))?;
+                ids.sort();
+                ids
+            },
             signatures,
             chain_hash,
         })
@@ -524,6 +539,14 @@ impl PartRow {
             bound_by: p.bound_by.clone().unwrap_or_default(),
             last_edited_at: p.last_edited_at.clone().unwrap_or_default(),
             last_edited_by: p.last_edited_by.clone().unwrap_or_default(),
+            components: {
+                let mut ids = p.components.clone();
+                ids.sort();
+                ids.iter()
+                    .map(|id| id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(";")
+            },
             signatures: if p.signatures.is_empty() {
                 String::new()
             } else {
