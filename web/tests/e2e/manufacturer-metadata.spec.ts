@@ -44,7 +44,8 @@ test.describe("manufacturer_id + metadata (#171)", () => {
   test("detail card shows parsed Properties from metadata JSON", async ({ page }) => {
     await page.goto("/");
 
-    // 3456ABCDEFGHJK has metadata {"resistance_0C":100,"accuracy_class":"A"}
+    // 3456ABCDEFGHJK has metadata {"resistance_0c":100,"accuracy_class":"A"}.
+    // Both keys match PT100 typeFields, so they render with their labels.
     await page.locator("tr[data-id='3456ABCDEFGHJK']").click();
 
     const modal = page.locator(".detail-modal-overlay");
@@ -54,11 +55,11 @@ test.describe("manufacturer_id + metadata (#171)", () => {
     await expect(props).toBeVisible();
     await expect(props.locator("h4")).toHaveText("Properties");
 
-    // Both metadata keys render as dt/dd pairs
+    // Keys render with their typeFields labels (R₀, Class) + values.
     const dl = props.locator(".row-detail__properties-dl");
-    await expect(dl).toContainText("resistance_0C");
+    await expect(dl).toContainText("R₀");
     await expect(dl).toContainText("100");
-    await expect(dl).toContainText("accuracy_class");
+    await expect(dl).toContainText("Class");
     await expect(dl).toContainText("A");
   });
 

@@ -1,7 +1,7 @@
 id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,minted_by,bound_by,last_edited_at,last_edited_by,components,manufacturer_id,metadata
 23456789ABCDEF,unbound,2026-05-01T10:00:00+00:00,B-2026-05-01,,,,,,,,github:alice,,,,,,
 2345ABCDEFGHJK,unbound,2026-05-01T10:00:00+00:00,B-2026-05-01,,,,,,,,github:alice,,,,,,
-3456ABCDEFGHJK,bound,2026-05-02T09:00:00+00:00,B-2026-05-01,2026-05-02T14:00:00+00:00,PT100,Supply temperature sensor,TC Direct,402-141,cooling loop / supply-T,,github:alice,github:bob,2026-05-02T14:00:00+00:00,github:bob,,SN-PT-0042,"{""resistance_0C"":100,""accuracy_class"":""A""}"
+3456ABCDEFGHJK,bound,2026-05-02T09:00:00+00:00,B-2026-05-01,2026-05-02T14:00:00+00:00,PT100,Supply temperature sensor,TC Direct,402-141,cooling loop / supply-T,,github:alice,github:bob,2026-05-02T14:00:00+00:00,github:bob,,SN-PT-0042,"{""resistance_0c"":100,""accuracy_class"":""A""}"
 456789ABCDEFGH,bound,2026-05-02T09:00:00+00:00,B-2026-05-01,2026-05-02T15:00:00+00:00,Fitting,1/4 NPT to 6mm Swagelok,Swagelok,SS-400-1-4,cooling loop / manifold,,github:alice,github:bob,2026-05-02T15:00:00+00:00,github:bob,,SWG-SS400-99,"{""thread_size"":""1/4 NPT"",""material"":""SS316""}"
 56789ABCDEFGHJ,bound,2026-05-03T08:00:00+00:00,B-2026-05-03,2026-05-03T12:00:00+00:00,Cable,4-wire RTD extension cable,Omega,EXTT-4-24,sdmd_v2 / rack-A,,github:carol,github:dave,2026-05-03T12:00:00+00:00,github:dave,,,
 6789ABCDEFGHJK,bound,2026-05-03T08:00:00+00:00,B-2026-05-03,2026-05-03T13:00:00+00:00,Module,PID controller module,Eurotherm,3216,sdmd_v2 / rack-B / slot-3,,github:carol,github:dave,2026-05-03T13:00:00+00:00,github:dave,,,
