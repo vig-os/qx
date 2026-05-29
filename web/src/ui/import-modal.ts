@@ -10,12 +10,13 @@ import { icon } from "./icons";
 import { formatIdDashed } from "./scanner";
 import { ID_ALPHABET, ID_LENGTH } from "../config";
 import { generateId } from "../tabs/mint";
-import { addMint, addBind } from "../registry/session";
+import { addItems, type SessionItem } from "../registry/session";
 import {
   parseDelimited,
   autoDetectMapping,
   buildImportedRows,
   targetOptions,
+  parseTargetValue,
   type ParsedTable,
 } from "../registry/csv-import";
 
@@ -198,6 +199,31 @@ export function openImportModal(opts: ImportModalOptions): Promise<ImportResult 
         } else {
           commitBtn.disabled = false;
         }
+
+        // Ragged-row warning (silent column drop/gain).
+        if (table.raggedRows > 0) {
+          summary.append(el("p", { class: "import-modal__warn" },
+            `${table.raggedRows} row(s) had a different column count than the header — ` +
+            "extra columns were dropped and missing ones left blank. Check the source data."));
+        }
+
+        // Duplicate mapping-target warning (last column wins).
+        const dupTargets = duplicateTargets(mapping);
+        if (dupTargets.length > 0) {
+          summary.append(el("p", { class: "import-modal__warn" },
+            `Multiple columns map to: ${dupTargets.join(", ")}. The right-most column wins; ` +
+            "set duplicates to “Ignore” if that's not intended."));
+        }
+
+        // Orphan bind-only warning: a valid-looking ID not in the registry.
+        const orphans = rows.filter(
+          (r) => !r.mint && r.id && !opts.existingIds.has(r.id),
+        ).length;
+        if (orphans > 0) {
+          summary.append(el("p", { class: "import-modal__warn" },
+            `${orphans} bind-only row(s) reference an ID not in the loaded registry — ` +
+            "they'll be flagged in the queue and block submit until resolved."));
+        }
         // First-rows preview of the resulting IDs / bind-vs-mint.
         const preview = el("div", { class: "import-preview" });
         for (const r of rows.slice(0, 8)) {
@@ -212,13 +238,30 @@ export function openImportModal(opts: ImportModalOptions): Promise<ImportResult 
     };
 
     // ---- Commit ----
+    const commitError = el("p", { class: "import-modal__parse-error" });
+    commitError.style.display = "none";
+    actions.before(commitError);
+
     commitBtn.addEventListener("click", async () => {
       if (!table) return;
       commitBtn.disabled = true;
+      commitError.style.display = "none";
+
       const rows = buildImportedRows(table, mapping);
       const toMint = rows.filter((r) => r.mint);
       const freshIds = mintUniqueIds(toMint.length, opts.existingIds);
+      if (freshIds.length < toMint.length) {
+        commitError.textContent = "Could not generate enough unique IDs — please retry.";
+        commitError.style.display = "";
+        commitBtn.disabled = false;
+        return;
+      }
 
+      // Build all session items up front, then commit in ONE batched
+      // write (addItems) — avoids the O(n²) per-row read-modify-write and
+      // gives all-or-nothing semantics (no half-populated queue).
+      const now = new Date().toISOString();
+      const items: SessionItem[] = [];
       let mintI = 0;
       let minted = 0;
       let bound = 0;
@@ -226,12 +269,24 @@ export function openImportModal(opts: ImportModalOptions): Promise<ImportResult 
         let id = r.id;
         if (r.mint) {
           id = freshIds[mintI++];
-          if (!id) continue; // ran out of unique IDs (impossible in practice)
-          await addMint(id, r.batch, "");
+          items.push({ kind: "mint", id, batch: r.batch, notes: "", createdAt: now });
           minted++;
         }
-        await addBind(id, r.fields);
+        items.push({ kind: "bind", id, fields: r.fields, createdAt: now });
         bound++;
+      }
+
+      // Single batched write (one read-modify-write). saveSession writes
+      // localStorage first and swallows IndexedDB errors, so this throws
+      // only on an unexpected failure (e.g. storage quota) — surface it
+      // and let the operator retry rather than silently losing the import.
+      try {
+        await addItems(items);
+      } catch (e) {
+        commitError.textContent = `Import failed: ${(e as Error).message}. Please retry.`;
+        commitError.style.display = "";
+        commitBtn.disabled = false;
+        return;
       }
 
       document.removeEventListener("keydown", onEsc);
@@ -239,4 +294,22 @@ export function openImportModal(opts: ImportModalOptions): Promise<ImportResult 
       resolve({ minted, bound });
     });
   });
+}
+
+/** Mapping-target values (excluding "ignore") that appear more than
+ *  once, as human labels. */
+function duplicateTargets(mapping: string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const v of mapping) {
+    if (v === "ignore") continue;
+    counts.set(v, (counts.get(v) ?? 0) + 1);
+  }
+  const dups: string[] = [];
+  for (const [v, n] of counts) {
+    if (n > 1) {
+      const t = parseTargetValue(v);
+      dups.push(t.kind === "ignore" ? v : t.key);
+    }
+  }
+  return dups;
 }
