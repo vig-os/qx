@@ -367,6 +367,48 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
   color: rgba(255, 255, 255, 0.85);
 }
 
+/* #176 P1: mint-from-label form + token chips */
+.ocr-mint__form {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 10px;
+  align-items: center;
+  width: 90%;
+  max-width: 480px;
+  margin: 12px auto 0;
+}
+.ocr-mint__field { display: contents; }
+.ocr-mint__field-label { font-size: 12px; color: rgba(255, 255, 255, 0.8); }
+.ocr-mint__form input { width: 100%; font-size: 13px; }
+/* A regex-guessed value: visibly tentative until the operator edits it. */
+.ocr-mint__guessed {
+  background: rgba(88, 166, 255, 0.12);
+  border-color: var(--accent);
+  font-style: italic;
+}
+.ocr-mint__tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 90%;
+  max-width: 480px;
+  margin: 10px auto 0;
+  max-height: 96px;
+  overflow-y: auto;
+}
+.ocr-mint__token {
+  all: unset;
+  cursor: pointer;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.ocr-mint__token:hover { background: var(--accent); }
+.ocr-mint__token--low { opacity: 0.45; }
+
 /* Done button in multi-pick */
 .scan-overlay__done { margin-right: 8px; }
 .scan-overlay__done:disabled { opacity: 0.4; pointer-events: none; }

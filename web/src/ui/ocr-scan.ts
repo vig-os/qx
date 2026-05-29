@@ -8,10 +8,9 @@
 import { el, button } from "./dom";
 import { icon } from "./icons";
 import { formatIdDashed, type ScanStatus } from "./scanner";
+import { fileToCanvas, recognize } from "./ocr-engine";
 import { matchOcrText, type OcrMatch } from "../registry/ocr-match";
 import type { RegistryRow } from "../registry/schema";
-
-const SNAPSHOT_MAX_PX = 1600; // upscale ceiling — OCR likes detail
 
 export interface OcrScanOptions {
   /** Registry rows to match OCR text against (id / manufacturer_id /
@@ -123,35 +122,14 @@ export function openOcrScan(opts: OcrScanOptions): Promise<string[]> {
     };
 
     const processFile = async (file: File) => {
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-      img.src = url;
+      let canvas: HTMLCanvasElement;
       try {
-        await new Promise<void>((res, rej) => {
-          img.onload = () => res();
-          img.onerror = () => rej(new Error("Failed to load image"));
-        });
+        canvas = await fileToCanvas(file);
       } catch (e) {
-        URL.revokeObjectURL(url);
         statusLine.textContent = (e as Error).message;
         statusLine.style.display = "";
         return;
       }
-
-      const longEdge = Math.max(img.naturalWidth, img.naturalHeight);
-      const scale = longEdge > SNAPSHOT_MAX_PX ? SNAPSHOT_MAX_PX / longEdge : 1;
-      const cw = Math.round(img.naturalWidth * scale);
-      const ch = Math.round(img.naturalHeight * scale);
-      const canvas = document.createElement("canvas");
-      canvas.width = cw;
-      canvas.height = ch;
-      const cx = canvas.getContext("2d");
-      if (!cx) {
-        URL.revokeObjectURL(url);
-        return;
-      }
-      cx.drawImage(img, 0, 0, cw, ch);
-      URL.revokeObjectURL(url);
 
       dropZone.style.display = "none";
       imageWrap.style.display = "";
@@ -165,7 +143,7 @@ export function openOcrScan(opts: OcrScanOptions): Promise<string[]> {
 
       let text = "";
       try {
-        text = await runOcr(canvas);
+        text = (await recognize(canvas)).text;
       } catch (e) {
         statusLine.textContent = `OCR failed: ${(e as Error).message}`;
         return;
@@ -193,24 +171,4 @@ export function openOcrScan(opts: OcrScanOptions): Promise<string[]> {
 
     renderChips();
   });
-}
-
-// ---- tesseract.js lazy loader ----
-
-let workerPromise: Promise<import("tesseract.js").Worker> | null = null;
-
-async function getWorker(): Promise<import("tesseract.js").Worker> {
-  if (!workerPromise) {
-    workerPromise = (async () => {
-      const { createWorker } = await import("tesseract.js");
-      return createWorker("eng");
-    })();
-  }
-  return workerPromise;
-}
-
-async function runOcr(canvas: HTMLCanvasElement): Promise<string> {
-  const worker = await getWorker();
-  const { data } = await worker.recognize(canvas);
-  return data.text ?? "";
 }

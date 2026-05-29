@@ -442,6 +442,18 @@ function buildUI(ctx: AppContext): HTMLElement {
     }
   });
 
+  // #176 P1: mint-from-label — photograph a manufacturer label, extract
+  // fields (operator-assisted + regex pre-fill), mint+bind one part.
+  const mintLabelBtn = button({ class: "secondary" }, icon("scan-text"), " Mint from label");
+  mintLabelBtn.addEventListener("click", async () => {
+    const { openOcrExtract } = await import("../ui/ocr-extract-scan");
+    const existingIds = new Set(ctx.registry.all().map((r) => r.id));
+    const result = await openOcrExtract({ existingIds });
+    if (result) {
+      renderTable();
+    }
+  });
+
   // #92: Repeat mode toggle
   const repeatLabel = el("label", { class: "repeat-mode-toggle" });
   const repeatCb = document.createElement("input");
@@ -456,7 +468,7 @@ function buildUI(ctx: AppContext): HTMLElement {
   root.append(
     formRow([submitBtn, clearBtn, summaryEl]),
     submitErrorContainer,
-    formRow([uploadBtn, rollingBtn, ocrBtn, importBtn]),
+    formRow([uploadBtn, rollingBtn, ocrBtn, importBtn, mintLabelBtn]),
     formRow([repeatLabel]),
     preflightContainer,
     tableContainer,
