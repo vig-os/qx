@@ -89,6 +89,9 @@ export function openImportModal(opts: ImportModalOptions): Promise<ImportResult 
     step1.append(
       el("p", { class: "muted small" }, "Paste tabular data or choose a file. The first row must be column headers."),
       textarea,
+      // fileInput is hidden but must be IN the DOM — fileBtn triggers it
+      // via .click(), and a detached input can't be driven reliably.
+      fileInput,
       el("div", { class: "form-row" }, fileBtn, parseBtn),
     );
 

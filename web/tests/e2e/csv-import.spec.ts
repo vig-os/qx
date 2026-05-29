@@ -155,7 +155,8 @@ test.describe("Bulk CSV import (#176 P0)", () => {
 
     await modal.getByRole("button", { name: /^Back$/ }).click();
     await expect(modal.locator(".import-modal__textarea")).toBeVisible();
-    await expect(modal.locator(".import-map")).toHaveCount(0);
+    // Back toggles the mapping step hidden (display:none), not removed.
+    await expect(modal.locator(".import-map")).not.toBeVisible();
   });
 
   test("file upload path parses and maps", async ({ page }) => {
