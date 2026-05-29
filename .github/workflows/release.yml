@@ -136,10 +136,12 @@ jobs:
             --exclude='.DS_Store' \
             --exclude='*.tsbuildinfo' \
             web/ staging/web/
-          # Shared registry-contract referenced by `web/vite.config.ts`'s
-          # `@registry-contract` alias.
+          # Shared schema files referenced by `web/vite.config.ts` aliases
+          # (@registry-contract, @deploy-config, @code-types).
           mkdir -p staging/schema
           cp schema/registry-contract.json staging/schema/
+          cp schema/deploy-config.json staging/schema/
+          cp schema/code-types.json staging/schema/
           # Bundle metadata: tag + commit SHA so the data-repo workflow
           # can record provenance in the deployed audit chain.
           cat > staging/BUNDLE_METADATA.json <<EOF
