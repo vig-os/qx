@@ -414,6 +414,22 @@ function buildUI(ctx: AppContext): HTMLElement {
     }
   });
 
+  // #171 P2: OCR text scan — read a manufacturer label or plain-printed
+  // ID from a photo and match it against the registry.
+  const ocrBtn = button({ class: "secondary" }, icon("scan-text"), " Scan text");
+  ocrBtn.addEventListener("click", async () => {
+    try {
+      const { openOcrScan } = await import("../ui/ocr-scan");
+      const ids = await openOcrScan({
+        rows: ctx.registry.all(),
+        resolveStatus: makeResolveStatus(),
+      });
+      await addScannedIds(ids);
+    } catch {
+      /* user cancelled */
+    }
+  });
+
   // #92: Repeat mode toggle
   const repeatLabel = el("label", { class: "repeat-mode-toggle" });
   const repeatCb = document.createElement("input");
@@ -428,7 +444,7 @@ function buildUI(ctx: AppContext): HTMLElement {
   root.append(
     formRow([submitBtn, clearBtn, summaryEl]),
     submitErrorContainer,
-    formRow([uploadBtn, rollingBtn]),
+    formRow([uploadBtn, rollingBtn, ocrBtn]),
     formRow([repeatLabel]),
     preflightContainer,
     tableContainer,

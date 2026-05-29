@@ -351,6 +351,22 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 }
 .scan-chip__remove:hover { opacity: 1; }
 
+/* #171 P2: OCR scan extras */
+.scan-chip__via { font-size: 10px; opacity: 0.7; text-transform: uppercase; }
+.ocr-text-preview {
+  margin-top: 10px;
+  max-height: 120px;
+  overflow: auto;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: rgba(255, 255, 255, 0.85);
+}
+
 /* Done button in multi-pick */
 .scan-overlay__done { margin-right: 8px; }
 .scan-overlay__done:disabled { opacity: 0.4; pointer-events: none; }
