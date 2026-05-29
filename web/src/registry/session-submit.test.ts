@@ -39,6 +39,25 @@ describe("sessionToSubmitPayload", () => {
     expect(queueItems).toHaveLength(0);
     expect(mintRows).toHaveLength(0);
   });
+
+  it("preserves the components field on bind items", () => {
+    // Regression (#168): components must survive the session→submit
+    // conversion, otherwise assemblies never persist their BOM.
+    const session = makeSession([
+      {
+        kind: "bind",
+        id: "ASM1",
+        fields: { description: "Module", components: "CHILD000000001;CHILD000000002" },
+        createdAt: "2026-05-18T01:00:00Z",
+      },
+    ]);
+    const { queueItems } = sessionToSubmitPayload(session);
+    expect(queueItems).toHaveLength(1);
+    expect(queueItems[0].kind).toBe("bind");
+    expect((queueItems[0] as { components: string }).components).toBe(
+      "CHILD000000001;CHILD000000002",
+    );
+  });
 });
 
 describe("applyMints", () => {

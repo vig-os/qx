@@ -24,6 +24,9 @@ test.beforeEach(async ({ page }) => {
   });
   await page.addInitScript(() => {
     window.localStorage.clear();
+    // The session store lives in IndexedDB — reset it so queue counts
+    // are deterministic between tests.
+    indexedDB.deleteDatabase("part-registry");
   });
 });
 
@@ -112,5 +115,79 @@ test.describe("Assembly / BOM (#168)", () => {
 
     // Should NOT have the parent section
     await expect(modal.locator(".row-detail__parent")).toHaveCount(0);
+  });
+});
+
+test.describe("Create assembly from selection", () => {
+  // Two bound, unparented parts in the fixture.
+  const PART_A = "56789ABCDEFGHJ";
+  const PART_B = "6789ABCDEFGHJK";
+
+  async function selectRow(page: import("@playwright/test").Page, id: string) {
+    await page.locator(`tr[data-id='${id}'] input[type=checkbox]`).check();
+  }
+
+  test("button is disabled until two parts are selected", async ({ page }) => {
+    await page.goto("/");
+
+    const btn = page.getByRole("button", { name: /Combine into assembly/i });
+    await expect(btn).toBeDisabled();
+
+    await selectRow(page, PART_A);
+    await expect(btn).toBeDisabled(); // one selection isn't enough
+
+    await selectRow(page, PART_B);
+    await expect(btn).toBeEnabled();
+  });
+
+  test("combining two parts queues a mint + bind for a new assembly", async ({ page }) => {
+    await page.goto("/");
+
+    await selectRow(page, PART_A);
+    await selectRow(page, PART_B);
+    await page.getByRole("button", { name: /Combine into assembly/i }).click();
+
+    const modal = page.locator(".detail-modal-overlay");
+    await expect(modal.locator(".row-detail--assembly")).toBeVisible();
+    await expect(modal.locator(".component-chip")).toHaveCount(2);
+
+    await modal.getByPlaceholder("Description (optional)").fill("Cooling sub-assembly");
+    await modal.getByRole("button", { name: /Create assembly/i }).click();
+
+    // Lands on the Bind tab with the new assembly queued as mint + bind.
+    const mintRow = page.locator(".queue-row--mint");
+    const bindRow = page.locator(".queue-row--bind");
+    await expect(mintRow).toHaveCount(1);
+    await expect(bindRow).toHaveCount(1);
+
+    // Both rows reference the same freshly minted assembly ID.
+    const mintId = await mintRow.getAttribute("data-id");
+    const bindId = await bindRow.getAttribute("data-id");
+    expect(mintId).toBeTruthy();
+    expect(mintId).toBe(bindId);
+  });
+
+  test("a voided component blocks creation", async ({ page }) => {
+    await page.goto("/");
+
+    await selectRow(page, PART_A);
+    await selectRow(page, "789ABCDEFGHJKM"); // voided in the fixture
+    await page.getByRole("button", { name: /Combine into assembly/i }).click();
+
+    const modal = page.locator(".detail-modal-overlay");
+    await expect(modal.locator(".row-detail__error")).toContainText(/void/i);
+    await expect(modal.getByRole("button", { name: /Create assembly/i })).toBeDisabled();
+  });
+
+  test("a part already in another assembly blocks creation", async ({ page }) => {
+    await page.goto("/");
+
+    await selectRow(page, PART_A);
+    await selectRow(page, "3456ABCDEFGHJK"); // already a component of BCDEFGHJKMNPQR
+    await page.getByRole("button", { name: /Combine into assembly/i }).click();
+
+    const modal = page.locator(".detail-modal-overlay");
+    await expect(modal.locator(".row-detail__error")).toContainText(/already a component/i);
+    await expect(modal.getByRole("button", { name: /Create assembly/i })).toBeDisabled();
   });
 });

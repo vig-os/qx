@@ -13,35 +13,11 @@
 import { ID_ALPHABET, ID_LENGTH } from "../config";
 import type { AppContext, Tab } from "../core/types";
 import { addMint, loadSession, summarizeSession } from "../registry/session";
+import { generateIds } from "../registry/mint-id";
 import { el, button, input, formRow, number as numberInput } from "../ui/dom";
 
-// ---- ID generation ----
-
-/** Generate a single random ID from the given alphabet. */
-export function generateId(alphabet: string, length: number): string {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
-}
-
-/** Generate `count` unique random IDs. */
-export function generateIds(
-  count: number,
-  alphabet: string,
-  length: number,
-): string[] {
-  const ids = new Set<string>();
-  // Guard against infinite loops if the alphabet/length space is too
-  // small (shouldn't happen with the real 14-char base-25 alphabet, but
-  // be safe in tests).
-  let attempts = 0;
-  const maxAttempts = count * 10;
-  while (ids.size < count && attempts < maxAttempts) {
-    ids.add(generateId(alphabet, length));
-    attempts++;
-  }
-  return [...ids];
-}
+// Re-exported for existing callers/tests that import from this tab.
+export { generateId, generateIds } from "../registry/mint-id";
 
 // ---- Print plan integration ----
 

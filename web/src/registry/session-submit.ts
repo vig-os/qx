@@ -47,6 +47,7 @@ export function sessionToSubmitPayload(session: Session): {
           part_number: item.fields.part_number ?? "",
           location: item.fields.location ?? "",
           notes: item.fields.notes ?? "",
+          components: item.fields.components ?? "",
         } as QueuedBind);
         break;
 
