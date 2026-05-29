@@ -4,8 +4,7 @@
 // defaults to "allow" when unavailable, so these run in jsdom.
 
 import { describe, it, expect } from "vitest";
-import { runPreflight } from "./preflight";
-import type { QueueItem } from "./schema";
+import { runPreflight, type QueueItem } from "./preflight";
 import type { RegistryRow } from "./schema";
 
 function reg(rows: Array<Partial<RegistryRow> & { id: string }>): Map<string, RegistryRow> {
