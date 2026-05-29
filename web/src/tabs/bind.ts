@@ -44,6 +44,11 @@ import {
 import { loadSession, clearSession, summarizeSession, addBind as sessionAddBind, removeItemAt as sessionRemoveAt, type SessionMint } from "../registry/session";
 import { DATA_REPO_SLUG } from "../config";
 
+// Editable fields shown as columns in the bind queue table. Excludes
+// `json`-type fields (metadata) — those need typeFields-driven rendering
+// (#171 P1), not a raw-JSON text column.
+const BIND_FIELDS = FIELDS.filter((f) => f.editable && f.type !== "json");
+
 function emptyBindFields(): Pick<
   QueuedBind,
   "type" | "description" | "vendor" | "part_number" | "location" | "notes" | "components"
@@ -175,7 +180,7 @@ function buildUI(ctx: AppContext): HTMLElement {
     const tr = el("tr");
     tr.append(el("th", {}, "Kind"));
     tr.append(el("th", {}, "ID"));
-    for (const f of FIELDS.filter((f) => f.editable)) {
+    for (const f of BIND_FIELDS) {
       tr.append(el("th", {}, f.label));
     }
     tr.append(el("th", {}, "Queued"));
@@ -522,7 +527,7 @@ function renderMintRow(
   tr.append(el("td", { class: "id-cell" }, fmtId(item.id)));
 
   // Editable field cells — mints don't have bind metadata, show dashes
-  for (const f of FIELDS.filter((f) => f.editable)) {
+  for (const f of BIND_FIELDS) {
     const cell = el("td");
     if (f.key === "notes" && item.notes) {
       cell.append(item.notes);
@@ -599,7 +604,7 @@ function renderBindRow(
   idCell.append(idInp);
   tr.append(idCell);
 
-  for (const f of FIELDS.filter((f) => f.editable)) {
+  for (const f of BIND_FIELDS) {
     const cell = el("td");
     const key = f.key as EditableKey;
     const currentValue = (item as unknown as Record<string, string>)[key] ?? "";
@@ -667,7 +672,7 @@ function renderEditRow(
   tr.append(el("td", {}, el("span", { class: "chip chip--kind chip--edit" }, "edit")));
   tr.append(el("td", { class: "id-cell" }, fmtId(item.id)));
 
-  for (const f of FIELDS.filter((f) => f.editable)) {
+  for (const f of BIND_FIELDS) {
     const key = f.key as EditableKey;
     const cell = el("td");
     const hasChange = key in item.changes;
@@ -713,7 +718,7 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
   const tr = el("tr", { class: "entry-row" });
 
   // "+" button spans the full row — clicking creates a blank bind row
-  const editableCount = FIELDS.filter((f) => f.editable).length;
+  const editableCount = BIND_FIELDS.length;
   // +1 Kind, +1 ID, +editableCount fields, +1 Queued, +1 actions = editableCount + 4
   const totalCols = editableCount + 4;
   const addCell = el("td", { colspan: String(totalCols), style: "text-align: center;" });

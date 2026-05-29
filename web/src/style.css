@@ -1080,6 +1080,18 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 .row-detail__parent-link { color: var(--accent); text-decoration: none; }
 .row-detail__parent-link:hover { text-decoration: underline; }
 
+/* #171: Properties section (parsed metadata) in detail card */
+.row-detail__properties { margin: 12px 0; }
+.row-detail__properties h4 { margin: 0 0 6px; font-size: 14px; }
+.row-detail__properties-dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 0;
+}
+.row-detail__properties-dl dt { font-weight: 600; }
+.row-detail__properties-dl dd { margin: 0; font-family: ui-monospace, monospace; font-size: 13px; }
+
 /* Components input in bind form */
 .components-input { margin-top: 8px; }
 .components-input__label { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
