@@ -522,7 +522,7 @@ mod tests {
                 "id", "status", "minted_at", "batch", "bound_at", "type",
                 "description", "vendor", "part_number", "location", "notes",
                 "minted_by", "bound_by", "last_edited_at", "last_edited_by",
-                "components"
+                "components", "manufacturer_id", "metadata"
             ],
             "print_log_header": [
                 "id", "printed_at", "printed_by", "layout", "size_mm",

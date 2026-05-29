@@ -130,6 +130,23 @@
         "maxLength": 1000,
         "pattern": "^$|^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{14}(;[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{14})*$"
       }
+    },
+    {
+      "key": "manufacturer_id",
+      "label": "Manufacturer ID",
+      "type": "string",
+      "editable": true,
+      "meaningfulFrom": "bound",
+      "validation": { "maxLength": 200 }
+    },
+    {
+      "key": "metadata",
+      "label": "Metadata",
+      "type": "json",
+      "editable": true,
+      "meaningfulFrom": "bound",
+      "validation": { "maxLength": 4000 }
     }
-  ]
+  ],
+  "typeFields": {}
 }
