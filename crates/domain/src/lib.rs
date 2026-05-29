@@ -698,6 +698,16 @@ pub struct Part {
     /// Sorted alphabetically on write for deterministic CSV diffs.
     #[serde(default)]
     pub components: Vec<PartId>,
+    /// Manufacturer's own tracking/serial number (#171). No alphabet
+    /// constraint — any manufacturer format. Distinct from `part_number`
+    /// (our vendor catalog number).
+    #[serde(default)]
+    pub manufacturer_id: Option<String>,
+    /// Type-specific key-value metadata (#171), validated against the
+    /// contract's `typeFields` for the part's `type`. BTreeMap keeps
+    /// keys sorted for deterministic JSON serialisation in CSV diffs.
+    #[serde(default)]
+    pub metadata: BTreeMap<String, Json>,
     /// ADR-023 forward-compat. Default `vec![]` round-trips correctly.
     #[serde(default)]
     pub signatures: Vec<Signature>,
@@ -1198,6 +1208,8 @@ mod tests {
             last_edited_at: None,
             last_edited_by: None,
             components: vec![],
+            manufacturer_id: None,
+            metadata: BTreeMap::new(),
             signatures,
             chain_hash: None,
         }

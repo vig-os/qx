@@ -38,7 +38,7 @@ test.describe("Contract SSoT conformance", () => {
     // The smoke spec defines REGISTRY_HEADER as a CSV header line.
     // Verify it matches the contract field keys exactly.
     const smokeHeader =
-      "id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,minted_by,bound_by,last_edited_at,last_edited_by,components\n";
+      "id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,minted_by,bound_by,last_edited_at,last_edited_by,components,manufacturer_id,metadata\n";
 
     expect(smokeHeader).toBe(REGISTRY_HEADER);
   });
