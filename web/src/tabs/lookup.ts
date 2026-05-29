@@ -19,11 +19,14 @@
 import Fuse from "fuse.js";
 
 import { ID_LENGTH, ID_REGEX, DATA_REPO_SLUG, DEFAULT_BRANCH, DEFAULT_SIZE_MM } from "../config";
+import { getConfig } from "../config/deploy-config";
 import { FIELDS, REGISTRY_FIELD_KEYS, type RegistryRow, type Status } from "../registry/schema";
 import { REGISTRY_CONTRACT } from "../registry/contract";
 import { parseComponents, isAssembly, buildParentMap } from "../registry/assembly-graph";
 import { parseMetadata } from "../registry/metadata";
-import { appendEdit, appendVoid } from "../registry/queue";
+import { appendEdit, appendVoid, appendBind } from "../registry/queue";
+import { addMint, getSessionSync } from "../registry/session";
+import { planAssembly, validateAssembly } from "../registry/assembly-create";
 import type { AppContext, Tab } from "../core/types";
 import { normalizeCanonicalId } from "../routing/route";
 import {
@@ -220,6 +223,26 @@ function buildUI(ctx: AppContext): HTMLElement {
   );
   const exportCsvBtn = button({ class: "outline" }, icon("download"), " Export CSV");
 
+  // Combine selected parts into a new minted assembly. Composition only:
+  // a fresh ID references the selection via `components`; the selected
+  // parts are unchanged. Gated on mint + bind being enabled, since the
+  // action queues a mint and a bind.
+  const features = (() => {
+    try {
+      return getConfig().features;
+    } catch {
+      return undefined;
+    }
+  })();
+  const canAssemble =
+    !features ||
+    (features.enableMintTab !== false && features.enableBindTab !== false);
+  const assembleBtn = button(
+    { class: "secondary", disabled: "true" },
+    icon("plus"),
+    " Combine into assembly",
+  );
+
   // #93: structured filter dropdowns
   const filterBar = el("div", { class: "lookup__filter-bar" });
   const filterSelects = new Map<FilterKey, HTMLSelectElement>();
@@ -327,7 +350,11 @@ function buildUI(ctx: AppContext): HTMLElement {
     formRow([searchInput, scanBtn]),
     statusBar,
     filterBar,
-    formRow([reprintSelBtn, exportCsvBtn, viewToggle, colPickerWrap]),
+    formRow(
+      canAssemble
+        ? [reprintSelBtn, assembleBtn, exportCsvBtn, viewToggle, colPickerWrap]
+        : [reprintSelBtn, exportCsvBtn, viewToggle, colPickerWrap],
+    ),
   );
 
   // ---------- containers ----------
@@ -350,6 +377,8 @@ function buildUI(ctx: AppContext): HTMLElement {
 
   const updateReprintBtn = () => {
     (reprintSelBtn as HTMLButtonElement).disabled = selectedIds.size === 0;
+    // Assembly needs at least two parts to combine.
+    (assembleBtn as HTMLButtonElement).disabled = selectedIds.size < 2;
     // Update export button label to reflect selection
     exportCsvBtn.innerHTML = "";
     exportCsvBtn.append(
@@ -742,6 +771,15 @@ function buildUI(ctx: AppContext): HTMLElement {
     ctx.showTab("print");
   });
 
+  // Combine selected into a new assembly.
+  assembleBtn.addEventListener("click", () => {
+    if (selectedIds.size < 2) return;
+    const componentRows = [...selectedIds]
+      .map((id) => ctx.registry.findById(id))
+      .filter((r): r is RegistryRow => r != null);
+    showAssemblyModal(componentRows, ctx);
+  });
+
   // Issue #94: Export filtered view as CSV download.
   exportCsvBtn.addEventListener("click", () => {
     // Export selected IDs if any are checked, otherwise all visible rows.
@@ -820,6 +858,131 @@ function showDetailModal(row: RegistryRow, ctx: AppContext): void {
   modal.append(closeBtn, renderDetailView(row, ctx));
   overlay.append(modal);
   document.body.append(overlay);
+}
+
+/** Modal to combine selected parts into a new minted assembly. */
+function showAssemblyModal(componentRows: RegistryRow[], ctx: AppContext): void {
+  document.querySelector(".detail-modal-overlay")?.remove();
+
+  const overlay = el("div", { class: "detail-modal-overlay" });
+  const modal = el("div", { class: "detail-modal" });
+
+  const closeBtn = button({ class: "icon-only detail-modal__close", title: "Close" }, icon("x"));
+  const close = () => overlay.remove();
+  closeBtn.addEventListener("click", close);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) close();
+  });
+
+  modal.append(closeBtn, renderAssemblyForm(componentRows, ctx, close));
+  overlay.append(modal);
+  document.body.append(overlay);
+}
+
+function renderAssemblyForm(
+  componentRows: RegistryRow[],
+  ctx: AppContext,
+  close: () => void,
+): HTMLElement {
+  const wrap = el("div", { class: "row-detail row-detail--assembly" });
+  wrap.append(el("h3", {}, "Combine into assembly"));
+  wrap.append(
+    el(
+      "p",
+      { class: "muted small" },
+      "A new part ID will be minted with the selected parts as its components. " +
+        "The selected parts are unchanged and stay individually valid. " +
+        "The mint and its components are queued together — submit the session to open a single PR.",
+    ),
+  );
+
+  // Validate against the committed registry PLUS anything already pending
+  // in this session that the registry can't see yet: reserved mint IDs
+  // (so a new ID can't collide with one queued but unsubmitted), and
+  // pending assembly binds (so a child already claimed by an unsubmitted
+  // assembly is rejected here rather than bouncing off the data-repo CI).
+  const sessionItems = getSessionSync()?.items ?? [];
+  const reserved = new Set(
+    sessionItems.filter((i) => i.kind === "mint").map((i) => i.id),
+  );
+  const pendingAssemblyRows = sessionItems
+    .filter(
+      (i): i is Extract<typeof i, { kind: "bind" }> =>
+        i.kind === "bind" && !!i.fields.components,
+    )
+    .map(
+      (i) =>
+        ({
+          id: i.id,
+          status: "unbound",
+          components: i.fields.components,
+        }) as unknown as RegistryRow,
+    );
+  const rows = [...ctx.registry.all(), ...pendingAssemblyRows];
+  const componentIds = componentRows.map((r) => r.id);
+  const plan = planAssembly({ componentIds }, rows, reserved);
+  const validation = validateAssembly(plan.assemblyId, componentIds, rows);
+
+  // Component chips
+  wrap.append(el("h4", {}, `Components (${componentRows.length})`));
+  const chips = el("div", { class: "component-chips" });
+  for (const r of componentRows) {
+    chips.append(
+      el(
+        "span",
+        {
+          class: `component-chip component-chip--${r.status}`,
+          title: `${r.type || r.description || r.id} (${r.status})`,
+        },
+        fmtId(r.id),
+      ),
+    );
+  }
+  wrap.append(chips);
+
+  // Optional metadata for the new assembly.
+  const form = el("form", { class: "row-detail__form" });
+  const descInput = input({ type: "text", value: "", placeholder: "Description (optional)" });
+  const typeInput = input({ type: "text", value: "", placeholder: "Type (optional)" });
+  descInput.classList.add("row-detail__input");
+  typeInput.classList.add("row-detail__input");
+  const descLabel = el("label", { class: "row-detail__field" }, el("span", { class: "row-detail__label" }, "Description"));
+  descLabel.append(descInput);
+  const typeLabel = el("label", { class: "row-detail__field" }, el("span", { class: "row-detail__label" }, "Type"));
+  typeLabel.append(typeInput);
+  form.append(descLabel, typeLabel);
+  wrap.append(form);
+
+  const errMsg = el("p", { class: "row-detail__error error small" });
+  if (!validation.valid) errMsg.append(validation.errors.join(" "));
+  wrap.append(errMsg);
+
+  const createBtn = button({ class: "primary", type: "button" }, icon("plus"), " Create assembly");
+  if (!validation.valid) (createBtn as HTMLButtonElement).disabled = true;
+  createBtn.addEventListener("click", async () => {
+    if (!validation.valid) return;
+    (createBtn as HTMLButtonElement).disabled = true;
+    await addMint(plan.assemblyId, plan.batch, plan.notes);
+    await appendBind({
+      id: plan.assemblyId,
+      type: typeInput.value.trim(),
+      description: descInput.value.trim(),
+      vendor: "",
+      part_number: "",
+      location: "",
+      notes: "",
+      components: plan.serializedComponents,
+      manufacturer_id: "",
+      metadata: "",
+    });
+    close();
+    ctx.showTab("bind");
+  });
+
+  const cancelBtn = button({ type: "button" }, "Cancel");
+  cancelBtn.addEventListener("click", close);
+  wrap.append(formRow([createBtn, cancelBtn]));
+  return wrap;
 }
 
 function renderDetailView(row: RegistryRow, ctx: AppContext): HTMLElement {
