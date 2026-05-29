@@ -21,7 +21,9 @@ import Fuse from "fuse.js";
 import { ID_LENGTH, ID_REGEX, DATA_REPO_SLUG, DEFAULT_BRANCH, DEFAULT_SIZE_MM } from "../config";
 import { getConfig } from "../config/deploy-config";
 import { FIELDS, REGISTRY_FIELD_KEYS, type RegistryRow, type Status } from "../registry/schema";
+import { REGISTRY_CONTRACT } from "../registry/contract";
 import { parseComponents, isAssembly, buildParentMap } from "../registry/assembly-graph";
+import { parseMetadata } from "../registry/metadata";
 import { appendEdit, appendVoid, appendBind } from "../registry/queue";
 import { addMint, getSessionSync } from "../registry/session";
 import { planAssembly, validateAssembly } from "../registry/assembly-create";
@@ -39,8 +41,12 @@ import { loadPlan, savePlan } from "./print";
 
 type StatusFilter = "all" | Status;
 
-// All possible columns from the contract.
-const ALL_COLUMNS: { key: string; label: string }[] = FIELDS.map((f) => ({
+// All possible columns from the contract. `json`-type fields (metadata)
+// are excluded — they render as a parsed Properties section in the
+// detail card (#171), not as a raw-JSON table column.
+const ALL_COLUMNS: { key: string; label: string }[] = FIELDS.filter(
+  (f) => f.type !== "json",
+).map((f) => ({
   key: f.key,
   label: f.label,
 }));
@@ -361,7 +367,7 @@ function buildUI(ctx: AppContext): HTMLElement {
 
   // Fuse index
   const fuse = new Fuse(all, {
-    keys: ["id", "type", "vendor", "batch", "location", "notes", "description", "part_number"],
+    keys: ["id", "type", "vendor", "batch", "location", "notes", "description", "part_number", "manufacturer_id"],
     threshold: 0.4,
     ignoreLocation: true,
   });
@@ -890,12 +896,29 @@ function renderAssemblyForm(
     ),
   );
 
-  const rows = ctx.registry.all();
+  // Validate against the committed registry PLUS anything already pending
+  // in this session that the registry can't see yet: reserved mint IDs
+  // (so a new ID can't collide with one queued but unsubmitted), and
+  // pending assembly binds (so a child already claimed by an unsubmitted
+  // assembly is rejected here rather than bouncing off the data-repo CI).
+  const sessionItems = getSessionSync()?.items ?? [];
   const reserved = new Set(
-    (getSessionSync()?.items ?? [])
-      .filter((i) => i.kind === "mint")
-      .map((i) => i.id),
+    sessionItems.filter((i) => i.kind === "mint").map((i) => i.id),
   );
+  const pendingAssemblyRows = sessionItems
+    .filter(
+      (i): i is Extract<typeof i, { kind: "bind" }> =>
+        i.kind === "bind" && !!i.fields.components,
+    )
+    .map(
+      (i) =>
+        ({
+          id: i.id,
+          status: "unbound",
+          components: i.fields.components,
+        }) as unknown as RegistryRow,
+    );
+  const rows = [...ctx.registry.all(), ...pendingAssemblyRows];
   const componentIds = componentRows.map((r) => r.id);
   const plan = planAssembly({ componentIds }, rows, reserved);
   const validation = validateAssembly(plan.assemblyId, componentIds, rows);
@@ -949,6 +972,8 @@ function renderAssemblyForm(
       location: "",
       notes: "",
       components: plan.serializedComponents,
+      manufacturer_id: "",
+      metadata: "",
     });
     close();
     ctx.showTab("bind");
@@ -963,7 +988,9 @@ function renderAssemblyForm(
 function renderDetailView(row: RegistryRow, ctx: AppContext): HTMLElement {
   const wrap = el("div", { class: "row-detail" });
   wrap.append(el("h3", { class: "row-detail__id" }, fmtId(row.id)));
-  const AUDIT_KEYS = new Set(["minted_by", "bound_by", "last_edited_at", "last_edited_by"]);
+  // metadata (#171) is rendered as its own Properties section below;
+  // exclude it from the flat field list so we don't dump raw JSON.
+  const AUDIT_KEYS = new Set(["minted_by", "bound_by", "last_edited_at", "last_edited_by", "metadata"]);
   const dl = el("dl");
   for (const f of FIELDS) {
     if (AUDIT_KEYS.has(f.key)) continue;
@@ -978,6 +1005,26 @@ function renderDetailView(row: RegistryRow, ctx: AppContext): HTMLElement {
     );
   }
   wrap.append(dl);
+
+  // #171: Properties section \u2014 parsed type-specific metadata
+  const props = parseMetadata(row.metadata);
+  const propKeys = Object.keys(props);
+  if (propKeys.length > 0) {
+    const propSection = el("div", { class: "row-detail__properties" });
+    propSection.append(el("h4", {}, "Properties"));
+    const propDl = el("dl", { class: "row-detail__properties-dl" });
+    const typeFields = REGISTRY_CONTRACT.typeFields?.[row.type ?? ""] ?? [];
+    for (const key of propKeys) {
+      const def = typeFields.find((tf) => tf.key === key);
+      const label = def ? `${def.label}${def.unit ? ` (${def.unit})` : ""}` : key;
+      const raw = props[key];
+      const display = typeof raw === "object" ? JSON.stringify(raw) : String(raw);
+      propDl.append(el("dt", {}, label));
+      propDl.append(el("dd", {}, display));
+    }
+    propSection.append(propDl);
+    wrap.append(propSection);
+  }
 
   // #168: Components section — shown for assemblies
   const childIds = parseComponents(row.components);

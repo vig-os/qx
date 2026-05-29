@@ -45,7 +45,7 @@ describe("registry contract", () => {
   it("every field has a type", () => {
     for (const field of contract.fields) {
       expect(field.type).toBeDefined();
-      expect(["string", "dropdown", "yes-no", "date", "number"]).toContain(field.type);
+      expect(["string", "dropdown", "yes-no", "date", "number", "json"]).toContain(field.type);
     }
   });
 });

@@ -48,6 +48,8 @@ export function sessionToSubmitPayload(session: Session): {
           location: item.fields.location ?? "",
           notes: item.fields.notes ?? "",
           components: item.fields.components ?? "",
+          manufacturer_id: item.fields.manufacturer_id ?? "",
+          metadata: item.fields.metadata ?? "",
         } as QueuedBind);
         break;
 

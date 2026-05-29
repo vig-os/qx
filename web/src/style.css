@@ -351,6 +351,22 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 }
 .scan-chip__remove:hover { opacity: 1; }
 
+/* #171 P2: OCR scan extras */
+.scan-chip__via { font-size: 10px; opacity: 0.7; text-transform: uppercase; }
+.ocr-text-preview {
+  margin-top: 10px;
+  max-height: 120px;
+  overflow: auto;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: rgba(255, 255, 255, 0.85);
+}
+
 /* Done button in multi-pick */
 .scan-overlay__done { margin-right: 8px; }
 .scan-overlay__done:disabled { opacity: 0.4; pointer-events: none; }
@@ -908,6 +924,59 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 }
 
 /* ---- Auth modal (#133) ---- */
+/* ---- Bulk import modal (#176) ---- */
+.import-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+.import-modal {
+  position: relative;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 640px;
+  width: 94%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+.import-modal__close { position: absolute; top: 8px; right: 8px; }
+.import-modal__header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.import-modal__header h3 { margin: 0; font-size: 18px; }
+.import-modal__textarea {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+.import-modal__parse-error { color: var(--error); font-size: 13px; }
+.import-map { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 13px; }
+.import-map th { text-align: left; font-size: 11px; color: var(--muted); padding: 4px 8px; }
+.import-map td { padding: 4px 8px; border-top: 1px solid var(--border); vertical-align: middle; }
+.import-map__src { font-weight: 600; }
+.import-map__sample { font-family: ui-monospace, monospace; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.import-map select { width: 100%; font-size: 13px; }
+.import-modal__summary { margin: 8px 0; font-size: 13px; }
+.import-modal__warn {
+  color: var(--warn); padding: 6px 10px; border-radius: var(--radius);
+  background: rgba(210, 153, 34, 0.1); border: 1px solid rgba(210, 153, 34, 0.25);
+}
+.import-preview { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.import-preview__chip {
+  font-size: 11px; font-family: ui-monospace, monospace;
+  padding: 2px 6px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--bg);
+}
+.import-preview__chip--mint { border-color: var(--accent); }
+.import-preview__chip--bind { border-color: #2ea043; }
+.import-modal__actions { display: flex; gap: 8px; margin-top: 12px; }
+
 .auth-modal-overlay {
   position: fixed;
   inset: 0;
@@ -1079,6 +1148,27 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 .row-detail__parent { margin: 8px 0; font-size: 13px; }
 .row-detail__parent-link { color: var(--accent); text-decoration: none; }
 .row-detail__parent-link:hover { text-decoration: underline; }
+
+/* #171: Properties section (parsed metadata) in detail card */
+.row-detail__properties { margin: 12px 0; }
+.row-detail__properties h4 { margin: 0 0 6px; font-size: 14px; }
+.row-detail__properties-dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 0;
+}
+.row-detail__properties-dl dt { font-weight: 600; }
+.row-detail__properties-dl dd { margin: 0; font-family: ui-monospace, monospace; font-size: 13px; }
+
+/* #171: type-specific Properties sub-row in the bind queue */
+.queue-row--props > td { background: var(--bg); padding: 8px 12px; }
+.props-editor { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.props-editor__label { align-self: center; }
+.props-editor__field { display: flex; flex-direction: column; gap: 2px; }
+.props-editor__field-label { font-size: 11px; color: var(--muted); }
+.props-editor__field input,
+.props-editor__field select { font-size: 13px; }
 
 /* Components input in bind form */
 .components-input { margin-top: 8px; }

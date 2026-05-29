@@ -11,11 +11,22 @@ export interface ValidationRules {
 export interface ContractField {
   key: string;
   label: string;
-  type: "string" | "dropdown" | "yes-no" | "date" | "number";
+  type: "string" | "dropdown" | "yes-no" | "date" | "number" | "json";
   editable: boolean;
   meaningfulFrom?: string;
   options?: string[];
   on_unknown?: "warn" | "block";
+  validation?: ValidationRules;
+}
+
+/** Type-specific field definition (#171). Rendered in the bind form
+ *  when the operator's selected `type` matches a typeFields key. */
+export interface TypeField {
+  key: string;
+  label: string;
+  type: "string" | "dropdown" | "yes-no" | "date" | "number";
+  options?: string[];
+  unit?: string;
   validation?: ValidationRules;
 }
 
@@ -29,6 +40,8 @@ export interface RegistryContract {
   };
   statuses: string[];
   fields: ContractField[];
+  /** Per-type metadata field definitions (#171). Keyed by part type. */
+  typeFields?: Record<string, TypeField[]>;
 }
 
 /**

@@ -130,6 +130,42 @@
         "maxLength": 1000,
         "pattern": "^$|^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{14}(;[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{14})*$"
       }
+    },
+    {
+      "key": "manufacturer_id",
+      "label": "Manufacturer ID",
+      "type": "string",
+      "editable": true,
+      "meaningfulFrom": "bound",
+      "validation": { "maxLength": 200 }
+    },
+    {
+      "key": "metadata",
+      "label": "Metadata",
+      "type": "json",
+      "editable": true,
+      "meaningfulFrom": "bound",
+      "validation": { "maxLength": 4000 }
     }
-  ]
+  ],
+  "typeFields": {
+    "PT100": [
+      { "key": "resistance_0c", "label": "R₀", "type": "number", "unit": "Ω" },
+      { "key": "accuracy_class", "label": "Class", "type": "dropdown", "options": ["A", "B", "1/3B", "1/10B"] },
+      { "key": "wiring", "label": "Wiring", "type": "dropdown", "options": ["2-wire", "3-wire", "4-wire"] }
+    ],
+    "Fitting": [
+      { "key": "thread_size", "label": "Thread", "type": "string" },
+      { "key": "material", "label": "Material", "type": "dropdown", "options": ["SS316", "SS304", "Brass", "PTFE"] }
+    ],
+    "Cable": [
+      { "key": "wire_gauge", "label": "Gauge (AWG)", "type": "number" },
+      { "key": "length_m", "label": "Length", "type": "number", "unit": "m" },
+      { "key": "shielded", "label": "Shielded", "type": "yes-no" }
+    ],
+    "Module": [
+      { "key": "firmware", "label": "Firmware", "type": "string" },
+      { "key": "channels", "label": "Channels", "type": "number" }
+    ]
+  }
 }

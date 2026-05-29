@@ -190,4 +190,30 @@ test.describe("Create assembly from selection", () => {
     await expect(modal.locator(".row-detail__error")).toContainText(/already a component/i);
     await expect(modal.getByRole("button", { name: /Create assembly/i })).toBeDisabled();
   });
+
+  test("a part claimed by a pending (unsubmitted) assembly blocks re-use", async ({ page }) => {
+    const PART_C = "ABCDEFGHJKMNPQ"; // third bound, unparented part
+    await page.goto("/");
+
+    // First assembly: combine A + B and queue it (do NOT submit).
+    await selectRow(page, PART_A);
+    await selectRow(page, PART_B);
+    await page.getByRole("button", { name: /Combine into assembly/i }).click();
+    const modal1 = page.locator(".detail-modal-overlay");
+    await expect(modal1.locator(".row-detail--assembly")).toBeVisible();
+    await modal1.getByRole("button", { name: /Create assembly/i }).click();
+    await expect(page.locator(".queue-row--bind")).toHaveCount(1);
+
+    // Back to Lookup; try to combine A (now claimed) + C into a second
+    // assembly. The pending bind isn't in the registry yet, but the modal
+    // must still reject A based on the session's pending claim.
+    await page.locator("nav.tabs").getByRole("button", { name: "Lookup" }).click();
+    await selectRow(page, PART_A);
+    await selectRow(page, PART_C);
+    await page.getByRole("button", { name: /Combine into assembly/i }).click();
+
+    const modal2 = page.locator(".detail-modal-overlay");
+    await expect(modal2.locator(".row-detail__error")).toContainText(/already a component/i);
+    await expect(modal2.getByRole("button", { name: /Create assembly/i })).toBeDisabled();
+  });
 });

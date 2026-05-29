@@ -40,23 +40,35 @@ describe("sessionToSubmitPayload", () => {
     expect(mintRows).toHaveLength(0);
   });
 
-  it("preserves the components field on bind items", () => {
-    // Regression (#168): components must survive the session→submit
-    // conversion, otherwise assemblies never persist their BOM.
+  it("preserves all bind fields through the session→submit conversion", () => {
+    // Regression: every bind field carried in the session must survive
+    // into the QueueItem, otherwise it's silently dropped before reaching
+    // the CSV. components (#168) and manufacturer_id/metadata (#171) were
+    // both lost this way until carried through explicitly.
     const session = makeSession([
       {
         kind: "bind",
         id: "ASM1",
-        fields: { description: "Module", components: "CHILD000000001;CHILD000000002" },
+        fields: {
+          description: "Module",
+          components: "CHILD000000001;CHILD000000002",
+          manufacturer_id: "MFR-42",
+          metadata: '{"resistance":"100"}',
+        },
         createdAt: "2026-05-18T01:00:00Z",
       },
     ]);
     const { queueItems } = sessionToSubmitPayload(session);
     expect(queueItems).toHaveLength(1);
     expect(queueItems[0].kind).toBe("bind");
-    expect((queueItems[0] as { components: string }).components).toBe(
-      "CHILD000000001;CHILD000000002",
-    );
+    const bind = queueItems[0] as {
+      components: string;
+      manufacturer_id: string;
+      metadata: string;
+    };
+    expect(bind.components).toBe("CHILD000000001;CHILD000000002");
+    expect(bind.manufacturer_id).toBe("MFR-42");
+    expect(bind.metadata).toBe('{"resistance":"100"}');
   });
 });
 

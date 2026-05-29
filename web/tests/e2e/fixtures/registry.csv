@@ -1,16 +1,16 @@
-id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,minted_by,bound_by,last_edited_at,last_edited_by,components
-23456789ABCDEF,unbound,2026-05-01T10:00:00+00:00,B-2026-05-01,,,,,,,,github:alice,,,,
-2345ABCDEFGHJK,unbound,2026-05-01T10:00:00+00:00,B-2026-05-01,,,,,,,,github:alice,,,,
-3456ABCDEFGHJK,bound,2026-05-02T09:00:00+00:00,B-2026-05-01,2026-05-02T14:00:00+00:00,PT100,Supply temperature sensor,TC Direct,402-141,cooling loop / supply-T,,github:alice,github:bob,2026-05-02T14:00:00+00:00,github:bob,
-456789ABCDEFGH,bound,2026-05-02T09:00:00+00:00,B-2026-05-01,2026-05-02T15:00:00+00:00,Fitting,1/4 NPT to 6mm Swagelok,Swagelok,SS-400-1-4,cooling loop / manifold,,github:alice,github:bob,2026-05-02T15:00:00+00:00,github:bob,
-56789ABCDEFGHJ,bound,2026-05-03T08:00:00+00:00,B-2026-05-03,2026-05-03T12:00:00+00:00,Cable,4-wire RTD extension cable,Omega,EXTT-4-24,sdmd_v2 / rack-A,,github:carol,github:dave,2026-05-03T12:00:00+00:00,github:dave,
-6789ABCDEFGHJK,bound,2026-05-03T08:00:00+00:00,B-2026-05-03,2026-05-03T13:00:00+00:00,Module,PID controller module,Eurotherm,3216,sdmd_v2 / rack-B / slot-3,,github:carol,github:dave,2026-05-03T13:00:00+00:00,github:dave,
-789ABCDEFGHJKM,void,2026-05-04T07:00:00+00:00,B-2026-05-03,2026-05-04T10:00:00+00:00,PT100,Return temperature sensor,TC Direct,402-141,cooling loop / return-T,damaged during install,github:carol,github:dave,2026-05-04T11:00:00+00:00,github:dave,
-89ABCDEFGHJKMN,unbound,2026-05-05T06:00:00+00:00,B-2026-05-05,,,,,,,,github:eve,,,,
-9ABCDEFGHJKMNP,void,2026-05-05T06:00:00+00:00,B-2026-05-05,2026-05-05T09:00:00+00:00,Fitting,6mm union tee,Swagelok,SS-600-3,cooling loop / junction,label peeled — voided,github:eve,github:frank,2026-05-05T10:00:00+00:00,github:frank,
-ABCDEFGHJKMNPQ,bound,2026-05-06T05:00:00+00:00,B-2026-05-05,2026-05-06T08:00:00+00:00,Cable,Thermocouple K-type 2m,Omega,TJ36-CASS-18U,sdmd_v2 / furnace-A / zone-1,,github:eve,github:frank,2026-05-06T08:00:00+00:00,github:frank,
-BCDEFGHJKMNPQR,bound,2026-05-06T05:00:00+00:00,B-2026-05-05,2026-05-07T09:00:00+00:00,Assembly,Cooling loop supply assembly,Honeywell,PX309-150GI,cooling loop / supply-T,,github:eve,github:frank,2026-05-07T09:00:00+00:00,github:frank,3456ABCDEFGHJK;456789ABCDEFGH
-CDEFGHJKMNPQRS,unbound,2026-05-08T06:00:00+00:00,B-2026-05-08,,,,,,,,github:alice,,,,
-DEFGHJKMNPQRST,bound,2026-05-08T06:00:00+00:00,B-2026-05-08,2026-05-08T14:00:00+00:00,RTD probe,Class A RTD 100mm insertion,TE Connectivity,NB-PTCO-068,test bench / CH-4,,github:alice,github:bob,2026-05-08T14:00:00+00:00,github:bob,
-EFGHJKMNPQRSTU,unbound,2026-05-08T06:00:00+00:00,B-2026-05-08,,,,,,,,github:alice,,,,
-FGHJKMNPQRSTUV,void,2026-05-08T06:00:00+00:00,B-2026-05-08,,Flow sensor,Cracked ultrasonic transducer,Siemens,7ME3530-1AA00,,housing crack — voided,github:alice,,,,
+id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,minted_by,bound_by,last_edited_at,last_edited_by,components,manufacturer_id,metadata
+23456789ABCDEF,unbound,2026-05-01T10:00:00+00:00,B-2026-05-01,,,,,,,,github:alice,,,,,,
+2345ABCDEFGHJK,unbound,2026-05-01T10:00:00+00:00,B-2026-05-01,,,,,,,,github:alice,,,,,,
+3456ABCDEFGHJK,bound,2026-05-02T09:00:00+00:00,B-2026-05-01,2026-05-02T14:00:00+00:00,PT100,Supply temperature sensor,TC Direct,402-141,cooling loop / supply-T,,github:alice,github:bob,2026-05-02T14:00:00+00:00,github:bob,,SN-PT-0042,"{""resistance_0c"":100,""accuracy_class"":""A""}"
+456789ABCDEFGH,bound,2026-05-02T09:00:00+00:00,B-2026-05-01,2026-05-02T15:00:00+00:00,Fitting,1/4 NPT to 6mm Swagelok,Swagelok,SS-400-1-4,cooling loop / manifold,,github:alice,github:bob,2026-05-02T15:00:00+00:00,github:bob,,SWG-SS400-99,"{""thread_size"":""1/4 NPT"",""material"":""SS316""}"
+56789ABCDEFGHJ,bound,2026-05-03T08:00:00+00:00,B-2026-05-03,2026-05-03T12:00:00+00:00,Cable,4-wire RTD extension cable,Omega,EXTT-4-24,sdmd_v2 / rack-A,,github:carol,github:dave,2026-05-03T12:00:00+00:00,github:dave,,,
+6789ABCDEFGHJK,bound,2026-05-03T08:00:00+00:00,B-2026-05-03,2026-05-03T13:00:00+00:00,Module,PID controller module,Eurotherm,3216,sdmd_v2 / rack-B / slot-3,,github:carol,github:dave,2026-05-03T13:00:00+00:00,github:dave,,,
+789ABCDEFGHJKM,void,2026-05-04T07:00:00+00:00,B-2026-05-03,2026-05-04T10:00:00+00:00,PT100,Return temperature sensor,TC Direct,402-141,cooling loop / return-T,damaged during install,github:carol,github:dave,2026-05-04T11:00:00+00:00,github:dave,,,
+89ABCDEFGHJKMN,unbound,2026-05-05T06:00:00+00:00,B-2026-05-05,,,,,,,,github:eve,,,,,,
+9ABCDEFGHJKMNP,void,2026-05-05T06:00:00+00:00,B-2026-05-05,2026-05-05T09:00:00+00:00,Fitting,6mm union tee,Swagelok,SS-600-3,cooling loop / junction,label peeled — voided,github:eve,github:frank,2026-05-05T10:00:00+00:00,github:frank,,,
+ABCDEFGHJKMNPQ,bound,2026-05-06T05:00:00+00:00,B-2026-05-05,2026-05-06T08:00:00+00:00,Cable,Thermocouple K-type 2m,Omega,TJ36-CASS-18U,sdmd_v2 / furnace-A / zone-1,,github:eve,github:frank,2026-05-06T08:00:00+00:00,github:frank,,,
+BCDEFGHJKMNPQR,bound,2026-05-06T05:00:00+00:00,B-2026-05-05,2026-05-07T09:00:00+00:00,Assembly,Cooling loop supply assembly,Honeywell,PX309-150GI,cooling loop / supply-T,,github:eve,github:frank,2026-05-07T09:00:00+00:00,github:frank,3456ABCDEFGHJK;456789ABCDEFGH,,
+CDEFGHJKMNPQRS,unbound,2026-05-08T06:00:00+00:00,B-2026-05-08,,,,,,,,github:alice,,,,,,
+DEFGHJKMNPQRST,bound,2026-05-08T06:00:00+00:00,B-2026-05-08,2026-05-08T14:00:00+00:00,RTD probe,Class A RTD 100mm insertion,TE Connectivity,NB-PTCO-068,test bench / CH-4,,github:alice,github:bob,2026-05-08T14:00:00+00:00,github:bob,,,
+EFGHJKMNPQRSTU,unbound,2026-05-08T06:00:00+00:00,B-2026-05-08,,,,,,,,github:alice,,,,,,
+FGHJKMNPQRSTUV,void,2026-05-08T06:00:00+00:00,B-2026-05-08,,Flow sensor,Cracked ultrasonic transducer,Siemens,7ME3530-1AA00,,housing crack — voided,github:alice,,,,,,

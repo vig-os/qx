@@ -24,7 +24,7 @@ export interface FieldDef {
   // Status that this field becomes meaningful at.
   meaningfulFrom?: Status;
   // Field type from contract — drives input rendering.
-  type: "string" | "dropdown" | "yes-no" | "date" | "number";
+  type: "string" | "dropdown" | "yes-no" | "date" | "number" | "json";
   // Dropdown options from contract.
   options?: string[];
   // Behaviour when value is not in options.

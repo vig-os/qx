@@ -58,6 +58,8 @@ pub const REGISTRY_HEADER: &[&str] = &[
     "last_edited_at",
     "last_edited_by",
     "components",
+    "manufacturer_id",
+    "metadata",
 ];
 
 /// Canonical `print_log.csv` column order per ADR-015 §"Schema".
@@ -477,6 +479,8 @@ mod tests {
             last_edited_at: None,
             last_edited_by: None,
             components: vec![],
+            manufacturer_id: None,
+            metadata: std::collections::BTreeMap::new(),
             signatures: vec![],
             chain_hash: None,
         }
