@@ -215,6 +215,36 @@ function buildUI(ctx: AppContext): HTMLElement {
     }
   });
 
+  // #176: OCR text scan — photograph a manufacturer label (or a plain-
+  // printed ID) to *find* the matching registry part. Recognition lives
+  // in Lookup; the result fills the search box. (Creating a new part
+  // from a label is "Mint from label" in the Bind tab.)
+  const scanTextBtn = button(
+    { class: "icon-only", title: "Find a part by photographing its label" },
+    icon("scan-text"),
+  );
+  scanTextBtn.addEventListener("click", async () => {
+    try {
+      const { openOcrScan } = await import("../ui/ocr-scan");
+      const ids = await openOcrScan({
+        rows: ctx.registry.all(),
+        resolveStatus: (canonical): ScanStatus => {
+          const row = ctx.registry.findById(canonical);
+          if (!row) return "unknown";
+          if (row.status === "unbound") return "unbound";
+          return "bound";
+        },
+      });
+      if (ids.length > 0) {
+        // One match → jump to it; multiple → search the first.
+        searchInput.value = ids[0];
+        renderView();
+      }
+    } catch {
+      /* cancelled */
+    }
+  });
+
   // Issue #91: reprint selected + Issue #94: export CSV
   const reprintSelBtn = button(
     { class: "secondary", disabled: "true" },
@@ -347,7 +377,7 @@ function buildUI(ctx: AppContext): HTMLElement {
   colPickerWrap.append(colPickerBtn, colPickerDropdown);
 
   root.append(
-    formRow([searchInput, scanBtn]),
+    formRow([searchInput, scanBtn, scanTextBtn]),
     statusBar,
     filterBar,
     formRow(
