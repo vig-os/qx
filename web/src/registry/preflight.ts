@@ -14,6 +14,7 @@ import {
 } from "../wasm/loader";
 import type { RegistryRow } from "./schema";
 import { REGISTRY_FIELD_KEYS } from "./schema";
+import { parseComponents } from "./assembly-graph";
 
 /** Single edit produced by the FE — a `QueuedBind`, a Lookup-edit, etc. */
 export interface QueueItem {
@@ -120,7 +121,12 @@ export function anonymousOperator(): {
  * as "this id isn't in the loaded registry" are caught here.
  */
 export interface LocalIssue {
-  kind: "unknown_id" | "duplicate_in_queue";
+  kind:
+    | "unknown_id"
+    | "duplicate_in_queue"
+    | "unknown_component"
+    | "void_component"
+    | "self_component";
   message: string;
   id: string;
 }
@@ -162,6 +168,35 @@ export function runPreflight(
         id: item.id,
         message: `ID ${item.id} is not in the loaded registry`,
       });
+    }
+
+    // Assembly components (#176/#168): a bind that lists components —
+    // i.e. merging parts into an assembly via mint+bind — must reference
+    // real, non-void parts. Same-session mints are in `registry` (added
+    // by the caller) so combining freshly-minted parts is allowed.
+    for (const cid of parseComponents(item.fields.components)) {
+      if (cid === item.id) {
+        localIssues.push({
+          kind: "self_component",
+          id: cid,
+          message: `${cid} cannot be a component of itself`,
+        });
+        continue;
+      }
+      const comp = registry.get(cid);
+      if (!comp) {
+        localIssues.push({
+          kind: "unknown_component",
+          id: cid,
+          message: `Component ${cid} is not in the registry or this session`,
+        });
+      } else if (comp.status === "void") {
+        localIssues.push({
+          kind: "void_component",
+          id: cid,
+          message: `Component ${cid} is voided — cannot be assembled`,
+        });
+      }
     }
   }
 

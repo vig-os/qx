@@ -43,7 +43,7 @@ import {
   clearToken,
   SubmitError,
 } from "../registry/submit";
-import { loadSession, clearSession, summarizeSession, addBind as sessionAddBind, removeItemAt as sessionRemoveAt, type SessionMint } from "../registry/session";
+import { loadSession, clearSession, summarizeSession, addBind as sessionAddBind, removeItemAt as sessionRemoveAt, getSessionSync, type SessionMint } from "../registry/session";
 import { DATA_REPO_SLUG } from "../config";
 
 // Editable fields shown as columns in the bind queue table. Excludes
@@ -130,6 +130,11 @@ function buildUI(ctx: AppContext): HTMLElement {
     if (queue.length === 0) return;
     try {
       const registry = buildRegistryMap(ctx);
+      // Same-session mints aren't in the loaded registry yet, but binding
+      // them in the same batch is legitimate (mint-from-label, CSV import
+      // with mint). Treat pending mints as known unbound parts so the
+      // preflight doesn't flag them unknown_id and block submit (#176).
+      addSessionMints(registry);
       const items: QueueItem[] = queue
         .filter((q): q is QueuedBind => q.kind === "bind")
         .map((q) => ({
@@ -142,14 +147,24 @@ function buildUI(ctx: AppContext): HTMLElement {
             part_number: q.part_number,
             location: q.location,
             notes: q.notes,
+            components: q.components,
           },
         }));
       const result = runPreflight(items, registry);
       preflightContainer.append(renderPreflight(result));
-      // Block submit on policy block OR unknown-id (FE-local).
+      // Block submit on policy block OR an FE-local definite error:
+      // unknown id, or an assembly component that's unknown/void/self
+      // (#176 — merging into an assembly via mint+bind). These are
+      // factual errors, not policy judgments, so blocking is safe.
+      const BLOCKING_ISSUES = new Set([
+        "unknown_id",
+        "unknown_component",
+        "void_component",
+        "self_component",
+      ]);
       const blocked =
         result.decision.kind === "block" ||
-        result.localIssues.some((i) => i.kind === "unknown_id");
+        result.localIssues.some((i) => BLOCKING_ISSUES.has(i.kind));
       (submitBtn as HTMLButtonElement).disabled = blocked;
       submitBtn.setAttribute("data-preflight", blocked ? "blocked" : "ok");
     } catch (e) {
@@ -486,6 +501,24 @@ function buildRegistryMap(ctx: AppContext): Map<string, RegistryRow> {
     map.set(row.id, row);
   }
   return map;
+}
+
+/** Add session-pending mints to the registry map as synthetic unbound
+ *  rows, so a bind queued in the same session as its mint is treated as
+ *  a known part by the preflight (#176). Read-only synchronous peek at
+ *  the session cache. */
+function addSessionMints(map: Map<string, RegistryRow>): void {
+  const sess = getSessionSync();
+  if (!sess) return;
+  for (const item of sess.items) {
+    if (item.kind === "mint" && !map.has(item.id)) {
+      map.set(item.id, {
+        id: item.id,
+        status: "unbound",
+        batch: (item as SessionMint).batch ?? "",
+      } as unknown as RegistryRow);
+    }
+  }
 }
 
 function renderPreflight(result: {
