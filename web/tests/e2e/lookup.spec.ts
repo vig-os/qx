@@ -46,6 +46,22 @@ test.describe("Lookup data-grid (fixture)", () => {
     await expect(rows).toHaveCount(2);
   });
 
+  test("multi-word search matches across different fields (AND of words)", async ({ page }) => {
+    await page.goto("/");
+    const search = page.locator(".lookup__search");
+    const rows = page.locator(".lookup__table tbody tr");
+
+    // "PT100" lives in `type`; "sensor" lives in `description` — no single
+    // field contains both. Tokenized AND search must still match the two
+    // PT100 sensor rows (supply + return).
+    await search.fill("pt100 sensor");
+    await expect(rows).toHaveCount(2);
+
+    // A third word present only on the supply row narrows to 1.
+    await search.fill("pt100 sensor supply");
+    await expect(rows).toHaveCount(1);
+  });
+
   test("status filter (multi-select dropdown) narrows to matching statuses", async ({ page }) => {
     await page.goto("/");
     const rows = page.locator(".lookup__table tbody tr");

@@ -488,7 +488,24 @@ function buildUI(ctx: AppContext): HTMLElement {
         const exact = ctx.registry.findById(norm);
         rows = exact ? [exact] : [];
       } else {
-        rows = fuse.search(q).map((r) => r.item);
+        // Tokenized AND search: every whitespace-separated word must
+        // fuzzy-match at least one field (OR across fields); a row is
+        // returned only if ALL words hit — possibly in different fields.
+        // Fuse alone treats the whole query as one pattern against a
+        // single field, so multi-word cross-field queries ("pt clean")
+        // otherwise fail. Rank is preserved by the first word's score.
+        const words = q.split(/\s+/).filter(Boolean);
+        if (words.length <= 1) {
+          rows = fuse.search(q).map((r) => r.item);
+        } else {
+          const idSets = words.map(
+            (w) => new Set(fuse.search(w).map((r) => r.item.id)),
+          );
+          rows = fuse
+            .search(words[0])
+            .map((r) => r.item)
+            .filter((item) => idSets.every((s) => s.has(item.id)));
+        }
       }
     }
     // Multi-select: a row matches a filter when its value is in the
