@@ -77,10 +77,30 @@
             echo "  rust:      $(rustc --version)"
             echo "  node:      $(node --version)"
             echo "  wasm-pack: $(wasm-pack --version)"
+
+            # Single source of truth for the Playwright version is THIS
+            # flake's nixpkgs (which also pins the chromium build). The
+            # npm `@playwright/test` runner must match it exactly or it
+            # looks for a browser revision the Nix store doesn't have
+            # ("Executable doesn't exist …chromium_headless_shell-NNNN").
+            # node_modules can drift (npm install bumps it); enforce the
+            # pin here so local e2e always finds the Nix browsers.
+            pwVer="${pkgs.playwright-driver.version}"
+            if [ -d web/node_modules ]; then
+              pwInstalled=$(node -p "require('./web/node_modules/@playwright/test/package.json').version" 2>/dev/null || echo none)
+              if [ "$pwInstalled" != "$pwVer" ]; then
+                echo "  ⚠ playwright drift: node_modules=$pwInstalled, nix=$pwVer — pinning…"
+                ( cd web && npm install --no-audit --no-fund --save-exact "@playwright/test@$pwVer" >/dev/null 2>&1 ) \
+                  && echo "  ✓ @playwright/test pinned to $pwVer (matches Nix chromium)" \
+                  || echo "  ✗ pin failed — run: (cd web && npm i -E @playwright/test@$pwVer)"
+              else
+                echo "  playwright: $pwVer (npm ↔ nix in sync)"
+              fi
+            fi
             echo ""
             echo "  cargo test --workspace        # Rust gate"
             echo "  cd web && npm ci && npm test  # FE gate"
-            echo "  cd web && npm run e2e         # Playwright headless"
+            echo "  cd web && npm run e2e         # Playwright headless (Nix chromium)"
             echo ""
           '';
         };

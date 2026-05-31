@@ -46,23 +46,47 @@ test.describe("Lookup data-grid (fixture)", () => {
     await expect(rows).toHaveCount(2);
   });
 
-  test("status filter chips narrow to matching status", async ({ page }) => {
+  test("multi-word search matches across different fields (AND of words)", async ({ page }) => {
     await page.goto("/");
+    const search = page.locator(".lookup__search");
+    const rows = page.locator(".lookup__table tbody tr");
 
-    // Click the "bound" filter chip — fixture has 7 bound rows.
-    await page.locator(".chip--filter", { hasText: /^bound$/ }).click();
-    const boundRows = page.locator(".lookup__table tbody tr");
-    await expect(boundRows).toHaveCount(7);
+    // "PT100" lives in `type`; "sensor" lives in `description` — no single
+    // field contains both. Tokenized AND search must still match the two
+    // PT100 sensor rows (supply + return).
+    await search.fill("pt100 sensor");
+    await expect(rows).toHaveCount(2);
 
-    // Click the "void" filter chip — fixture has 3 void rows.
-    await page.locator(".chip--filter", { hasText: /^void$/ }).click();
-    const voidRows = page.locator(".lookup__table tbody tr");
-    await expect(voidRows).toHaveCount(3);
+    // A third word present only on the supply row narrows to 1.
+    await search.fill("pt100 sensor supply");
+    await expect(rows).toHaveCount(1);
+  });
 
-    // Click the "unbound" filter chip — fixture has 5 unbound rows.
-    await page.locator(".chip--filter", { hasText: /^unbound$/ }).click();
-    const unboundRows = page.locator(".lookup__table tbody tr");
-    await expect(unboundRows).toHaveCount(5);
+  test("status filter (multi-select dropdown) narrows to matching statuses", async ({ page }) => {
+    await page.goto("/");
+    const rows = page.locator(".lookup__table tbody tr");
+    const statusOpt = (s: string) =>
+      page.locator(`.lookup__filter-dd-opt[data-value="${s}"] input[type=checkbox]`);
+
+    // Open the Status dropdown (stays open as boxes are toggled).
+    await page.locator(".lookup__filter-dd-btn", { hasText: "Status" }).click();
+
+    // bound only — fixture has 7 bound rows.
+    await statusOpt("bound").check();
+    await expect(rows).toHaveCount(7);
+
+    // bound OR void (multi-select) — 7 + 3 = 10.
+    await statusOpt("void").check();
+    await expect(rows).toHaveCount(10);
+
+    // void only — uncheck bound → 3.
+    await statusOpt("bound").uncheck();
+    await expect(rows).toHaveCount(3);
+
+    // unbound only — fixture has 5 unbound rows.
+    await statusOpt("void").uncheck();
+    await statusOpt("unbound").check();
+    await expect(rows).toHaveCount(5);
   });
 
   test("deep-link to /<ID> highlights that row in the grid", async ({ page }) => {

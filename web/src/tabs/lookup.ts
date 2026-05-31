@@ -39,8 +39,6 @@ import { icon } from "../ui/icons";
 import { openScanner, type ScanStatus } from "../ui/scanner";
 import { loadPlan, savePlan } from "./print";
 
-type StatusFilter = "all" | Status;
-
 // All possible columns from the contract. `json`-type fields (metadata)
 // are excluded — they render as a parsed Properties section in the
 // detail card (#171), not as a raw-JSON table column.
@@ -98,35 +96,42 @@ function fmtId(id: string): string {
   }`;
 }
 
-// #93: read filter state from URL search params
+// #93: filters are multi-select — each key maps to a set of selected
+// values (empty set = no filter). Status is just another such filter.
+type StatusSet = Set<Status>;
+type ColumnFilters = Record<FilterKey, Set<string>>;
+
+function emptyColumnFilters(): ColumnFilters {
+  return { vendor: new Set(), location: new Set(), type: new Set(), batch: new Set() };
+}
+
+// #93: read filter state from URL search params (values comma-joined)
 function readFilterParams(): {
   q: string;
-  status: StatusFilter;
-  filters: Record<FilterKey, string>;
+  status: StatusSet;
+  filters: ColumnFilters;
 } {
   const params = new URLSearchParams(window.location.search);
-  const filters = {} as Record<FilterKey, string>;
+  const filters = emptyColumnFilters();
+  const splitParam = (v: string | null): string[] =>
+    (v ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   for (const k of FILTER_KEYS) {
-    filters[k] = params.get(k) ?? "";
+    filters[k] = new Set(splitParam(params.get(k)));
   }
-  return {
-    q: params.get("q") ?? "",
-    status: (params.get("status") as StatusFilter) || "all",
-    filters,
-  };
+  const STATUSES_SET = new Set<Status>(["unbound", "bound", "void"]);
+  const status = new Set(
+    splitParam(params.get("status")).filter((s): s is Status => STATUSES_SET.has(s as Status)),
+  );
+  return { q: params.get("q") ?? "", status, filters };
 }
 
 // #93: write filter state to URL without navigation
-function writeFilterParams(
-  q: string,
-  status: StatusFilter,
-  filters: Record<FilterKey, string>,
-): void {
+function writeFilterParams(q: string, status: StatusSet, filters: ColumnFilters): void {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
-  if (status !== "all") params.set("status", status);
+  if (status.size > 0) params.set("status", [...status].join(","));
   for (const k of FILTER_KEYS) {
-    if (filters[k]) params.set(k, filters[k]);
+    if (filters[k].size > 0) params.set(k, [...filters[k]].join(","));
   }
   const qs = params.toString();
   const url = window.location.pathname + (qs ? `?${qs}` : "");
@@ -141,6 +146,78 @@ function uniqueValues(rows: RegistryRow[], key: string): string[] {
     if (v) set.add(v);
   }
   return [...set].sort();
+}
+
+/**
+ * A multi-select filter dropdown (checkbox list behind a labelled
+ * button) — the shared control for Status and the column filters.
+ * Mutates `selected` directly; calls `onChange` after any toggle.
+ * Returns the wrapper plus a `refresh()` that re-syncs the button label
+ * and checkboxes to `selected` (e.g. after a dashboard click or Clear).
+ */
+function makeFilterDropdown(
+  label: string,
+  getOptions: () => string[],
+  selected: Set<string>,
+  onChange: () => void,
+): { wrap: HTMLElement; refresh: () => void } {
+  const wrap = el("div", { class: "lookup__filter-dd" });
+  const toggle = button({ class: "outline small lookup__filter-dd-btn", type: "button" });
+  const menu = el("div", { class: "lookup__filter-dd-menu" });
+  menu.style.display = "none";
+
+  const syncLabel = () => {
+    toggle.textContent = "";
+    toggle.append(
+      `${label}`,
+      selected.size > 0
+        ? el("span", { class: "lookup__filter-dd-count" }, ` ${selected.size}`)
+        : "",
+      el("span", { class: "lookup__filter-dd-caret" }, " ▾"),
+    );
+    toggle.classList.toggle("lookup__filter-dd-btn--active", selected.size > 0);
+  };
+
+  const buildMenu = () => {
+    menu.innerHTML = "";
+    const opts = getOptions();
+    if (opts.length === 0) {
+      menu.append(el("p", { class: "muted small", style: "margin:4px 8px;" }, "No values"));
+      return;
+    }
+    for (const opt of opts) {
+      const row = el("label", { class: "lookup__filter-dd-opt", "data-value": opt });
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = selected.has(opt);
+      cb.addEventListener("change", () => {
+        if (cb.checked) selected.add(opt);
+        else selected.delete(opt);
+        syncLabel();
+        onChange();
+      });
+      row.append(cb, ` ${opt}`);
+      menu.append(row);
+    }
+  };
+
+  toggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const showing = menu.style.display !== "none";
+    if (!showing) buildMenu();
+    menu.style.display = showing ? "none" : "block";
+  });
+  document.addEventListener("click", () => { menu.style.display = "none"; });
+  menu.addEventListener("click", (e) => e.stopPropagation());
+
+  const refresh = () => {
+    syncLabel();
+    if (menu.style.display !== "none") buildMenu();
+  };
+
+  syncLabel();
+  wrap.append(toggle, menu);
+  return { wrap, refresh };
 }
 
 export const lookupTab: Tab = {
@@ -161,10 +238,13 @@ function buildUI(ctx: AppContext): HTMLElement {
 
   // ---------- state ----------
   const savedParams = readFilterParams();
-  let statusFilter: StatusFilter = savedParams.status;
-  const columnFilters: Record<FilterKey, string> = { ...savedParams.filters };
+  const statusFilter: StatusSet = savedParams.status;
+  const columnFilters: ColumnFilters = savedParams.filters;
   let sortState: SortState = { key: "id", dir: "none" };
   let viewMode: "table" | "dashboard" = "table";
+  // refresh() handles for the filter dropdowns, so dashboard click-throughs
+  // and Clear can re-sync the controls.
+  const filterRefresh = new Map<"status" | FilterKey, () => void>();
 
   // ---------- toolbar ----------
   const searchInput = input({
@@ -174,24 +254,6 @@ function buildUI(ctx: AppContext): HTMLElement {
     class: "lookup__search",
   });
   if (savedParams.q) searchInput.value = savedParams.q;
-
-  const statusBtns = new Map<StatusFilter, HTMLButtonElement>();
-  const statusBar = el("div", { class: "lookup__status-filter" });
-  for (const s of ["all", "unbound", "bound", "void"] as const) {
-    const btn = button(
-      { class: `chip chip--filter chip--status-${s} ${s === statusFilter ? "active" : ""}` },
-      s,
-    );
-    btn.addEventListener("click", () => {
-      statusFilter = s;
-      for (const [k, b] of statusBtns) {
-        b.classList.toggle("active", k === s);
-      }
-      renderView();
-    });
-    statusBtns.set(s, btn);
-    statusBar.append(btn);
-  }
 
   const scanBtn = button(
     { class: "icon-only", title: "Scan QR with camera" },
@@ -273,42 +335,37 @@ function buildUI(ctx: AppContext): HTMLElement {
     " Combine into assembly",
   );
 
-  // #93: structured filter dropdowns
+  // #93: unified multi-select filter bar — Status + one dropdown per
+  // column key. Status is just another filter (replaces the chip row).
   const filterBar = el("div", { class: "lookup__filter-bar" });
-  const filterSelects = new Map<FilterKey, HTMLSelectElement>();
+
+  const statusDd = makeFilterDropdown(
+    "Status",
+    () => ["unbound", "bound", "void"],
+    statusFilter as Set<string>,
+    () => renderView(),
+  );
+  filterRefresh.set("status", statusDd.refresh);
+  filterBar.append(statusDd.wrap);
+
   for (const fk of FILTER_KEYS) {
     const label = fk.charAt(0).toUpperCase() + fk.slice(1);
-    const sel = document.createElement("select");
-    sel.className = "lookup__filter-select";
-    sel.title = `Filter by ${label}`;
-    const defaultOpt = document.createElement("option");
-    defaultOpt.value = "";
-    defaultOpt.textContent = `All ${/(?:ch|sh|s|x|z)$/i.test(label) ? label + "es" : label + "s"}`;
-    sel.append(defaultOpt);
-    for (const v of uniqueValues(all, fk)) {
-      const opt = document.createElement("option");
-      opt.value = v;
-      opt.textContent = v;
-      if (columnFilters[fk] === v) opt.selected = true;
-      sel.append(opt);
-    }
-    sel.addEventListener("change", () => {
-      columnFilters[fk] = sel.value;
-      renderView();
-    });
-    filterSelects.set(fk, sel);
-    filterBar.append(sel);
+    const dd = makeFilterDropdown(
+      label,
+      () => uniqueValues(all, fk),
+      columnFilters[fk],
+      () => renderView(),
+    );
+    filterRefresh.set(fk, dd.refresh);
+    filterBar.append(dd.wrap);
   }
-  const clearFiltersBtn = button({ class: "outline small" }, "Clear filters");
+
+  const clearFiltersBtn = button({ class: "outline small lookup__clear-filters" }, "Clear filters");
   clearFiltersBtn.addEventListener("click", () => {
-    for (const fk of FILTER_KEYS) {
-      columnFilters[fk] = "";
-      const sel = filterSelects.get(fk);
-      if (sel) sel.value = "";
-    }
+    statusFilter.clear();
+    for (const fk of FILTER_KEYS) columnFilters[fk].clear();
     searchInput.value = "";
-    statusFilter = "all";
-    for (const [k, b] of statusBtns) b.classList.toggle("active", k === "all");
+    for (const r of filterRefresh.values()) r();
     renderView();
   });
   filterBar.append(clearFiltersBtn);
@@ -378,7 +435,6 @@ function buildUI(ctx: AppContext): HTMLElement {
 
   root.append(
     formRow([searchInput, scanBtn, scanTextBtn]),
-    statusBar,
     filterBar,
     formRow(
       canAssemble
@@ -432,18 +488,36 @@ function buildUI(ctx: AppContext): HTMLElement {
         const exact = ctx.registry.findById(norm);
         rows = exact ? [exact] : [];
       } else {
-        rows = fuse.search(q).map((r) => r.item);
+        // Tokenized AND search: every whitespace-separated word must
+        // fuzzy-match at least one field (OR across fields); a row is
+        // returned only if ALL words hit — possibly in different fields.
+        // Fuse alone treats the whole query as one pattern against a
+        // single field, so multi-word cross-field queries ("pt clean")
+        // otherwise fail. Rank is preserved by the first word's score.
+        const words = q.split(/\s+/).filter(Boolean);
+        if (words.length <= 1) {
+          rows = fuse.search(q).map((r) => r.item);
+        } else {
+          const idSets = words.map(
+            (w) => new Set(fuse.search(w).map((r) => r.item.id)),
+          );
+          rows = fuse
+            .search(words[0])
+            .map((r) => r.item)
+            .filter((item) => idSets.every((s) => s.has(item.id)));
+        }
       }
     }
-    if (statusFilter !== "all") {
-      rows = rows.filter((r) => r.status === statusFilter);
+    // Multi-select: a row matches a filter when its value is in the
+    // selected set (empty set = no constraint).
+    if (statusFilter.size > 0) {
+      rows = rows.filter((r) => statusFilter.has(r.status as Status));
     }
-    // #93: apply structured filters
     for (const fk of FILTER_KEYS) {
-      const fv = columnFilters[fk];
-      if (fv) {
+      const sel = columnFilters[fk];
+      if (sel.size > 0) {
         rows = rows.filter(
-          (r) => (r as unknown as Record<string, string>)[fk] === fv,
+          (r) => sel.has((r as unknown as Record<string, string>)[fk]),
         );
       }
     }
@@ -647,8 +721,9 @@ function buildUI(ctx: AppContext): HTMLElement {
       );
       card.style.cursor = "pointer";
       card.addEventListener("click", () => {
-        statusFilter = s;
-        for (const [k, b] of statusBtns) b.classList.toggle("active", k === s);
+        statusFilter.clear();
+        statusFilter.add(s);
+        filterRefresh.get("status")?.();
         viewMode = "table";
         tableToggleBtn.classList.add("active");
         dashToggleBtn.classList.remove("active");
@@ -693,9 +768,9 @@ function buildUI(ctx: AppContext): HTMLElement {
         labelEl.style.cursor = "pointer";
         labelEl.addEventListener("click", () => {
           if (groupVal !== "(empty)") {
-            columnFilters[gk.key] = groupVal;
-            const sel = filterSelects.get(gk.key);
-            if (sel) sel.value = groupVal;
+            columnFilters[gk.key].clear();
+            columnFilters[gk.key].add(groupVal);
+            filterRefresh.get(gk.key)?.();
           }
           viewMode = "table";
           tableToggleBtn.classList.add("active");
@@ -723,8 +798,9 @@ function buildUI(ctx: AppContext): HTMLElement {
       const labelEl = el("span", { class: "dashboard__bar-label" }, s);
       labelEl.style.cursor = "pointer";
       labelEl.addEventListener("click", () => {
-        statusFilter = s;
-        for (const [k, b] of statusBtns) b.classList.toggle("active", k === s);
+        statusFilter.clear();
+        statusFilter.add(s);
+        filterRefresh.get("status")?.();
         viewMode = "table";
         tableToggleBtn.classList.add("active");
         dashToggleBtn.classList.remove("active");
