@@ -195,8 +195,7 @@ test.describe("Lookup data-grid (#10)", () => {
 
     // Open the Status filter dropdown and check "unbound".
     await page.locator(".lookup__filter-dd-btn", { hasText: "Status" }).click();
-    await page.locator(".lookup__filter-dd-opt", { hasText: /unbound$/ })
-      .locator("input[type=checkbox]").check();
+    await page.locator('.lookup__filter-dd-opt[data-value="unbound"] input[type=checkbox]').check();
     const unboundRows = page.locator(".lookup__table tbody tr");
     await expect(unboundRows).toHaveCount(1);
     await expect(unboundRows.first()).toHaveAttribute("data-id", "ABCDEFGHJKMNPR");

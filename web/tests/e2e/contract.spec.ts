@@ -30,7 +30,7 @@ test.describe("Contract SSoT conformance", () => {
     await page.locator(".lookup__filter-dd-btn", { hasText: "Status" }).click();
 
     for (const status of STATUSES) {
-      const opt = page.locator(".lookup__filter-dd-opt", { hasText: new RegExp(`${status}$`) });
+      const opt = page.locator(`.lookup__filter-dd-opt[data-value="${status}"]`);
       await expect(opt, `status option for "${status}" must exist`).toBeVisible();
     }
   });

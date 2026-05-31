@@ -186,7 +186,7 @@ function makeFilterDropdown(
       return;
     }
     for (const opt of opts) {
-      const row = el("label", { class: "lookup__filter-dd-opt" });
+      const row = el("label", { class: "lookup__filter-dd-opt", "data-value": opt });
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.checked = selected.has(opt);
