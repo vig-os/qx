@@ -25,12 +25,13 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe("Contract SSoT conformance", () => {
-  test("every status from contract appears in the status filter chips", async ({ page }) => {
+  test("every status from contract appears in the Status filter dropdown", async ({ page }) => {
     await page.goto("/");
+    await page.locator(".lookup__filter-dd-btn", { hasText: "Status" }).click();
 
     for (const status of STATUSES) {
-      const chip = page.locator(".chip--filter", { hasText: new RegExp(`^${status}$`) });
-      await expect(chip, `status chip for "${status}" must exist`).toBeVisible();
+      const opt = page.locator(".lookup__filter-dd-opt", { hasText: new RegExp(`${status}$`) });
+      await expect(opt, `status option for "${status}" must exist`).toBeVisible();
     }
   });
 
