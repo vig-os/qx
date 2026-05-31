@@ -429,21 +429,9 @@ function buildUI(ctx: AppContext): HTMLElement {
     }
   });
 
-  // #171 P2: OCR text scan — read a manufacturer label or plain-printed
-  // ID from a photo and match it against the registry.
-  const ocrBtn = button({ class: "secondary" }, icon("scan-text"), " Scan text");
-  ocrBtn.addEventListener("click", async () => {
-    try {
-      const { openOcrScan } = await import("../ui/ocr-scan");
-      const ids = await openOcrScan({
-        rows: ctx.registry.all(),
-        resolveStatus: makeResolveStatus(),
-      });
-      await addScannedIds(ids);
-    } catch {
-      /* user cancelled */
-    }
-  });
+  // #176 reorg: recognition-by-label ("Scan text") moved to the Lookup
+  // tab — that's where "which part is this?" belongs. The Bind tab keeps
+  // scans that queue parts for binding + "Mint from label" (creates).
 
   // #176 P0: bulk import — paste/upload a CSV/TSV, map columns, commit
   // mint+bind rows into the queue.
@@ -483,7 +471,7 @@ function buildUI(ctx: AppContext): HTMLElement {
   root.append(
     formRow([submitBtn, clearBtn, summaryEl]),
     submitErrorContainer,
-    formRow([uploadBtn, rollingBtn, ocrBtn, importBtn, mintLabelBtn]),
+    formRow([uploadBtn, rollingBtn, importBtn, mintLabelBtn]),
     formRow([repeatLabel]),
     preflightContainer,
     tableContainer,

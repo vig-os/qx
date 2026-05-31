@@ -28,16 +28,19 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear());
 });
 
-test.describe("OCR text scan (#171 P2)", () => {
-  test("Bind tab has a Scan text button that opens the OCR overlay", async ({ page }) => {
+test.describe("OCR text scan — recognition in Lookup (#176 reorg)", () => {
+  // The recognition-by-label scan lives in the Lookup tab (find a part),
+  // not Bind. Bind keeps "Mint from label" (create a part).
+  const findByLabel = (page: import("@playwright/test").Page) =>
+    page.locator("button[title='Find a part by photographing its label']");
+
+  test("Lookup has a find-by-label button that opens the OCR overlay", async ({ page }) => {
     await page.goto("/");
-    await page.locator("nav.tabs").getByRole("button", { name: "Bind" }).click();
+    // Lookup is the default tab.
+    const btn = findByLabel(page);
+    await expect(btn).toBeVisible();
+    await btn.click();
 
-    const ocrBtn = page.getByRole("button", { name: /Scan text/i });
-    await expect(ocrBtn).toBeVisible();
-    await ocrBtn.click();
-
-    // Overlay with the drop zone appears (tesseract is lazy — no OCR yet).
     const overlay = page.locator(".scan-overlay--ocr");
     await expect(overlay).toBeVisible({ timeout: 5_000 });
     await expect(overlay.locator(".image-scan__drop-label")).toContainText("Photograph a label");
@@ -47,12 +50,19 @@ test.describe("OCR text scan (#171 P2)", () => {
 
   test("Cancel closes the OCR overlay", async ({ page }) => {
     await page.goto("/");
-    await page.locator("nav.tabs").getByRole("button", { name: "Bind" }).click();
-    await page.getByRole("button", { name: /Scan text/i }).click();
+    await findByLabel(page).click();
 
     const overlay = page.locator(".scan-overlay--ocr");
     await expect(overlay).toBeVisible({ timeout: 5_000 });
     await overlay.getByRole("button", { name: /Cancel/i }).click();
     await expect(overlay).toHaveCount(0);
+  });
+
+  test("the Bind tab no longer has a Scan text button", async ({ page }) => {
+    await page.goto("/");
+    await page.locator("nav.tabs").getByRole("button", { name: "Bind" }).click();
+    await expect(page.getByRole("button", { name: /Scan text/i })).toHaveCount(0);
+    // but Mint from label stays in Bind
+    await expect(page.getByRole("button", { name: /Mint from label/i })).toBeVisible();
   });
 });
