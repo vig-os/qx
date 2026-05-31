@@ -18,6 +18,7 @@ import { PLUGINS } from "./plugins";
 import { buildPartPath, parseAppPath, type AppPath } from "./routing/route";
 import { el, button } from "./ui/dom";
 import { icon } from "./ui/icons";
+import { openModal } from "./ui/components/modal";
 import { loadWasm } from "./wasm/loader";
 import {
   loadSession,
@@ -297,34 +298,32 @@ function showRecoveryDialog(
   startedAt: string,
 ): Promise<boolean> {
   return new Promise((resolve) => {
-    const overlay = el("div", { class: "recovery-overlay" });
-    const dialog = el("div", { class: "recovery-dialog" });
-
-    dialog.append(
-      el("h2", {}, "Session recovered"),
-      el(
-        "p",
-        {},
-        `Recovered ${stats.total} item${stats.total > 1 ? "s" : ""} from a previous session (started ${startedAt}).`,
-      ),
-      el("p", { class: "muted" }, `Contents: ${stats.label}`),
-    );
-
-    const resumeBtn = button({ class: "primary" }, "Resume session");
-    const discardBtn = button({ class: "destructive" }, "Discard");
-
-    resumeBtn.addEventListener("click", () => {
-      overlay.remove();
-      resolve(true);
+    // Forced choice — not dismissable (ESC/backdrop would ambiguously
+    // discard or resume recovered work). The body's buttons close it.
+    openModal({
+      overlayClass: "recovery-overlay",
+      cardClass: "recovery-dialog",
+      ariaLabel: "Session recovered",
+      dismissable: false,
+      body: (close) => {
+        const dialog = el("div", {});
+        dialog.append(
+          el("h2", {}, "Session recovered"),
+          el(
+            "p",
+            {},
+            `Recovered ${stats.total} item${stats.total > 1 ? "s" : ""} from a previous session (started ${startedAt}).`,
+          ),
+          el("p", { class: "muted" }, `Contents: ${stats.label}`),
+        );
+        const resumeBtn = button({ class: "primary" }, "Resume session");
+        const discardBtn = button({ class: "destructive" }, "Discard");
+        resumeBtn.addEventListener("click", () => { close(); resolve(true); });
+        discardBtn.addEventListener("click", () => { close(); resolve(false); });
+        dialog.append(el("div", { class: "recovery-dialog__actions" }, resumeBtn, discardBtn));
+        return dialog;
+      },
     });
-    discardBtn.addEventListener("click", () => {
-      overlay.remove();
-      resolve(false);
-    });
-
-    dialog.append(el("div", { class: "recovery-dialog__actions" }, resumeBtn, discardBtn));
-    overlay.append(dialog);
-    document.body.append(overlay);
   });
 }
 
