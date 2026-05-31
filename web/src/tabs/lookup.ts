@@ -36,6 +36,7 @@ import {
 } from "../core/events";
 import { el, button, input, formRow } from "../ui/dom";
 import { icon } from "../ui/icons";
+import { openModal } from "../ui/components/modal";
 import { openScanner, type ScanStatus } from "../ui/scanner";
 import { loadPlan, savePlan } from "./print";
 
@@ -872,41 +873,25 @@ const EDIT_FIELD_KEYS: string[] = [
 
 /** Show the detail view in a modal overlay instead of inline below the table. */
 function showDetailModal(row: RegistryRow, ctx: AppContext): void {
-  // Remove any existing modal
+  // Replace any existing modal.
   document.querySelector(".detail-modal-overlay")?.remove();
-
-  const overlay = el("div", { class: "detail-modal-overlay" });
-  const modal = el("div", { class: "detail-modal" });
-
-  const closeBtn = button({ class: "icon-only detail-modal__close", title: "Close" }, icon("x"));
-  const close = () => overlay.remove();
-  closeBtn.addEventListener("click", close);
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) close();
+  openModal({
+    overlayClass: "detail-modal-overlay",
+    cardClass: "detail-modal",
+    ariaLabel: `Part ${row.id}`,
+    body: renderDetailView(row, ctx),
   });
-
-  modal.append(closeBtn, renderDetailView(row, ctx));
-  overlay.append(modal);
-  document.body.append(overlay);
 }
 
 /** Modal to combine selected parts into a new minted assembly. */
 function showAssemblyModal(componentRows: RegistryRow[], ctx: AppContext): void {
   document.querySelector(".detail-modal-overlay")?.remove();
-
-  const overlay = el("div", { class: "detail-modal-overlay" });
-  const modal = el("div", { class: "detail-modal" });
-
-  const closeBtn = button({ class: "icon-only detail-modal__close", title: "Close" }, icon("x"));
-  const close = () => overlay.remove();
-  closeBtn.addEventListener("click", close);
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) close();
+  openModal({
+    overlayClass: "detail-modal-overlay",
+    cardClass: "detail-modal",
+    ariaLabel: "Combine into assembly",
+    body: (close) => renderAssemblyForm(componentRows, ctx, close),
   });
-
-  modal.append(closeBtn, renderAssemblyForm(componentRows, ctx, close));
-  overlay.append(modal);
-  document.body.append(overlay);
 }
 
 function renderAssemblyForm(

@@ -549,6 +549,21 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 .chip--status.chip--bound { background: rgba(31, 111, 235, 0.12); color: #1f6feb; }
 .chip--status.chip--void { background: rgba(198, 40, 40, 0.12); color: #c62828; }
 /* Detail modal overlay */
+/* Shared modal component (#93 review) — base scaffold; feature classes
+   (.detail-modal, .auth-modal, .recovery-dialog, …) layer specifics on
+   top. Owns the close-button position so every modal is consistent. */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+.modal-card { position: relative; }
+.modal-card__close { position: absolute; top: 8px; right: 8px; }
+
 .detail-modal-overlay {
   position: fixed;
   inset: 0;
