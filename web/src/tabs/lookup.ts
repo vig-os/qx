@@ -28,6 +28,7 @@ import { appendEdit, appendVoid, appendBind } from "../registry/queue";
 import { addMint, getSessionSync } from "../registry/session";
 import { planAssembly, validateAssembly } from "../registry/assembly-create";
 import type { AppContext, Tab } from "../core/types";
+import { makeFilterDropdown, tableScroll } from "../ui/components/data-table";
 import { normalizeCanonicalId } from "../routing/route";
 import {
   events,
@@ -149,77 +150,8 @@ function uniqueValues(rows: RegistryRow[], key: string): string[] {
   return [...set].sort();
 }
 
-/**
- * A multi-select filter dropdown (checkbox list behind a labelled
- * button) — the shared control for Status and the column filters.
- * Mutates `selected` directly; calls `onChange` after any toggle.
- * Returns the wrapper plus a `refresh()` that re-syncs the button label
- * and checkboxes to `selected` (e.g. after a dashboard click or Clear).
- */
-function makeFilterDropdown(
-  label: string,
-  getOptions: () => string[],
-  selected: Set<string>,
-  onChange: () => void,
-): { wrap: HTMLElement; refresh: () => void } {
-  const wrap = el("div", { class: "lookup__filter-dd" });
-  const toggle = button({ class: "outline small lookup__filter-dd-btn", type: "button" });
-  const menu = el("div", { class: "lookup__filter-dd-menu" });
-  menu.style.display = "none";
-
-  const syncLabel = () => {
-    toggle.textContent = "";
-    toggle.append(
-      `${label}`,
-      selected.size > 0
-        ? el("span", { class: "lookup__filter-dd-count" }, ` ${selected.size}`)
-        : "",
-      el("span", { class: "lookup__filter-dd-caret" }, " ▾"),
-    );
-    toggle.classList.toggle("lookup__filter-dd-btn--active", selected.size > 0);
-  };
-
-  const buildMenu = () => {
-    menu.innerHTML = "";
-    const opts = getOptions();
-    if (opts.length === 0) {
-      menu.append(el("p", { class: "muted small", style: "margin:4px 8px;" }, "No values"));
-      return;
-    }
-    for (const opt of opts) {
-      const row = el("label", { class: "lookup__filter-dd-opt", "data-value": opt });
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.checked = selected.has(opt);
-      cb.addEventListener("change", () => {
-        if (cb.checked) selected.add(opt);
-        else selected.delete(opt);
-        syncLabel();
-        onChange();
-      });
-      row.append(cb, ` ${opt}`);
-      menu.append(row);
-    }
-  };
-
-  toggle.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const showing = menu.style.display !== "none";
-    if (!showing) buildMenu();
-    menu.style.display = showing ? "none" : "block";
-  });
-  document.addEventListener("click", () => { menu.style.display = "none"; });
-  menu.addEventListener("click", (e) => e.stopPropagation());
-
-  const refresh = () => {
-    syncLabel();
-    if (menu.style.display !== "none") buildMenu();
-  };
-
-  syncLabel();
-  wrap.append(toggle, menu);
-  return { wrap, refresh };
-}
+// makeFilterDropdown now lives in ui/components/data-table.ts (shared with
+// the Bind queue filter bar).
 
 export const lookupTab: Tab = {
   id: "lookup",
@@ -231,7 +163,7 @@ export const lookupTab: Tab = {
 };
 
 function buildUI(ctx: AppContext): HTMLElement {
-  const root = el("div", { class: "tab tab--lookup" });
+  const root = el("div", { class: "tabview tab--lookup" });
   const header = el("h2", {}, "Lookup");
   root.append(header);
 
@@ -338,7 +270,7 @@ function buildUI(ctx: AppContext): HTMLElement {
 
   // #93: unified multi-select filter bar — Status + one dropdown per
   // column key. Status is just another filter (replaces the chip row).
-  const filterBar = el("div", { class: "lookup__filter-bar" });
+  const filterBar = el("div", { class: "filter-bar" });
 
   const statusDd = makeFilterDropdown(
     "Status",
@@ -836,8 +768,7 @@ function buildUI(ctx: AppContext): HTMLElement {
       return;
     }
 
-    // Table view
-    const tableWrap = el("div", { class: "lookup__table-wrap" });
+    // Table view — wrapped in the shared horizontal-scroll container.
     const table = el("table", { class: "data lookup__table" });
     const thead = buildTableHead();
     const selectAllCb = (thead as unknown as Record<string, unknown>)
@@ -845,8 +776,7 @@ function buildUI(ctx: AppContext): HTMLElement {
     table.append(thead);
     const tbody = el("tbody");
     table.append(tbody);
-    tableWrap.append(table);
-    contentContainer.append(tableWrap);
+    contentContainer.append(tableScroll(table));
 
     // Table row count indicator
     const countLabel = el(

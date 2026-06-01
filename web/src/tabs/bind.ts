@@ -29,6 +29,7 @@ import type { AppContext, Tab } from "../core/types";
 import { el, button, input, formRow } from "../ui/dom";
 import { icon } from "../ui/icons";
 import { renderErrorCard, renderValidationErrors } from "../ui/error-card";
+import { tableScroll, makeFilterDropdown } from "../ui/components/data-table";
 import {
   openScannerMulti,
   openImageScan,
@@ -86,7 +87,7 @@ export const bindTab: Tab = {
 };
 
 function buildUI(ctx: AppContext): HTMLElement {
-  const root = el("div", { class: "tab tab--bind" });
+  const root = el("div", { class: "tabview tab--bind" });
 
   // Datalist for ID autocomplete — shows unbound IDs from the registry
   const datalist = document.createElement("datalist");
@@ -124,6 +125,70 @@ function buildUI(ctx: AppContext): HTMLElement {
   const submitErrorContainer = el("div", { class: "submit-error" });
 
   const tableContainer = el("div", {});
+
+  // Queue filter bar (PR2) — bulk imports can stack dozens of rows, so the
+  // Bind queue gets the same affordances as Lookup: a free-text filter plus
+  // a Kind multi-select, both reusing the shared makeFilterDropdown. Filter
+  // state lives here so it survives re-renders; applyQueueFilter hides
+  // non-matching rows (never the bottom "+ new bind" entry row).
+  let queueSearch = "";
+  const kindFilter = new Set<string>();
+
+  // A bind "row" can be a fragment (main tr + a Properties sub-row), so we
+  // read kind from the .chip--kind badge on the main row; sub-rows have no
+  // badge and inherit their parent row's visibility.
+  const rowKind = (tr: HTMLElement): string | null => {
+    const chip = tr.querySelector(".chip--kind");
+    if (!chip) return null;
+    for (const k of ["mint", "bind", "edit", "void"]) {
+      if (chip.classList.contains(`chip--${k}`)) return k;
+    }
+    return "";
+  };
+
+  const applyQueueFilter = () => {
+    const q = queueSearch.trim().toLowerCase();
+    const rows = tableContainer.querySelectorAll<HTMLTableRowElement>("tbody tr");
+    let shown = 0;
+    let parentVisible = true;
+    rows.forEach((tr) => {
+      if (tr.classList.contains("entry-row")) return; // always visible
+      const kind = rowKind(tr);
+      if (kind === null) {
+        // Sub-row (e.g. Properties) — follow the row it belongs to.
+        tr.style.display = parentVisible ? "" : "none";
+        return;
+      }
+      const kindOk = kindFilter.size === 0 || kindFilter.has(kind);
+      const textOk = q === "" || (tr.textContent ?? "").toLowerCase().includes(q);
+      parentVisible = kindOk && textOk;
+      tr.style.display = parentVisible ? "" : "none";
+      if (parentVisible) shown += 1;
+    });
+    queueFilterBar.style.display = rows.length > 1 ? "" : "none"; // hide when only the entry row
+    queueFilterCount.textContent =
+      (queueSearch || kindFilter.size > 0) ? `${shown} shown` : "";
+  };
+
+  const queueSearchInput = input({
+    type: "search",
+    placeholder: "Filter queue…",
+    class: "queue-filter-search",
+    "aria-label": "Filter session queue",
+  });
+  queueSearchInput.addEventListener("input", () => {
+    queueSearch = queueSearchInput.value;
+    applyQueueFilter();
+  });
+  const kindDd = makeFilterDropdown(
+    "Kind",
+    () => ["mint", "bind", "edit", "void"],
+    kindFilter,
+    applyQueueFilter,
+  );
+  const queueFilterCount = el("span", { class: "muted small" });
+  const queueFilterBar = el("div", { class: "filter-bar" }, queueSearchInput, kindDd.wrap, queueFilterCount);
+  queueFilterBar.style.display = "none";
 
   const refreshPreflight = (queue: ReadonlyArray<QueuedBind | QueuedEdit>) => {
     preflightContainer.innerHTML = "";
@@ -218,6 +283,7 @@ function buildUI(ctx: AppContext): HTMLElement {
         const sessionIdx = sess.items.indexOf(mint);
         tbody.insertBefore(renderMintRow(mint as SessionMint, sessionIdx, renderTable), tbody.firstChild);
       }
+      applyQueueFilter(); // mints arrive async — re-apply once they're in
     });
 
     for (let i = 0; i < queue.length; i++) {
@@ -233,7 +299,8 @@ function buildUI(ctx: AppContext): HTMLElement {
     tbody.append(renderEntryRow(ctx, renderTable));
 
     table.append(tbody);
-    tableContainer.append(table);
+    tableContainer.append(tableScroll(table, { maxHeight: false }));
+    applyQueueFilter();
 
     void loadSession().then((sess) => {
       if (sess.items.length === 0) {
@@ -474,6 +541,7 @@ function buildUI(ctx: AppContext): HTMLElement {
     formRow([uploadBtn, rollingBtn, importBtn, mintLabelBtn]),
     formRow([repeatLabel]),
     preflightContainer,
+    queueFilterBar,
     tableContainer,
   );
   return root;

@@ -198,10 +198,16 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
   border: 0.4mm dashed #888; pointer-events: none;
 }
 
-/* Bind entry row — tighter inputs, vertically centred "new" label */
+/* Bind queue is wide (11 cols) — give editable cells a usable min width so
+   each column reads clearly; the .data-table-scroll wrapper then scrolls
+   horizontally instead of crushing them (the "cramming" complaint). */
+.bind-queue { min-width: 100%; }
+.bind-queue td input[type=text] { min-width: 130px; }
+
+/* Bind entry row — vertically centred "new" label */
 .entry-row td { vertical-align: middle; }
 .entry-row .muted.small { line-height: 30px; }
-.entry-row input[type=text] { min-width: 0; font-size: 13px; padding: 4px 6px; }
+.entry-row input[type=text] { font-size: 13px; padding: 4px 6px; }
 
 .queue { padding-left: 20px; font-family: ui-monospace, monospace; font-size: 13px; }
 .queue li { margin: 4px 0; }
@@ -498,12 +504,21 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 .lookup__status-filter .chip--filter.chip--status-void.active {
   background: #c62828; border-color: #c62828;
 }
-.lookup__table-wrap {
+/* Shared horizontal-scroll container for wide data tables (Lookup + Bind).
+   Wide tables scroll instead of crushing columns into unreadability. */
+.data-table-scroll {
   max-height: 60vh;
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
+.data-table-scroll--auto { max-height: none; }
+/* The container owns the border now, so the inner table drops its own. */
+.data-table-scroll > table.data { border: none; border-radius: 0; }
+/* Cells never wrap inside a scroll container — the container scrolls
+   horizontally instead, so headers like "Part #" stay on one line. */
+.data-table-scroll th,
+.data-table-scroll td { white-space: nowrap; }
 .lookup__table { width: 100%; border-collapse: collapse; }
 .lookup__table thead { position: sticky; top: 0; background: var(--bg-elev); z-index: 1; }
 .lookup__table th { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
@@ -724,7 +739,7 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 }
 
 /* Issue #93: structured filter bar */
-.lookup__filter-bar {
+.filter-bar {
   display: flex;
   gap: 8px;
   margin: 8px 0;
@@ -733,9 +748,9 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 }
 /* #93: multi-select filter dropdowns — uniform height so the row
    (Status + column filters + Clear filters) all baseline-align. */
-.lookup__filter-bar > * { flex: 0 0 auto; }
-.lookup__filter-dd { position: relative; display: inline-block; }
-.lookup__filter-dd-btn,
+.filter-bar > * { flex: 0 0 auto; }
+.filter-dd { position: relative; display: inline-block; }
+.filter-dd-btn,
 .lookup__clear-filters {
   height: 32px;
   padding: 4px 10px;
@@ -744,11 +759,11 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
   align-items: center;
   margin: 0;
 }
-.lookup__filter-dd-btn--active {
+.filter-dd-btn--active {
   border-color: var(--accent);
   color: var(--accent);
 }
-.lookup__filter-dd-count {
+.filter-dd-count {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -761,8 +776,8 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
   color: var(--accent-fg, #fff);
   font-size: 11px;
 }
-.lookup__filter-dd-caret { opacity: 0.6; }
-.lookup__filter-dd-menu {
+.filter-dd-caret { opacity: 0.6; }
+.filter-dd-menu {
   position: absolute;
   left: 0;
   top: 100%;
@@ -777,7 +792,7 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
   padding: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
-.lookup__filter-dd-opt {
+.filter-dd-opt {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -787,7 +802,7 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
   border-radius: var(--radius);
   white-space: nowrap;
 }
-.lookup__filter-dd-opt:hover { background: var(--row-hover); }
+.filter-dd-opt:hover { background: var(--row-hover); }
 
 /* Issue #93: sortable column headers */
 .lookup__th-sortable {

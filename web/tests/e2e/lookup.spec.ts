@@ -66,10 +66,10 @@ test.describe("Lookup data-grid (fixture)", () => {
     await page.goto("/");
     const rows = page.locator(".lookup__table tbody tr");
     const statusOpt = (s: string) =>
-      page.locator(`.lookup__filter-dd-opt[data-value="${s}"] input[type=checkbox]`);
+      page.locator(`.filter-dd-opt[data-value="${s}"] input[type=checkbox]`);
 
     // Open the Status dropdown (stays open as boxes are toggled).
-    await page.locator(".lookup__filter-dd-btn", { hasText: "Status" }).click();
+    await page.locator(".filter-dd-btn", { hasText: "Status" }).click();
 
     // bound only — fixture has 7 bound rows.
     await statusOpt("bound").check();

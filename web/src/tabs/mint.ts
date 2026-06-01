@@ -121,7 +121,7 @@ export const mintTab: Tab = {
 };
 
 function buildUI(ctx: AppContext): HTMLElement {
-  const root = el("div", { class: "tab tab--mint" });
+  const root = el("div", { class: "tabview tab--mint" });
   root.append(el("h2", {}, "Mint"));
   root.append(
     el(

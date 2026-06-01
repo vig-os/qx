@@ -86,4 +86,28 @@ test.describe("Bind tab", () => {
     const card = page.locator(".preflight-card");
     await expect(card).toBeVisible({ timeout: 5_000 });
   });
+
+  test("PR2: bind queue is in a horizontal-scroll container with a filter bar", async ({ page }) => {
+    await page.goto("/");
+    await page.locator("nav.tabs").getByRole("button", { name: "Bind" }).click();
+    await page.locator(".entry-row").getByRole("button", { name: /Add row/i }).click();
+    await expect(page.locator(".queue-row--bind")).toHaveCount(1, { timeout: 5_000 });
+
+    // The wide queue table is wrapped in the shared scroll container so it
+    // scrolls instead of cramming all columns (fixes the readability issue).
+    const scroll = page.locator(".tab--bind .data-table-scroll");
+    await expect(scroll).toBeVisible();
+    await expect(scroll.locator("table.bind-queue")).toBeVisible();
+    // Scroll content is wider than the visible box (the columns are legible,
+    // not crushed) — proving horizontal overflow, not a squeezed table.
+    const overflows = await scroll.evaluate(
+      (e) => e.scrollWidth > e.clientWidth + 4,
+    );
+    expect(overflows).toBe(true);
+
+    // The shared filter bar (search + Kind multi-select) is present.
+    const bar = page.locator(".tab--bind .filter-bar");
+    await expect(bar.locator(".queue-filter-search")).toBeVisible();
+    await expect(bar.locator(".filter-dd-btn", { hasText: "Kind" })).toBeVisible();
+  });
 });

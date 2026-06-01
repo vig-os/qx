@@ -156,7 +156,7 @@ export const printTab: Tab = {
 };
 
 function buildUI(ctx: AppContext): HTMLElement {
-  const root = el("div", { class: "tab tab--print" });
+  const root = el("div", { class: "tabview tab--print" });
   root.append(el("h2", {}, "Print"));
   root.append(
     el(
