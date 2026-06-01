@@ -222,7 +222,10 @@ fn csv_to_state(csv: &str) -> RegistryState {
         let cells: Vec<&str> = line.split(',').collect();
         let mut row = BTreeMap::new();
         for (i, h) in header.iter().enumerate() {
-            row.insert((*h).to_owned(), cells.get(i).copied().unwrap_or("").to_owned());
+            row.insert(
+                (*h).to_owned(),
+                cells.get(i).copied().unwrap_or("").to_owned(),
+            );
         }
         let id = row.get("id").cloned().unwrap_or_default();
         if !id.is_empty() {
