@@ -203,7 +203,7 @@ fn state_to_csv(base: &RegistryState) -> String {
     let mut out = String::new();
     out.push_str(&HEADER.join(","));
     out.push('\n');
-    for (_id, row) in base {
+    for row in base.values() {
         let line: Vec<String> = HEADER
             .iter()
             .map(|h| row.get(*h).cloned().unwrap_or_default())
