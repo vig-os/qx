@@ -167,7 +167,7 @@ fn empty_proposal() -> Proposal {
 #[test]
 fn github_pr_sink_passes_generic_conformance() {
     let sink = GithubPrProposalSink::new(StaticHttp::default(), config());
-    proposal_sink_conformance(sink);
+    proposal_sink_conformance(&sink, empty_proposal());
 }
 
 #[test]

@@ -11,6 +11,7 @@ members = [
     "crates/identity_github_oauth",
     "crates/transport",
     "crates/transport_github_pr",
+    "crates/transport_table",
     "crates/signing",
     "crates/signing_git_commit",
     "crates/observability",

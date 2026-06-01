@@ -1825,6 +1825,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "part-registry-transport-table"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "part-registry-domain",
+ "part-registry-port-tests",
+ "part-registry-transport",
+ "part-registry-transport-github-pr",
+ "uuid",
+]
+
+[[package]]
 name = "part-registry-validators"
 version = "0.1.0"
 dependencies = [

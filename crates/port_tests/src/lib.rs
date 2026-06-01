@@ -13,10 +13,18 @@
 
 #![forbid(unsafe_code)]
 
+use std::collections::BTreeMap;
+
+use part_registry_domain::{Proposal, ProposalStatus};
 use part_registry_identity::IdentityProvider;
 use part_registry_signing::SigningProvider;
 use part_registry_storage::Repository;
 use part_registry_transport::ProposalSink;
+
+/// Canonical registry state for cross-adapter parity: `id -> {column ->
+/// value}`. Substrate-agnostic — a CSV adapter and a relational adapter
+/// both project to this.
+pub type RegistryState = BTreeMap<String, BTreeMap<String, String>>;
 
 // -------------------------------------------------------------------
 // Tier 1 — trait conformance
@@ -44,9 +52,109 @@ pub fn identity_provider_conformance<I: IdentityProvider>(_provider: I) {
 }
 
 /// ADR-027 §Tier 1 — generic `ProposalSink` conformance suite.
-pub fn proposal_sink_conformance<T: ProposalSink>(_sink: T) {
-    // TODO(foundation): submit returns a parseable ProposalRef;
-    // status round-trips a known ref.
+///
+/// Spike #189: was an empty stub, so every substrate-independence claim
+/// in ADR-019/027 was unfalsified. The contract clauses asserted here:
+///
+/// - `submit` of a well-formed `Proposal` succeeds and returns a
+///   `ProposalRef` whose `url` is non-empty (ADR-022 audit citation form)
+///   and whose `adapter` names the backend (ADR-019 multi-adapter routing).
+/// - `status` of a freshly-submitted ref succeeds (does not error) and
+///   resolves to a known `ProposalStatus` variant.
+///
+/// The trait's *structural* no-self-merge property (no `merge`/`close`)
+/// is enforced by the trait surface itself (ADR-019) — there is no method
+/// to assert against, which is the point.
+pub fn proposal_sink_conformance<T: ProposalSink>(sink: &T, sample: Proposal) {
+    let pref = sink
+        .submit(sample)
+        .expect("ADR-019: submit must succeed for a well-formed proposal");
+    assert!(
+        !pref.url.is_empty(),
+        "ADR-022: ProposalRef.url must be non-empty (audit citation form)"
+    );
+    assert!(
+        !pref.adapter.is_empty(),
+        "ADR-019: ProposalRef.adapter must identify the backend"
+    );
+    let status = sink
+        .status(&pref)
+        .expect("ADR-019: status(submitted ref) must succeed");
+    // Any variant is contractually acceptable; the clause is that a
+    // freshly-submitted ref resolves to *some* known status, exhaustively.
+    match status {
+        ProposalStatus::Open
+        | ProposalStatus::Merged
+        | ProposalStatus::Closed
+        | ProposalStatus::RequiresReview
+        | ProposalStatus::BlockedByPolicy { .. }
+        | ProposalStatus::Errored { .. } => {}
+    }
+}
+
+/// ADR-027 §Tier 3 — cross-adapter `ProposalSink` **parity**, re-scoped
+/// per the spike #189 distributed-data review.
+///
+/// The original ADR-027 wording — "same `Proposal` → same acceptance
+/// *trace*" — is unachievable across substrates whose merge models differ
+/// (git line-merge vs. a relational cell-merge): conflict surfaces, merge
+/// granularity, and rejection timing are intrinsically substrate-visible.
+/// Asserting full-trace parity would fail the moment a second substrate is
+/// real and be misread as an adapter bug.
+///
+/// Parity is therefore scoped to **post-merge state equivalence on
+/// cleanly-applying inputs**: given the same base state and the same
+/// single-proposal diff, both adapters reach the same *logical row set*
+/// (empty cells normalized away), and they **agree on accept-vs-reject**.
+/// Header changes, conflict representation, and error *text* are declared
+/// substrate-visible and out of the parity contract.
+///
+/// Each proposal is applied independently from `base` (matching a gate's
+/// stateless-per-submit-against-ground-truth semantics); `apply_*` close
+/// over a real `ProposalSink` and return its resulting [`RegistryState`].
+pub fn proposal_sink_parity<FA, FB>(
+    base: &RegistryState,
+    corpus: &[Proposal],
+    mut apply_a: FA,
+    mut apply_b: FB,
+) where
+    FA: FnMut(&RegistryState, &Proposal) -> Result<RegistryState, String>,
+    FB: FnMut(&RegistryState, &Proposal) -> Result<RegistryState, String>,
+{
+    for (i, p) in corpus.iter().enumerate() {
+        let a = apply_a(base, p);
+        let b = apply_b(base, p);
+        match (&a, &b) {
+            (Ok(sa), Ok(sb)) => assert_eq!(
+                normalize_state(sa),
+                normalize_state(sb),
+                "ADR-027 parity: adapters disagree on post-merge state for proposal {i}"
+            ),
+            // Agreement on rejection is a parity property; the error
+            // *text* is substrate-visible and not compared.
+            (Err(_), Err(_)) => {}
+            _ => panic!(
+                "ADR-027 parity: adapters disagree on accept/reject for \
+                 proposal {i}: a={a:?} b={b:?}"
+            ),
+        }
+    }
+}
+
+/// Drop empty-valued cells so a rectangular CSV substrate (every header
+/// column present, missing ones empty) compares equal to a sparse
+/// relational substrate on the *logical* row set.
+fn normalize_state(s: &RegistryState) -> RegistryState {
+    s.iter()
+        .map(|(id, fields)| {
+            let f = fields
+                .iter()
+                .filter(|(_, v)| !v.is_empty())
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            (id.clone(), f)
+        })
+        .collect()
 }
 
 /// ADR-027 §Tier 1 — pure-function `validators` conformance hook.
