@@ -4,6 +4,7 @@ import { execSync } from "node:child_process";
 
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
+import tailwindcss from "@tailwindcss/vite";
 
 // Base path for GH Pages: site is served from <user>.github.io/<repo>/
 // Override with VITE_BASE env var for local dev or custom-domain hosting.
@@ -98,6 +99,7 @@ export default defineConfig({
     sourcemap: true,
   },
   plugins: [
+    tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
       // injectManifest: custom SW with token enclave for GitHub API

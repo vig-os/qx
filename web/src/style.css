@@ -1,47 +1,20 @@
+/* App color vars are now aliases onto DaisyUI theme tokens (defined in
+ * tailwind.css). DaisyUI owns the palette + light/dark switching via the
+ * `data-theme` attribute, so the former @media/[data-theme] blocks are gone —
+ * one source of truth. Existing var-based rules below keep working unchanged. */
 :root {
-  --bg: #fafafa;
-  --bg-elev: #ffffff;
-  --fg: #222;
-  --muted: #888;
-  --accent: #0366d6;
-  --accent-fg: #ffffff;
-  --error: #c0392b;
-  --warn: #c08020;
-  --border: #ddd;
-  --row-hover: #f0f0f0;
+  --bg: var(--color-base-200);
+  --bg-elev: var(--color-base-100);
+  --fg: var(--color-base-content);
+  --muted: color-mix(in oklch, var(--color-base-content) 55%, var(--color-base-100));
+  --accent: var(--color-primary);
+  --accent-fg: var(--color-primary-content);
+  --error: var(--color-error);
+  --warn: var(--color-warning);
+  --border: var(--color-base-300);
+  --row-hover: color-mix(in oklch, var(--color-base-content) 7%, var(--color-base-100));
   --radius: 4px;
   font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #1a1a1a;
-    --bg-elev: #242424;
-    --fg: #eee;
-    --muted: #888;
-    --accent: #58a6ff;
-    --accent-fg: #0d1117;
-    --error: #f85149;
-    --warn: #d29922;
-    --border: #333;
-    --row-hover: #2a2a2a;
-    color-scheme: dark;
-  }
-}
-
-:root[data-theme="dark"] {
-  --bg: #1a1a1a;
-  --bg-elev: #242424;
-  --fg: #eee;
-  --muted: #888;
-  --accent: #58a6ff;
-  --accent-fg: #0d1117;
-  --error: #f85149;
-  --warn: #d29922;
-  --border: #333;
-  --row-hover: #2a2a2a;
-  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -80,7 +53,7 @@ input::placeholder { font-size: 14px; }
 .shell__status.error { color: var(--error); }
 .shell__version { font-family: monospace; font-size: 11px; cursor: help; user-select: all; }
 
-.tabs { display: flex; gap: 0; border-top: none; border-bottom: 2px solid var(--pico-muted-border-color, var(--border)); margin-bottom: 16px; padding: 0; list-style: none; }
+.tabs { display: flex; gap: 0; border-top: none; border-bottom: 2px solid var(--border); margin-bottom: 16px; padding: 0; list-style: none; }
 .tabs ul { display: flex; gap: 0; padding: 0; margin: 0; list-style: none; }
 .tabs li { margin-bottom: -2px; }
 .tabs button,
@@ -93,7 +66,7 @@ input::placeholder { font-size: 14px; }
   padding: 10px 20px;
   cursor: pointer;
   font-size: 14px;
-  color: var(--pico-muted-color, var(--muted));
+  color: var(--muted);
   border-bottom: 2px solid transparent;
   transition: color 0.15s, border-color 0.15s;
   position: relative;
@@ -102,11 +75,11 @@ input::placeholder { font-size: 14px; }
   box-sizing: border-box;
 }
 .tabs button:hover:not(.active),
-.tab-btn:hover:not(.active) { color: var(--pico-color, var(--fg)); }
+.tab-btn:hover:not(.active) { color: var(--fg); }
 .tabs button.active,
 .tab-btn.active {
-  color: var(--pico-primary, var(--accent));
-  border-bottom-color: var(--pico-primary, var(--accent));
+  color: var(--accent);
+  border-bottom-color: var(--accent);
   font-weight: 600;
 }
 
@@ -967,8 +940,8 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 .session-indicator {
   padding: 8px 12px;
   border-radius: 4px;
-  background: var(--pico-card-background-color, #f8f9fa);
-  border-left: 3px solid var(--pico-primary, #1095c1);
+  background: var(--bg-elev);
+  border-left: 3px solid var(--accent);
   margin-bottom: 12px;
   font-size: 14px;
 }
@@ -990,8 +963,8 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
   justify-content: center;
 }
 .recovery-dialog {
-  background: var(--pico-card-background-color, #fff);
-  color: var(--pico-color, #333);
+  background: var(--bg-elev);
+  color: var(--fg);
   border-radius: 8px;
   padding: 24px;
   max-width: 480px;
@@ -1014,7 +987,7 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
   opacity: 0.85;
 }
 .chip--mint {
-  background: var(--pico-primary, #1095c1);
+  background: var(--accent);
   color: #fff;
 }
 

@@ -1,6 +1,6 @@
 // Bootstrap — wire registry, tabs, plugins. Everything else is plug-in.
 
-import "@picocss/pico/css/pico.min.css";
+import "./tailwind.css";
 import "./style.css";
 import { registerSW } from "virtual:pwa-register";
 

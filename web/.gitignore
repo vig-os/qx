@@ -7,3 +7,4 @@ tsconfig.tsbuildinfo
 # Playwright (per #35 Phase 3)
 test-results/
 playwright-report/
+shots/

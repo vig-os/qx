@@ -1,0 +1,73 @@
+/* Tailwind v4 + DaisyUI — the single styling system (replaces Pico).
+ * CSS-first config: no tailwind.config.js to drift.
+ *
+ * The two themes below reproduce the app's existing palette (formerly the
+ * --bg/--accent/... custom props in style.css) so adopting DaisyUI does not
+ * shift any colors. DaisyUI applies a theme via the `data-theme` attribute,
+ * which is exactly the app's existing light/dark toggle. base-100 = elevated
+ * surfaces (inputs/cards/dropdowns = white on light); base-200 = page bg;
+ * base-300 = borders/hover; primary = the old --accent. */
+@import "tailwindcss";
+@plugin "daisyui";
+
+@plugin "daisyui/theme" {
+  name: "light";
+  default: true;
+  color-scheme: light;
+  --color-base-100: #ffffff;
+  --color-base-200: #fafafa;
+  --color-base-300: #dddddd;
+  --color-base-content: #222222;
+  --color-primary: #0366d6;
+  --color-primary-content: #ffffff;
+  --color-secondary: #f4f4f4;
+  --color-secondary-content: #222222;
+  --color-accent: #0366d6;
+  --color-accent-content: #ffffff;
+  --color-neutral: #222222;
+  --color-neutral-content: #ffffff;
+  --color-info: #0366d6;
+  --color-success: #2da44e;
+  --color-success-content: #ffffff;
+  --color-warning: #c08020;
+  --color-warning-content: #ffffff;
+  --color-error: #c0392b;
+  --color-error-content: #ffffff;
+  --radius-selector: 4px;
+  --radius-field: 4px;
+  --radius-box: 4px;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+}
+
+@plugin "daisyui/theme" {
+  name: "dark";
+  prefersdark: true;
+  color-scheme: dark;
+  --color-base-100: #242424;
+  --color-base-200: #1a1a1a;
+  --color-base-300: #333333;
+  --color-base-content: #eeeeee;
+  --color-primary: #58a6ff;
+  --color-primary-content: #0d1117;
+  --color-secondary: #2a2a2a;
+  --color-secondary-content: #eeeeee;
+  --color-accent: #58a6ff;
+  --color-accent-content: #0d1117;
+  --color-neutral: #eeeeee;
+  --color-neutral-content: #1a1a1a;
+  --color-info: #58a6ff;
+  --color-success: #3fb950;
+  --color-success-content: #0d1117;
+  --color-warning: #d29922;
+  --color-warning-content: #0d1117;
+  --color-error: #f85149;
+  --color-error-content: #0d1117;
+  --radius-selector: 4px;
+  --radius-field: 4px;
+  --radius-box: 4px;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+}
