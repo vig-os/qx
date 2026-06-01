@@ -7,6 +7,7 @@ import { registerSW } from "virtual:pwa-register";
 import { REPO_SLUG } from "./config";
 import { getConfig } from "./config/deploy-config";
 import { createRegistry } from "./registry/registry";
+import { loadVocabularies } from "./registry/vocab-files";
 import type {
   AppContext,
   Plugin,
@@ -108,6 +109,9 @@ async function main(): Promise<void> {
   layout.statusBar.textContent = "Loading registry\u2026";
   try {
     await registry.load();
+    // Enrich vendor/location combobox suggestions from the data-repo
+    // vocabularies (non-blocking; degrades to contract seeds if absent).
+    void loadVocabularies();
     const versionTag = `${__APP_VERSION__} (${__GIT_HASH__})`;
     layout.statusBar.textContent = `${registry.all().length} parts loaded.`;
     layout.statusBar.append(

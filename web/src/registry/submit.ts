@@ -20,6 +20,8 @@ import type { QueuedBind, QueuedEdit, QueueItem } from "./queue";
 import type { Session } from "./session";
 import { sessionToSubmitPayload, applyMints, buildSessionCommitMessage } from "./session-submit";
 import { sendTokenToSW, clearTokenInSW } from "./sw-bridge";
+import { VOCAB_FIELDS, getStagedVocab, clearStagedVocab } from "./vocab";
+import { VOCAB_PATH, parseVocab, mergeVocab, serializeVocab } from "./vocab-files";
 
 export interface SubmitResult {
   prUrl: string;
@@ -428,6 +430,54 @@ export async function submitBatch(
  * Submit an entire session as a single PR. Handles mints (new rows),
  * binds, edits, and voids in one commit.
  */
+/** Best-effort write-back of session-created vocabulary values to the data
+ *  repo's vocabularies/*.json, committed onto the proposal branch so a new
+ *  vendor/location shows up in the review PR. Never throws — a vocab hiccup
+ *  must not fail a submit whose registry.csv already committed. */
+async function writeBackVocab(
+  apiBase: string,
+  token: string,
+  branchName: string,
+): Promise<void> {
+  for (const field of VOCAB_FIELDS) {
+    const staged = getStagedVocab(field);
+    if (staged.length === 0) continue;
+    try {
+      const path = VOCAB_PATH[field];
+      // Read the current file from main (the branch was just forked from it).
+      const getRes = await ghFetch(`${apiBase}/contents/${path}?ref=main`, token);
+      let existing: ReturnType<typeof parseVocab> = [];
+      let sha: string | undefined;
+      if (getRes.ok) {
+        const data = (await getRes.json()) as { sha: string; content: string };
+        sha = data.sha;
+        const text = new TextDecoder().decode(
+          Uint8Array.from(atob(data.content.replace(/\n/g, "")), (c) => c.charCodeAt(0)),
+        );
+        existing = parseVocab(text);
+      } else if (getRes.status !== 404) {
+        continue; // unexpected error — skip this field, keep the submit going
+      }
+      const merged = mergeVocab(existing, staged);
+      if (!merged) continue; // nothing new
+      const content = btoa(
+        String.fromCharCode(...new TextEncoder().encode(serializeVocab(merged))),
+      );
+      await ghFetch(`${apiBase}/contents/${path}`, token, {
+        method: "PUT",
+        body: JSON.stringify({
+          message: `vocab: add ${field} value(s) via web UI`,
+          content,
+          branch: branchName,
+          ...(sha ? { sha } : {}),
+        }),
+      });
+    } catch {
+      /* best-effort — don't fail the submit */
+    }
+  }
+}
+
 export async function submitSession(
   session: Session,
   token: string,
@@ -535,6 +585,11 @@ export async function submitSession(
       putRes.status,
     );
   }
+
+  // 5b. Write back session-created vocabulary values onto the same branch so
+  //     a new vendor/location appears in the review PR (best-effort).
+  await writeBackVocab(apiBase, token, branchName);
+  clearStagedVocab();
 
   // 6. Create PR.
   const prRes = await ghFetch(`${apiBase}/pulls`, token, {

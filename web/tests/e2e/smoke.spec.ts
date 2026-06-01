@@ -39,10 +39,16 @@ test.describe("part-registry FE smoke", () => {
     page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
     page.on("console", (msg) => {
       if (msg.type() === "error") {
-        // zxing-wasm logs a warning about missing serviceWorker in some
-        // contexts; filter those so we only flag real failures.
         const text = msg.text();
-        if (!text.includes("service worker")) {
+        // Filter benign noise so we only flag real JS failures (real
+        // exceptions are caught by the pageerror handler above):
+        //  - zxing-wasm's missing-serviceWorker warning in some contexts;
+        //  - 404s for OPTIONAL resources the app degrades from (e.g. the
+        //    data-repo vocabularies/*.json, absent until first written).
+        const benign =
+          text.includes("service worker") ||
+          text.includes("Failed to load resource: the server responded with a status of 404");
+        if (!benign) {
           errors.push(`console.error: ${text}`);
         }
       }
