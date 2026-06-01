@@ -32,6 +32,7 @@ import { renderErrorCard, renderValidationErrors } from "../ui/error-card";
 import { tableScroll, makeFilterDropdown } from "../ui/components/data-table";
 import { makeCombobox } from "../ui/components/combobox";
 import { makeTagsInput } from "../ui/components/tags-input";
+import { openRowEditor } from "../ui/components/row-editor";
 import { fieldVocabOptions, componentCandidates, stageVocabValue } from "../registry/vocab";
 import { parseComponents } from "../registry/assembly-graph";
 import {
@@ -852,12 +853,44 @@ function renderBindRow(
     ),
   );
 
+  // Edit-in-popup (PR3): the inline cells are great for quick tweaks, but a
+  // full row across the scrolling 11-column table is easier to edit in a
+  // roomy modal form (the same combobox/tags controls).
+  const editBtn = button({ class: "icon-only", title: "Edit in popup" }, icon("edit"));
+  editBtn.addEventListener("click", () => {
+    const queue = loadQueue();
+    const current = queue[index];
+    if (!current || current.kind !== "bind") return;
+    const values: Record<string, string> = {};
+    for (const f of BIND_FIELDS) {
+      values[f.key] = (current as unknown as Record<string, string>)[f.key] ?? "";
+    }
+    openRowEditor({
+      title: current.id ? `Edit ${fmtId(current.id)}` : "Edit bind row",
+      fields: BIND_FIELDS,
+      values,
+      ctx,
+      fmtId,
+      onSave: (updated) => {
+        const q = loadQueue();
+        const cur = q[index];
+        if (cur && cur.kind === "bind") {
+          for (const f of BIND_FIELDS) {
+            (cur as unknown as Record<string, string>)[f.key] = updated[f.key] ?? "";
+          }
+          saveQueue(q);
+        }
+        onChange();
+      },
+    });
+  });
+
   const trashBtn = button({ class: "icon-only", title: "Remove from queue" }, icon("trash"));
   trashBtn.addEventListener("click", async () => {
     await removeAt(index);
     onChange();
   });
-  tr.append(el("td", { class: "row-actions" }, trashBtn));
+  tr.append(el("td", { class: "row-actions" }, editBtn, trashBtn));
 
   frag.append(tr);
 

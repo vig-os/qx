@@ -136,4 +136,28 @@ test.describe("Bind tab", () => {
     await tags.locator(".combobox__opt").first().click();
     await expect(tags.locator(".tags-input__chip")).toHaveCount(1);
   });
+
+  test("PR3: edit-in-popup opens a row editor that persists back to the cell", async ({ page }) => {
+    await page.goto("/");
+    await page.locator("nav.tabs").getByRole("button", { name: "Bind" }).click();
+    await page.locator(".entry-row").getByRole("button", { name: /Add row/i }).click();
+    const row = page.locator(".queue-row--bind");
+    await expect(row).toHaveCount(1, { timeout: 5_000 });
+    await row.locator(".id-cell input").first().fill("2345-6789-ABCD-EF");
+
+    await row.locator(".row-actions button[title='Edit in popup']").click();
+    const editor = page.locator(".row-editor-card");
+    await expect(editor).toBeVisible();
+    // The description field is the first plain text input in the form.
+    const desc = editor.locator(".row-editor__field input[type=text]").first();
+    await desc.fill("3-wire RTD");
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toBeHidden();
+
+    // The change is persisted — reopening shows it.
+    await row.locator(".row-actions button[title='Edit in popup']").click();
+    await expect(
+      page.locator(".row-editor-card .row-editor__field input[type=text]").first(),
+    ).toHaveValue("3-wire RTD");
+  });
 });

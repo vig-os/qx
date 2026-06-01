@@ -549,7 +549,19 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
   justify-content: center;
   background: rgba(0, 0, 0, 0.4);
 }
-.modal-card { position: relative; }
+/* Base card appearance so any modal works out of the box (feature classes
+   like .detail-modal/.recovery-dialog override with their own specifics). */
+.modal-card {
+  position: relative;
+  background: var(--bg-elev);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
 .modal-card__close { position: absolute; top: 8px; right: 8px; }
 
 .detail-modal-overlay {
@@ -874,6 +886,21 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
   font-size: 13px;
 }
 .tags-input__input:focus { border-color: var(--border); background: var(--bg-elev); }
+
+/* Popup row editor (PR3) — roomy vertical form alternative to inline cells. */
+.row-editor-card { width: 460px; max-width: 92vw; }
+.row-editor__title { margin: 0 0 12px; font-size: 16px; }
+.row-editor__field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.row-editor__label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.row-editor__field input[type=text],
+.row-editor__field input[type=number] { width: 100%; }
+.row-editor__field .tags-input {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 6px;
+  min-height: 34px;
+}
+.row-editor__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
 /* Issue #93: sortable column headers */
 .lookup__th-sortable {
