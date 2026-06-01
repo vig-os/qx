@@ -308,7 +308,28 @@ fn github_pr_and_table_agree_on_clean_corpus() {
         ..Default::default()
     };
 
-    let corpus = vec![proposal(add, 1), proposal(bind, 2), proposal(void, 3)];
+    // P4: clear an existing column (empty `after`). The two substrates
+    // handle this differently at the byte level — the table *removes* the
+    // column, the CSV adapter writes an empty cell — but they must agree at
+    // the *logical* level the parity contract is scoped to (2nd-round
+    // review finding: previously undodged because no corpus proposal set an
+    // empty `after`).
+    let clear = Diff {
+        edits: vec![DiffEdit {
+            id: pid("ABCDEFGHJKMNPQ"),
+            before: fields(&[("vendor", "Acme")]),
+            after: fields(&[("vendor", "")]),
+            changed_keys: vec!["vendor".into()],
+        }],
+        ..Default::default()
+    };
+
+    let corpus = vec![
+        proposal(add, 1),
+        proposal(bind, 2),
+        proposal(void, 3),
+        proposal(clear, 4),
+    ];
 
     // The substrate-independence proof: same proposals, same base, same
     // logical state on a CSV-over-git backend and a relational backend.
@@ -329,4 +350,47 @@ fn github_pr_and_table_agree_on_rejecting_a_registry_delete() {
     };
     let corpus = vec![proposal(delete, 9)];
     proposal_sink_parity(&base, &corpus, apply_github, apply_table);
+}
+
+#[test]
+fn row_to_container_routing_is_substrate_visible_leak3() {
+    // Spike #189, 2nd-round review finding: the `Diff` does NOT carry which
+    // container a row targets — the CSV adapter re-derives it from row shape
+    // via `classify_row` (leak #3). A print-log-shaped row therefore routes
+    // to `print_log.csv` in the CSV adapter but lands in the single table in
+    // `TableSink`. This is a *real divergence*, so it is deliberately kept
+    // OUT of `proposal_sink_parity` (which would correctly panic on it) and
+    // asserted here as the known, documented substrate-visible boundary.
+    // Follow-up: put container routing in the contract (the `Diff`), not in
+    // a per-adapter field-shape heuristic.
+    let base = base_state();
+    let print_row = Diff {
+        adds: vec![DiffRow {
+            id: Some(pid("BCDEFGHJKMNPQR")),
+            fields: fields(&[("printed_at", "2026-06-01T00:00:00Z"), ("layout", "horz")]),
+        }],
+        ..Default::default()
+    };
+    let p = proposal(print_row, 11);
+
+    let gh = apply_github(&base, &p);
+    let tbl = apply_table(&base, &p).expect("table apply ok");
+
+    // CSV adapter: the row is routed away from registry.csv, so registry
+    // never gains it (no registry PUT, or an unchanged-registry PUT).
+    let gh_has_row = gh
+        .as_ref()
+        .map(|s| s.contains_key("BCDEFGHJKMNPQR"))
+        .unwrap_or(false);
+    assert!(
+        !gh_has_row,
+        "leak #3: CSV adapter routes the print-log-shaped row away from \
+         registry.csv via classify_row"
+    );
+    // Table adapter: no container routing exists in the contract, so the
+    // row lands in its one table.
+    assert!(
+        tbl.contains_key("BCDEFGHJKMNPQR"),
+        "leak #3: table adapter has no routing — the row lands in its table"
+    );
 }
