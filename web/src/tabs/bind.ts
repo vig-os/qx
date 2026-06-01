@@ -30,6 +30,10 @@ import { el, button, input, formRow } from "../ui/dom";
 import { icon } from "../ui/icons";
 import { renderErrorCard, renderValidationErrors } from "../ui/error-card";
 import { tableScroll, makeFilterDropdown } from "../ui/components/data-table";
+import { makeCombobox } from "../ui/components/combobox";
+import { makeTagsInput } from "../ui/components/tags-input";
+import { fieldVocabOptions, componentCandidates, stageVocabValue } from "../registry/vocab";
+import { parseComponents } from "../registry/assembly-graph";
 import {
   openScannerMulti,
   openImageScan,
@@ -289,7 +293,7 @@ function buildUI(ctx: AppContext): HTMLElement {
     for (let i = 0; i < queue.length; i++) {
       const item = queue[i];
       if (item.kind === "bind") {
-        tbody.append(renderBindRow(item, i, renderTable));
+        tbody.append(renderBindRow(item, i, renderTable, ctx));
       } else {
         tbody.append(renderEditRow(item, i, renderTable));
       }
@@ -693,6 +697,7 @@ function renderBindRow(
   item: QueuedBind,
   index: number,
   onChange: () => void,
+  ctx: AppContext,
 ): DocumentFragment {
   const frag = document.createDocumentFragment();
   const tr = el("tr", { class: "queue-row queue-row--bind", "data-kind": "bind", "data-id": item.id });
@@ -742,7 +747,6 @@ function renderBindRow(
     const cell = el("td");
     const key = f.key as EditableKey;
     const currentValue = (item as unknown as Record<string, string>)[key] ?? "";
-    const fieldInput = createFieldInput(f, currentValue);
     const errEl = el("div", { class: "field-error small" });
     errEl.style.display = "none";
 
@@ -759,6 +763,46 @@ function renderBindRow(
         }
       }
     };
+
+    // Controlled-vocabulary combobox for vendor / location (PR3): fuzzy
+    // pick-or-create instead of free text, so spellings converge and a new
+    // value is staged for write-back to the data-repo vocabulary.
+    if (key === "vendor" || key === "location") {
+      const combo = makeCombobox({
+        value: currentValue,
+        getOptions: () => fieldVocabOptions(ctx, key),
+        ariaLabel: f.label,
+        inputClass: "bind-field-input",
+        onChange: (val, isNew) => {
+          persistValue(val);
+          if (isNew) stageVocabValue(key, val);
+          showFieldErrors(errEl, combo.input, validateField(key, val, f));
+        },
+      });
+      cell.append(combo.el, errEl);
+      tr.append(cell);
+      continue;
+    }
+
+    // Components multiselect (PR3): pick existing / staged-for-mint IDs as
+    // chips; stored ";"-joined per the contract.
+    if (key === "components") {
+      const tags = makeTagsInput({
+        value: parseComponents(currentValue),
+        getOptions: () => componentCandidates(ctx),
+        formatTag: fmtId,
+        ariaLabel: f.label,
+        onChange: (vals) => {
+          persistValue(vals.join(";"));
+          showFieldErrors(errEl, tags.el, validateField(key, vals.join(";"), f));
+        },
+      });
+      cell.append(tags.el, errEl);
+      tr.append(cell);
+      continue;
+    }
+
+    const fieldInput = createFieldInput(f, currentValue);
 
     const runValidation = (val: string) => {
       const errs = validateField(key, val, f);
@@ -1111,7 +1155,7 @@ function createFieldInput(
 /** Show/hide validation error messages below a field input. */
 function showFieldErrors(
   errEl: HTMLElement,
-  fieldInput: HTMLInputElement | HTMLSelectElement,
+  fieldInput: HTMLElement,
   errors: ValidationError[],
 ): void {
   if (errors.length === 0) {

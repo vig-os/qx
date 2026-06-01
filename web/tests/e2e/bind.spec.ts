@@ -110,4 +110,30 @@ test.describe("Bind tab", () => {
     await expect(bar.locator(".queue-filter-search")).toBeVisible();
     await expect(bar.locator(".filter-dd-btn", { hasText: "Kind" })).toBeVisible();
   });
+
+  test("PR3: vendor is a fuzzy combobox-with-create; components is a tags multiselect", async ({ page }) => {
+    await page.goto("/");
+    await page.locator("nav.tabs").getByRole("button", { name: "Bind" }).click();
+    await page.locator(".entry-row").getByRole("button", { name: /Add row/i }).click();
+    const row = page.locator(".queue-row--bind");
+    await expect(row).toHaveCount(1, { timeout: 5_000 });
+    await row.locator(".id-cell input").first().fill("2345-6789-ABCD-EF");
+
+    // Vendor cell is a combobox: a typo'd query surfaces the canonical value
+    // (fuzzy) AND a create-new affordance for a genuinely new vendor.
+    const vendor = row.locator(".combobox").first();
+    const vinput = vendor.locator(".combobox__input");
+    await vinput.click();
+    await vinput.fill("digi");
+    await expect(vendor.locator('.combobox__opt', { hasText: "Digi-Key" })).toBeVisible();
+    await expect(vendor.locator(".combobox__opt--create")).toBeVisible();
+    await vendor.locator(".combobox__opt", { hasText: "Digi-Key" }).click();
+    await expect(vinput).toHaveValue("Digi-Key");
+
+    // Components cell is a tags-input: picking a known ID adds a chip.
+    const tags = row.locator(".tags-input");
+    await tags.locator(".tags-input__input").click();
+    await tags.locator(".combobox__opt").first().click();
+    await expect(tags.locator(".tags-input__chip")).toHaveCount(1);
+  });
 });
