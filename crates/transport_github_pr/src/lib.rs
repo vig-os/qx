@@ -1557,7 +1557,7 @@ mod tests {
         let http = FakeHttp::default();
         install_happy_path(&http);
         let sink = GithubPrProposalSink::new(http, config());
-        proposal_sink_conformance(sink);
+        proposal_sink_conformance(&sink, proposal_with_diff(registry_add_diff()));
     }
 
     // ----- 1. Submit happy path -------------------------------------
