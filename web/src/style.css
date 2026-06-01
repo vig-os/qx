@@ -804,6 +804,77 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 }
 .filter-dd-opt:hover { background: var(--row-hover); }
 
+/* Combobox (PR3) — fuzzy-match + create-new control for vendor/location. */
+.combobox { position: relative; display: block; }
+.combobox__input { width: 100%; }
+.combobox__menu {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  z-index: 20;
+  margin-top: 2px;
+  min-width: 100%;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.combobox__opt {
+  padding: 5px 8px;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+.combobox__opt--active,
+.combobox__opt:hover { background: var(--row-hover); }
+.combobox__opt--empty { cursor: default; }
+.combobox__opt--empty:hover { background: transparent; }
+.combobox__opt--create { border-top: 1px solid var(--border); margin-top: 2px; }
+.combobox__create-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* Tags-input (PR3) — multiselect chips for the components field. */
+.tags-input { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.tags-input__chips { display: contents; }
+.tags-input__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  white-space: nowrap;
+}
+.tags-input__remove {
+  padding: 0;
+  background: transparent;
+  border: none;
+  display: inline-flex;
+  cursor: pointer;
+  opacity: 0.6;
+}
+.tags-input__remove:hover { opacity: 1; }
+.tags-input__remove .icon { width: 12px; height: 12px; }
+.tags-input__input {
+  flex: 1 1 80px;
+  min-width: 80px;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 4px 6px;
+  font-size: 13px;
+}
+.tags-input__input:focus { border-color: var(--border); background: var(--bg-elev); }
+
 /* Issue #93: sortable column headers */
 .lookup__th-sortable {
   cursor: pointer;

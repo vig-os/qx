@@ -74,7 +74,7 @@
     },
     {
       "key": "part_number",
-      "label": "Part number",
+      "label": "Part #",
       "type": "string",
       "editable": true,
       "meaningfulFrom": "bound",
@@ -133,7 +133,7 @@
     },
     {
       "key": "manufacturer_id",
-      "label": "Manufacturer ID",
+      "label": "External ID",
       "type": "string",
       "editable": true,
       "meaningfulFrom": "bound",
