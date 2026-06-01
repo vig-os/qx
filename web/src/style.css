@@ -902,6 +902,219 @@ table.data .actions { display: flex; gap: 4px; justify-content: flex-end; }
 }
 .row-editor__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
+/* ════════════════════════════════════════════════════════════════════════
+   "LAB INSTRUMENT" identity — coal front-panel · signal-amber · monospace
+   readouts · hairline rules · measurement ticks · grain · power-on boot.
+   Layered last so it re-skins the structural CSS above via cascade order.
+   ════════════════════════════════════════════════════════════════════════ */
+:root {
+  --font-display: "Saira Semi Condensed", "Saira Variable", system-ui, sans-serif;
+  --font-ui: "Saira Variable", "Saira Semi Condensed", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+  --amber: var(--color-primary);
+  --hair: var(--color-base-300);
+}
+
+html, body {
+  font-family: var(--font-ui);
+  letter-spacing: 0.005em;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Atmospheric page: deep coal + a faint instrument grid + top amber wash. */
+body {
+  background-color: var(--color-base-200);
+  background-image:
+    linear-gradient(var(--hair) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hair) 1px, transparent 1px),
+    radial-gradient(120% 70% at 50% -10%, color-mix(in oklch, var(--amber) 6%, transparent), transparent 60%);
+  background-size: 46px 46px, 46px 46px, 100% 100%;
+  background-position: center top;
+}
+:root[data-theme="dark"] body {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    radial-gradient(120% 70% at 50% -10%, rgba(255, 194, 60, 0.06), transparent 60%);
+  background-size: 46px 46px, 46px 46px, 100% 100%;
+}
+/* Fine film grain over everything (non-interactive). */
+body::after {
+  content: "";
+  position: fixed; inset: 0; z-index: 9998; pointer-events: none;
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ---- Type scale ---- */
+h2 { font-family: var(--font-display); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; font-size: 19px; }
+h3 { font-family: var(--font-display); font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; font-size: 14px; color: color-mix(in oklch, var(--color-base-content) 80%, transparent); }
+
+/* ---- Shell header: instrument faceplate ---- */
+.shell__header {
+  border-bottom: 1px solid var(--hair);
+  padding-bottom: 10px;
+  position: relative;
+  animation: inst-boot 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+/* Measurement-tick ruler under the header. */
+.shell__header::after {
+  content: "";
+  position: absolute; left: 0; right: 0; bottom: -1px; height: 7px;
+  background-image: repeating-linear-gradient(90deg, var(--hair) 0 1px, transparent 1px 14px);
+  -webkit-mask-image: linear-gradient(90deg, #000 0 70%, transparent);
+  mask-image: linear-gradient(90deg, #000 0 70%, transparent);
+  opacity: 0.7; pointer-events: none;
+}
+.shell__title { font-family: var(--font-display); font-weight: 700; text-transform: uppercase; letter-spacing: 0.11em; font-size: 17px; }
+.shell__title::before { /* amber status dot at the wordmark */
+  content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 1px;
+  background: var(--amber); box-shadow: 0 0 8px var(--amber); margin-right: 2px;
+  animation: inst-pulse 3.2s ease-in-out infinite;
+}
+.shell__repo { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.7; }
+.shell__status { border-top: 1px solid var(--hair); font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.03em; text-transform: uppercase; opacity: 0.75; }
+.shell__version { font-family: var(--font-mono); }
+
+/* ---- Tab nav: tracked labels + amber engaged underline ---- */
+.tabs, .tab-nav { border-bottom: 1px solid var(--hair); animation: inst-boot 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) 0.06s both; }
+.tab-btn {
+  font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.12em;
+  font-size: 12.5px; font-weight: 600; padding: 9px 15px;
+  color: var(--color-base-content); opacity: 0.5;
+  border-bottom: 2px solid transparent; background: transparent;
+  transition: opacity 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+.tab-btn:hover:not(.active) { opacity: 0.82; background: transparent; }
+.tab-btn.active {
+  opacity: 1; color: var(--amber); border-bottom-color: var(--amber);
+  box-shadow: 0 2px 10px -4px var(--amber);
+}
+
+/* ---- Tab body: subtle redraw on each switch ---- */
+.tabview { animation: inst-boot 0.24s ease both; }
+
+/* ---- Buttons: machined; amber = engaged ---- */
+button { font-family: var(--font-ui); font-weight: 500; border-radius: 2px; letter-spacing: 0.01em; transition: background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s, filter 0.12s; }
+button.primary {
+  background: var(--amber); color: var(--color-primary-content); border-color: var(--amber);
+  font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; font-size: 13px;
+}
+button.primary:hover { filter: brightness(1.07); box-shadow: 0 0 0 1px var(--amber), 0 0 18px -5px var(--amber); }
+button.secondary, button.outline { background: transparent; border-color: var(--hair); color: var(--color-base-content); }
+button.secondary:hover, button.outline:hover { border-color: var(--amber); color: var(--amber); background: color-mix(in oklch, var(--amber) 8%, transparent); }
+button.destructive { background: transparent; border-color: color-mix(in oklch, var(--color-error) 45%, transparent); color: var(--color-error); }
+button.destructive:hover { background: color-mix(in oklch, var(--color-error) 12%, transparent); border-color: var(--color-error); filter: none; }
+button.icon-only:hover { border-color: var(--amber); color: var(--amber); }
+button:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+
+/* ---- Inputs / search: recessed coal field, amber focus ---- */
+input[type=text], input[type=number], input[type=search], select, textarea {
+  font-family: var(--font-ui);
+  background: color-mix(in oklch, var(--color-base-200) 60%, var(--color-base-100));
+  border-color: var(--hair);
+}
+input::placeholder { color: color-mix(in oklch, var(--color-base-content) 40%, transparent); }
+input:focus, select:focus, textarea:focus,
+.lookup__search:focus, .combobox__input:focus {
+  outline: none; border-color: var(--amber);
+  box-shadow: 0 0 0 1px var(--amber), 0 0 14px -6px var(--amber);
+}
+.lookup__search { font-family: var(--font-mono); font-size: 13px; }
+
+/* ---- Data tables: hairlines, mono IDs, tracked amber headers, signal hover ---- */
+table.data, .lookup__table { background: var(--color-base-100); }
+table.data th, .lookup__table th {
+  font-family: var(--font-display); text-transform: uppercase;
+  letter-spacing: 0.13em; font-size: 10.5px; font-weight: 600;
+  color: color-mix(in oklch, var(--amber) 80%, var(--color-base-content));
+  background: var(--color-base-100); border-bottom: 1px solid var(--hair);
+}
+table.data td, .lookup__table td { border-bottom: 1px solid color-mix(in oklch, var(--hair) 55%, transparent); }
+.id-cell, table.data .id-cell, .lookup__table .id-cell {
+  font-family: var(--font-mono); letter-spacing: 0.01em; font-size: 13px;
+  color: color-mix(in oklch, var(--color-base-content) 92%, var(--amber));
+}
+table.data tbody tr, .lookup__table tbody tr { transition: background 0.1s ease, box-shadow 0.1s ease; }
+table.data tbody tr:hover, .lookup__table tbody tr:hover {
+  background: color-mix(in oklch, var(--amber) 8%, transparent);
+  box-shadow: inset 2px 0 0 var(--amber);
+}
+.bind-queue td input[type=text] { font-family: var(--font-mono); font-size: 12.5px; }
+.data-table-scroll { background: var(--color-base-100); }
+
+/* ---- Status as instrument LEDs ---- */
+.chip--status {
+  font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em;
+  font-size: 10px; font-weight: 500; border-radius: 2px; padding: 2px 7px 2px 6px;
+  display: inline-flex; align-items: center; gap: 6px;
+  background: transparent; border: 1px solid var(--hair);
+}
+.chip--status::before {
+  content: ""; width: 6px; height: 6px; border-radius: 1px; background: currentColor;
+  box-shadow: 0 0 7px currentColor, 0 0 2px currentColor; flex: none;
+}
+.chip--status.chip--bound { color: var(--amber); border-color: color-mix(in oklch, var(--amber) 45%, transparent); }
+.chip--status.chip--unbound { color: color-mix(in oklch, var(--color-base-content) 52%, transparent); }
+.chip--status.chip--void { color: var(--color-error); border-color: color-mix(in oklch, var(--color-error) 42%, transparent); }
+
+/* Kind badges (mint/bind/edit) — same LED language, tracked mono. */
+.chip--kind {
+  font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em;
+  font-size: 10px; border-radius: 2px; border: 1px solid var(--hair);
+  background: transparent; padding: 2px 6px;
+}
+.chip--kind.chip--bind { color: var(--amber); border-color: color-mix(in oklch, var(--amber) 40%, transparent); }
+.chip--kind.chip--mint { color: var(--color-success); border-color: color-mix(in oklch, var(--color-success) 40%, transparent); }
+.chip--kind.chip--edit { color: var(--color-info); border-color: color-mix(in oklch, var(--color-info) 40%, transparent); }
+
+/* ---- Filter dropdowns + combobox/menus: instrument sub-panels ---- */
+.filter-dd-btn {
+  font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.08em;
+  font-size: 11px; background: transparent; border-color: var(--hair);
+}
+.filter-dd-btn--active { border-color: var(--amber); color: var(--amber); }
+.filter-dd-menu, .combobox__menu {
+  background: var(--color-base-100); border-color: var(--hair);
+  box-shadow: 0 10px 28px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--hair);
+}
+.filter-dd-count { background: var(--amber); color: var(--color-primary-content); border-radius: 2px; font-family: var(--font-mono); }
+.combobox__create-badge { color: var(--amber); font-family: var(--font-mono); }
+.combobox__opt, .filter-dd-opt { font-family: var(--font-ui); }
+.tags-input__chip { font-family: var(--font-mono); background: color-mix(in oklch, var(--amber) 9%, transparent); border-color: color-mix(in oklch, var(--amber) 30%, transparent); }
+
+/* ---- Modals: lifted faceplate with corner brackets ---- */
+.modal-card, .detail-modal, .recovery-dialog {
+  background: var(--color-base-100);
+  border: 1px solid var(--hair);
+  box-shadow: 0 24px 70px -20px rgba(0, 0, 0, 0.75), 0 0 0 1px var(--hair);
+  animation: inst-boot 0.22s ease both;
+}
+.row-editor__label, .detail-modal dt {
+  font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.1em;
+  font-size: 10.5px; color: color-mix(in oklch, var(--amber) 70%, var(--color-base-content));
+}
+
+/* ---- Session banner / preflight: instrument readouts ---- */
+.session-indicator { border-left: 2px solid var(--amber); background: color-mix(in oklch, var(--amber) 6%, var(--color-base-100)); font-family: var(--font-ui); }
+.preflight-card { border: 1px solid var(--hair); background: var(--color-base-100); }
+
+/* ---- Motion keyframes ---- */
+@keyframes inst-boot {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes inst-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--amber); }
+  50% { opacity: 0.55; box-shadow: 0 0 3px var(--amber); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shell__header, .tabs, .tab-nav, .tabview, .modal-card, .detail-modal, .recovery-dialog { animation: none; }
+  .shell__title::before { animation: none; }
+}
+
 /* Issue #93: sortable column headers */
 .lookup__th-sortable {
   cursor: pointer;

@@ -1,72 +1,70 @@
-/* Tailwind v4 + DaisyUI — the single styling system (replaces Pico).
+/* Tailwind v4 + DaisyUI — the single styling system.
  * CSS-first config: no tailwind.config.js to drift.
  *
- * The two themes below reproduce the app's existing palette (formerly the
- * --bg/--accent/... custom props in style.css) so adopting DaisyUI does not
- * shift any colors. DaisyUI applies a theme via the `data-theme` attribute,
- * which is exactly the app's existing light/dark toggle. base-100 = elevated
- * surfaces (inputs/cards/dropdowns = white on light); base-200 = page bg;
- * base-300 = borders/hover; primary = the old --accent. */
+ * "Lab Instrument" identity: a coal front-panel with a single signal-amber
+ * accent (dark theme, the hero + default) and a warm-paper variant for the
+ * toggle. Applied via the `data-theme` attribute the app already toggles.
+ * Sharp radii (machined), hairline borders. Typography/texture in style.css. */
 @import "tailwindcss";
 @plugin "daisyui";
 
 @plugin "daisyui/theme" {
-  name: "light";
+  name: "dark";
   default: true;
-  color-scheme: light;
-  --color-base-100: #ffffff;
-  --color-base-200: #fafafa;
-  --color-base-300: #dddddd;
-  --color-base-content: #222222;
-  --color-primary: #0366d6;
-  --color-primary-content: #ffffff;
-  --color-secondary: #f4f4f4;
-  --color-secondary-content: #222222;
-  --color-accent: #0366d6;
-  --color-accent-content: #ffffff;
-  --color-neutral: #222222;
-  --color-neutral-content: #ffffff;
-  --color-info: #0366d6;
-  --color-success: #2da44e;
-  --color-success-content: #ffffff;
-  --color-warning: #c08020;
-  --color-warning-content: #ffffff;
-  --color-error: #c0392b;
-  --color-error-content: #ffffff;
-  --radius-selector: 4px;
-  --radius-field: 4px;
-  --radius-box: 4px;
+  prefersdark: true;
+  color-scheme: dark;
+  --color-base-100: #1e2127;   /* elevated panels / inputs / cards */
+  --color-base-200: #16181c;   /* deep-coal page */
+  --color-base-300: #2c313a;   /* hairlines / borders */
+  --color-base-content: #e8e6e0;
+  --color-primary: #ffc23c;    /* signal amber */
+  --color-primary-content: #1a1306;
+  --color-secondary: #2c313a;
+  --color-secondary-content: #e8e6e0;
+  --color-accent: #ffc23c;
+  --color-accent-content: #1a1306;
+  --color-neutral: #2c313a;
+  --color-neutral-content: #e8e6e0;
+  --color-info: #6cb2ff;
+  --color-success: #3ddc97;
+  --color-success-content: #0a1f16;
+  --color-warning: #ffc23c;
+  --color-warning-content: #1a1306;
+  --color-error: #ff5c57;
+  --color-error-content: #1a0606;
+  --radius-selector: 2px;
+  --radius-field: 2px;
+  --radius-box: 3px;
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
   --border: 1px;
 }
 
 @plugin "daisyui/theme" {
-  name: "dark";
-  prefersdark: true;
-  color-scheme: dark;
-  --color-base-100: #242424;
-  --color-base-200: #1a1a1a;
-  --color-base-300: #333333;
-  --color-base-content: #eeeeee;
-  --color-primary: #58a6ff;
-  --color-primary-content: #0d1117;
-  --color-secondary: #2a2a2a;
-  --color-secondary-content: #eeeeee;
-  --color-accent: #58a6ff;
-  --color-accent-content: #0d1117;
-  --color-neutral: #eeeeee;
-  --color-neutral-content: #1a1a1a;
-  --color-info: #58a6ff;
-  --color-success: #3fb950;
-  --color-success-content: #0d1117;
-  --color-warning: #d29922;
-  --color-warning-content: #0d1117;
-  --color-error: #f85149;
-  --color-error-content: #0d1117;
-  --radius-selector: 4px;
-  --radius-field: 4px;
-  --radius-box: 4px;
+  name: "light";
+  color-scheme: light;
+  --color-base-100: #fbf8f1;
+  --color-base-200: #f1ece0;
+  --color-base-300: #d9d2c2;
+  --color-base-content: #20242c;
+  --color-primary: #b5650a;    /* burnt amber, readable on paper */
+  --color-primary-content: #fbf8f1;
+  --color-secondary: #e7e0d0;
+  --color-secondary-content: #20242c;
+  --color-accent: #b5650a;
+  --color-accent-content: #fbf8f1;
+  --color-neutral: #20242c;
+  --color-neutral-content: #fbf8f1;
+  --color-info: #2563a8;
+  --color-success: #2c7a52;
+  --color-success-content: #fbf8f1;
+  --color-warning: #b5650a;
+  --color-warning-content: #fbf8f1;
+  --color-error: #c0392b;
+  --color-error-content: #fbf8f1;
+  --radius-selector: 2px;
+  --radius-field: 2px;
+  --radius-box: 3px;
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
   --border: 1px;

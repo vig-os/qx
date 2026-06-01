@@ -1,5 +1,14 @@
 // Bootstrap — wire registry, tabs, plugins. Everything else is plug-in.
 
+// Self-hosted fonts (bundled → offline-safe for the PWA). The "Lab
+// Instrument" identity: Saira Semi Condensed for the wordmark/headers,
+// Saira for UI text, IBM Plex Mono for IDs and instrument readouts.
+import "@fontsource-variable/saira";
+import "@fontsource/saira-semi-condensed/600.css";
+import "@fontsource/saira-semi-condensed/700.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/ibm-plex-mono/600.css";
 import "./tailwind.css";
 import "./style.css";
 import { registerSW } from "virtual:pwa-register";
