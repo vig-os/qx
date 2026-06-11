@@ -302,6 +302,50 @@ submission both ride this; a TLS misconfiguration silently
 accepting a bad cert is the highest-risk failure mode.
 """
 
+# -----------------------------------------------------------------------------
+# `pr serve` HTTP shell (ADR-030 §2; feature-gated `serve`, not in the
+# lean CLI/CI build). Added 2026-06-11 with the serve feature.
+# -----------------------------------------------------------------------------
+
+[[crate]]
+name = "axum"
+version = "=0.8"
+class = 1
+role = "HTTP router for the command-protocol endpoint (pr serve)"
+used_by = ["cli (feature serve)"]
+maintenance_url = "https://github.com/tokio-rs/axum"
+last_release_check = "2026-06-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+surveillance_owner = "shells-maintainer"
+notes = "Thin shell only — all policy/validation stays in crates/app. Feature-gated; absent from the default build."
+
+[[crate]]
+name = "tokio"
+version = "=1"
+class = 1
+role = "async runtime hosting the serve listener (dispatch runs on the blocking pool)"
+used_by = ["cli (feature serve)"]
+maintenance_url = "https://github.com/tokio-rs/tokio"
+last_release_check = "2026-06-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+surveillance_owner = "shells-maintainer"
+notes = "Feature-gated; rt-multi-thread/net/macros/signal only."
+
+[[crate]]
+name = "tower-http"
+version = "=0.6"
+class = 1
+role = "static-file service for the webapp bundle under pr serve"
+used_by = ["cli (feature serve)"]
+maintenance_url = "https://github.com/tower-rs/tower-http"
+last_release_check = "2026-06-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+surveillance_owner = "shells-maintainer"
+notes = "fs feature only; SPA fallback to index.html."
+
 # Pending entries — added as adapter PRs land Class-3 deps not yet
 # in the workspace. Each entry below is a placeholder for an
 # expected dep that has not yet been pinned; the coverage tool

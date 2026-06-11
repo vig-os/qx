@@ -35,6 +35,10 @@
 
 #![forbid(unsafe_code)]
 
+/// `pr serve` — HTTP shell over the command protocol (ADR-030 §2).
+#[cfg(feature = "serve")]
+pub mod serve;
+
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io::Write;

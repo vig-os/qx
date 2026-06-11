@@ -52,8 +52,22 @@ uuid = { workspace = true }
 # already pulled in via `uuid`; named here for crate-local discipline.
 getrandom = "0.2"
 
+# `pr serve` (ADR-030 §2) — optional so the lean CLI/CI build stays
+# free of the async stack (compile-target tiering per guardrails
+# CONVENTIONS / ADR-030 cargo-feature discipline).
+axum = { version = "0.8", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "signal"], optional = true }
+tower-http = { version = "0.6", features = ["fs"], optional = true }
+
+[features]
+default = []
+serve = ["dep:axum", "dep:tokio", "dep:tower-http"]
+
 [dev-dependencies]
 tempfile = { workspace = true }
+# serve router tests (compiled only with --features serve).
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
 # Test-only: rasterise QR matrix for the decoder round-trip parity
 # test. Matches the codec crate's own raster helper.
 image = { version = "0.25", default-features = false, features = ["png"] }

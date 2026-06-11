@@ -11,6 +11,10 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+part-registry-app = { path = "../app" }
+part-registry-storage = { path = "../storage" }
+part-registry-transport = { path = "../transport" }
+part-registry-identity = { path = "../identity" }
 part-registry-domain = { path = "../domain" }
 # Encoder + SVG renderer only; the `decoder` feature pulls rxing
 # (~1.4 MB compressed) which we don't need on the FE — production
@@ -24,6 +28,16 @@ wasm-bindgen = { workspace = true }
 serde-wasm-bindgen = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# Snapshot parsing for registry_open ("csv" format) — pure Rust, wasm-clean.
+csv = { workspace = true }
+time = { workspace = true }
+
+# Browser clock + CSPRNG for the dispatch shell: the engine stamps
+# created_at/printed_at (time -> js Date) and mints ids (getrandom ->
+# crypto.getRandomValues). Target-gated so native builds are untouched.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+time = { workspace = true, features = ["wasm-bindgen"] }
+getrandom = { version = "0.2", features = ["js"] }
 
 # Per ADR-024 + foundation issue #33: tightened release profile for
 # the wasm bundle so the gzipped artifact stays under 1.5 MB. `opt-

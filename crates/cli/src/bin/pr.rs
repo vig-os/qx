@@ -126,6 +126,16 @@ enum Cmd {
     },
     /// Current operator identity.
     Whoami,
+    /// Serve the command protocol over HTTP (+ the webapp bundle).
+    #[cfg(feature = "serve")]
+    Serve {
+        /// Listen address.
+        #[arg(long, default_value = "127.0.0.1:8470")]
+        addr: std::net::SocketAddr,
+        /// Serve a static webapp bundle (SPA fallback to index.html).
+        #[arg(long)]
+        static_dir: Option<PathBuf>,
+    },
     /// ADR-016 gate over a data repo: structural validation (+ diff
     /// classification and policy with --base).
     Check {
@@ -152,7 +162,46 @@ fn main() -> ExitCode {
         Cmd::Label(args) => parity_label(args),
         Cmd::Bind(args) => parity_bind(args),
         Cmd::Check { path, base } => check(&path, base.as_deref()),
+        #[cfg(feature = "serve")]
+        Cmd::Serve { addr, static_dir } => serve_cmd(addr, static_dir),
         protocol => protocol_cmd(protocol),
+    }
+}
+
+#[cfg(feature = "serve")]
+fn serve_cmd(addr: std::net::SocketAddr, static_dir: Option<PathBuf>) -> ExitCode {
+    let cfg = match load_config() {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
+    // Prefer the live sink (the server is a write-capable host); fall
+    // back to dry-run capture with a loud notice when no token is
+    // resolvable, so read-only serving still works.
+    let wiring = match build_wiring(&cfg, None) {
+        Ok(w) => w,
+        Err(_) => {
+            eprintln!(
+                "pr serve: no GitHub token resolved — mutations will be captured \
+                 as dry-run JSON on the server's stdout, not submitted. Set \
+                 PART_REGISTRY__TRANSPORT__GITHUB_TOKEN (or GITHUB_TOKEN) for \
+                 live proposals."
+            );
+            match build_wiring(&cfg, Some(DryRunTarget::Stdout)) {
+                Ok(w) => w,
+                Err(e) => return e,
+            }
+        }
+    };
+    init_obs(&cfg, &wiring);
+    let span = request_id_span("pr.serve", RequestId::new());
+    let _g = span.enter();
+    let ctx = app_context(&cfg, wiring);
+    match part_registry_cli::serve::run(ctx, addr, static_dir) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("serve failed: {e}");
+            ExitCode::FAILURE
+        }
     }
 }
 

@@ -55,6 +55,12 @@
 
 #![forbid(unsafe_code)]
 
+/// Browser shell over `app::dispatch` (ADR-030 §3) — `registry_open`
+/// + `registry_dispatch` + `registry_set_operator`. The pure-function
+/// surface below predates it and stays for the legacy `web/` consumer
+/// until the feature port retires it.
+pub mod dispatch;
+
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 

@@ -13,7 +13,10 @@ part-registry-storage = { path = "../storage" }
 part-registry-transport = { path = "../transport" }
 part-registry-identity = { path = "../identity" }
 part-registry-validators = { path = "../validators" }
-part-registry-codec = { path = "../codec" }
+# Encoder + renderer only — the decoder (rxing, ~1.4 MB) must not ride
+# into the wasm bundle via this dep; decode-image lands behind a
+# feature with the ADR-032 A/B gate.
+part-registry-codec = { path = "../codec", default-features = false }
 part-registry-observability = { path = "../observability" }
 serde.workspace = true
 serde_json.workspace = true
