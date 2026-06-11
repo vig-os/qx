@@ -2,6 +2,7 @@ import type { ErrorKind, ProtocolError, Response } from "./types";
 
 const ERROR_KINDS: readonly string[] = [
   "NotFound",
+  "Ambiguous",
   "Validation",
   "Unsupported",
   "Auth",

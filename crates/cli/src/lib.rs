@@ -39,6 +39,14 @@
 #[cfg(feature = "serve")]
 pub mod serve;
 
+/// `pr mcp` — stdio MCP shell over the command protocol (ADR-030 §2).
+#[cfg(feature = "mcp")]
+pub mod mcp;
+
+/// `pr tui` — terminal shell over the command protocol (ADR-030 §2).
+#[cfg(feature = "tui")]
+pub mod tui;
+
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io::Write;

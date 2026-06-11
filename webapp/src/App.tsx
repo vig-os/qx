@@ -3,8 +3,10 @@
 
 import { useDescribe } from "./data/hooks";
 import { useHashRoute } from "./router";
+import { BindPage } from "./ui/BindPage";
 import { DetailPage } from "./ui/DetailPage";
 import { GridPage } from "./ui/GridPage";
+import { PrintPage } from "./ui/PrintPage";
 
 export default function App() {
   const describe = useDescribe();
@@ -23,7 +25,19 @@ export default function App() {
     return <p className="p-6 text-red-700">Describe returned no collections</p>;
   }
 
-  const id = route.replace(/^\/+/, "");
+  const path = route.replace(/^\/+/, "");
+  // Page routes are lowercase words; entity ids are nano14 (uppercase,
+  // 14 chars), so the namespaces cannot collide.
+  const page =
+    path === "" ? (
+      <GridPage descriptor={collection} />
+    ) : path === "print" ? (
+      <PrintPage descriptor={collection} />
+    ) : path === "bind" ? (
+      <BindPage descriptor={collection} />
+    ) : (
+      <DetailPage id={path} descriptor={collection} />
+    );
 
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900">
@@ -33,15 +47,17 @@ export default function App() {
             {registry.name}
           </a>
           <span className="text-sm text-zinc-500">{collection.name}</span>
+          <nav className="ml-auto flex gap-4 text-sm">
+            <a href="#/print" className="text-zinc-600 hover:text-zinc-900">
+              print
+            </a>
+            <a href="#/bind" className="text-zinc-600 hover:text-zinc-900">
+              bind
+            </a>
+          </nav>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl p-6">
-        {id === "" ? (
-          <GridPage descriptor={collection} />
-        ) : (
-          <DetailPage id={id} descriptor={collection} />
-        )}
-      </main>
+      <main className="mx-auto max-w-6xl p-6">{page}</main>
     </div>
   );
 }

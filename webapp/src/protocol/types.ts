@@ -15,9 +15,9 @@
 export interface Filter {
   status?: string | null;
   kind?: string | null;
-  /** Case-insensitive free-text match over id/label/kind/field values. */
+  /** Case-insensitive free-text match over id + declared field values. */
   text?: string | null;
-  /** Exact match per declared-field key, e.g. {"vendor": "Omega"}. */
+  /** Per-field match — case-insensitive substring, keyed by field key. */
   fields?: Record<string, string> | null;
 }
 
@@ -33,6 +33,36 @@ export interface Page {
   limit: number;
 }
 
+/**
+ * Selection for ops acting on an entity set (Rust `Selection`, serde
+ * external tagging): explicit ids or the one shared Filter grammar.
+ */
+export type Selection = { ids: string[] } | { filter: Filter };
+
+/**
+ * Print options (ADR-031). Every key carries a serde default in Rust
+ * (layout "horz", size_mm 8, chars "auto", micro false, copies 1,
+ * log true), so all are optional on the wire.
+ */
+export interface PrintOptions {
+  /** Geometry preset token: one of PRINT_LAYOUTS. */
+  layout?: string;
+  size_mm?: number;
+  /** Human-ID grouping token: one of PRINT_CHARS. */
+  chars?: string;
+  micro?: boolean;
+  /** Required when layout is "flag". */
+  cable_od_mm?: number | null;
+  copies?: number;
+  /** Append print events to the audit surface (engine default: true). */
+  log?: boolean;
+}
+
+// Protocol-declared option vocabularies (crates/app: protocol.rs and
+// engine.rs print handler) — the UI renders these, never its own list.
+export const PRINT_LAYOUTS = ["vert", "horz", "flag"] as const;
+export const PRINT_CHARS = ["44", "444", "554", "auto"] as const;
+
 export type Request =
   | { op: "Resolve"; id: string }
   | {
@@ -44,7 +74,14 @@ export type Request =
     }
   | { op: "Count"; collection: string; filter?: Filter | null; by: string }
   | { op: "Describe"; collection?: string | null }
-  | { op: "Create"; collection: string; n: number }
+  | {
+      op: "Create";
+      collection: string;
+      /** Defaults to 1 in the engine. */
+      n?: number | null;
+      /** Must be absent/empty: mint-then-bind (ADR-012). */
+      fields?: Record<string, string> | null;
+    }
   | { op: "Edit"; collection: string; id: string; fields: Record<string, string> }
   | {
       op: "Transition";
@@ -53,6 +90,9 @@ export type Request =
       to: string;
       fields?: Record<string, string> | null;
     }
+  | { op: "Print"; collection: string; selection: Selection; options?: PrintOptions | null }
+  | { op: "Export"; collection: string; format: string }
+  | { op: "PollProposal"; proposal: ProposalRef }
   | { op: "Whoami" };
 
 export type Op = Request["op"];
@@ -62,6 +102,7 @@ export type Op = Request["op"];
 
 export type ErrorKind =
   | "NotFound"
+  | "Ambiguous"
   | "Validation"
   | "Unsupported"
   | "Auth"
@@ -181,4 +222,48 @@ export interface TransitionData {
   id: string;
   to: string;
   proposal: ProposalRef;
+}
+
+// ---------------------------------------------------------------------------
+// Print / Export / PollProposal / Whoami payloads — shapes mirror the
+// engine's JSON responses (crates/app/src/engine.rs).
+
+/** One rendered label: the entity id + its SVG markup. */
+export interface PrintLabel {
+  id: string;
+  svg: string;
+}
+
+/** `Print` result: rendered SVGs + the resolved render parameters. */
+export interface PrintData {
+  labels: PrintLabel[];
+  size_mm: number;
+  /** The grouping actually used ("auto" resolves to a concrete one). */
+  chars: string;
+  warning: string | null;
+}
+
+/** `Export` result: a generated flat artifact, never committed. */
+export interface ExportData {
+  format: string;
+  content: string;
+  rows: number;
+}
+
+/** Status of a submitted proposal (Rust `ProposalStatus`). */
+export interface ProposalStatus {
+  kind: string;
+}
+
+/** `PollProposal` result. */
+export interface PollProposalData {
+  status: ProposalStatus;
+}
+
+/** `Whoami` result: the current operator identity. */
+export interface WhoamiData {
+  id: string;
+  display_name: string;
+  source: string;
+  verified_at: string | null;
 }

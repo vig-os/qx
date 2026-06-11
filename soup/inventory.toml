@@ -334,6 +334,45 @@ surveillance_owner = "shells-maintainer"
 notes = "Feature-gated; rt-multi-thread/net/macros/signal only."
 
 [[crate]]
+name = "rmcp"
+version = "=1"
+class = 2
+role = "MCP server SDK for the pr mcp stdio shell (agent access to the command protocol)"
+used_by = ["cli (feature mcp)"]
+maintenance_url = "https://github.com/modelcontextprotocol/rust-sdk"
+last_release_check = "2026-06-11"
+upstream_status = "active"
+revalidation_trigger = "minor-bump"
+surveillance_owner = "shells-maintainer"
+notes = "Thin shell: tools map 1:1 onto protocol op families; serde (not the advertised JSON schemas) validates requests. Agent mutations flow through the same proposal/policy gates as every shell (ADR-030/034)."
+
+[[crate]]
+name = "ratatui"
+version = "=0.29"
+class = 1
+role = "terminal UI widgets for the pr tui shell"
+used_by = ["cli (feature tui)"]
+maintenance_url = "https://github.com/ratatui/ratatui"
+last_release_check = "2026-06-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+surveillance_owner = "shells-maintainer"
+notes = "Render-only shell; all data + labels come from app::dispatch/Describe."
+
+[[crate]]
+name = "crossterm"
+version = "=0.28"
+class = 1
+role = "terminal backend (raw mode, events) for pr tui"
+used_by = ["cli (feature tui)"]
+maintenance_url = "https://github.com/crossterm-rs/crossterm"
+last_release_check = "2026-06-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+surveillance_owner = "shells-maintainer"
+notes = "Feature-gated with ratatui; absent from the default build."
+
+[[crate]]
 name = "tower-http"
 version = "=0.6"
 class = 1

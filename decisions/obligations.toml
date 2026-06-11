@@ -242,11 +242,10 @@ tracking = "ADR-031 §6; pre-flight read path + optimistic mint not yet built"
 [[obligation]]
 id = "toolchain-bump-188"
 adr = "ADR-024"
-statement = "Bump rust-toolchain to >=1.88 and take time >=0.3.47, retiring the RUSTSEC-2026-0009 ignore in deny.toml"
+statement = "Toolchain bumped to 1.93 (>=1.88); time >=0.3.47 taken; RUSTSEC-2026-0009 ignore retired from deny.toml"
 kind = "issue"
-status = "exempt"
-exempt_until = "2026-09-01"
-exempt_reason = "time 0.3.47 (advisory patch) needs Rust 1.88; toolchain pinned 1.85 per repro-build discipline; vulnerable RFC-2822 path unreachable (RFC-3339 only) — documented ignore in deny.toml until the coordinated toolchain bump"
+status = "satisfied"
+satisfied_by = "rust-toolchain.toml"
 
 # ---- Auth credential resolution (ADR-020 refinement) --------------------
 

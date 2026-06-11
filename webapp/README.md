@@ -20,6 +20,7 @@ npm install
 |---|---|
 | dev server, in-memory mock backend (default) | `npm run dev` |
 | dev server against `pr serve` | `VITE_TRANSPORT=http VITE_API_BASE=http://localhost:8080 npm run dev` |
+| build the wasm pkg (serverless transport) | `npm run build:wasm` |
 | typecheck (TS strict) | `npm run typecheck` |
 | tests (vitest + testing-library) | `npm test -- --run` |
 | production build | `npm run build` |
@@ -29,6 +30,12 @@ Env knobs (build-time, Vite):
 - `VITE_TRANSPORT` = `mock` (default) | `http` | `wasm`
 - `VITE_API_BASE` — base URL for `http`; defaults to same origin
   (POSTs to `{base}/api/dispatch`)
+- `VITE_DATA_URL` — registry snapshot URL the `wasm` transport fetches
+  (required for `wasm`)
+- `VITE_DATA_FORMAT` — snapshot format for `wasm`: `csv` (default) |
+  `jsonl`
+- `VITE_REGISTRY_NAME` — registry display name for `wasm`; defaults to
+  the data URL
 
 ## The transport contract
 
@@ -39,26 +46,36 @@ type Transport = (req: Request) => Promise<Response>;
 `Request`/`Response` (in `src/protocol/`) mirror the Rust `crates/app`
 serde enums exactly: requests are internally tagged with `"op"`
 (`Resolve | List | Count | Describe | Create | Edit | Transition |
-Whoami`), responses are the `{ok: true, data} | {ok: false, error:
-{kind, message}}` envelope with `kind ∈ NotFound | Validation |
-Unsupported | Auth | Backend | BadRequest`. Transports never throw for
-domain failures — those come back in the envelope; a throw means the
-transport itself is broken or misconfigured.
+Print | Export | PollProposal | Whoami`), responses are the
+`{ok: true, data} | {ok: false, error: {kind, message}}` envelope with
+`kind ∈ NotFound | Ambiguous | Validation | Unsupported | Auth |
+Backend | BadRequest`. Transports never throw for domain failures —
+those come back in the envelope; a throw means the transport itself is
+broken or misconfigured.
 
 Implementations (`src/transport/`):
 
-- **`mockTransport(fixtures?)`** — real in-memory
-  filter/sort/page/count/describe/resolve/create/edit/transition over a
-  fixture entity store (not canned responses). Default backend in dev
-  and the backbone of the tests. Ships with a small parts fixture set
-  (`fixtures.ts`).
+- **`mockTransport(fixtures?)`** — a faithful in-memory double of the
+  engine's dispatch (resolve normalization + prefix matching, the
+  `Unsupported` collection guard, lifecycle rules, mint-then-bind,
+  Print/Export/PollProposal/Whoami) over a fixture entity store (not
+  canned responses). Default backend in dev and the backbone of the
+  tests. Ships with a small parts fixture set (`fixtures.ts`). Its
+  Print renders a placeholder SVG (rect + id text); real label
+  rendering is the Rust codec's.
 - **`httpTransport(baseUrl)`** — `POST {base}/api/dispatch`, JSON.
   Accepts any well-formed envelope regardless of HTTP status; anything
   else maps to a `Backend` error.
-- **`wasmTransport()`** — documented integration point; throws
-  `"wasm transport: crates/wasm dispatch not built yet — see ADR-030 §3"`
-  until the wasm-bindgen façade over `app::dispatch` exists. The
-  intended wiring is sketched in `src/transport/wasm.ts`.
+- **`wasmTransport(env?)`** — the serverless deploy: imports the
+  wasm-pack pkg (`src/wasm-pkg/`, gitignored — built by
+  `npm run build:wasm`), fetches the snapshot from `VITE_DATA_URL`,
+  opens it via `registry_open`, then round-trips Request/Response JSON
+  through `registry_dispatch`. The pkg is loaded via
+  `import.meta.glob`, so typecheck and `vite build` succeed without it
+  and its absence surfaces as a clear runtime error pointing at
+  `npm run build:wasm`. Honest capabilities (crates/wasm dispatch.rs):
+  reads are fully served; mutations answer `Auth` until an operator is
+  set and `Backend` (OAuth + PR wiring pending) at the proposal sink.
 - A Tauri `invoke` transport joins the same seam later (ADR-030 §3).
 
 ## Descriptor-driven UI (ADR-035 §0)
@@ -78,8 +95,25 @@ The dividing line, applied throughout:
   shell's own, allowed.
 
 Routing is a deliberately tiny hash router (`src/router.ts`): `#/` is
-the grid, `#/<id>` resolves an entity. Two routes don't justify a
-dependency, and hash routing keeps GitHub Pages deploys config-free.
+the grid, `#/print` the print page, `#/bind` the bind queue, `#/<id>`
+resolves an entity. A handful of routes don't justify a dependency,
+and hash routing keeps GitHub Pages deploys config-free.
+
+## Pages beyond the grid
+
+- **`#/print`** — select entities (pasted ids or the shared filter
+  grammar), set options (layout/size/chars/micro/copies — values from
+  the protocol vocabularies), dispatch `Print`, preview the returned
+  SVGs, and print via a child window with one margin-0 `@page` per
+  label (continuous-roll model, ported from the old `dk-continuous`
+  output mode). Die-cut sheet packing is deliberately out of scope.
+- **`#/bind`** — look up an id (`Resolve`), fill the descriptor's
+  editable fields, queue locally (`localStorage`,
+  `webapp.bind-queue`), submit as sequential
+  `Transition{to: "bound", fields}`. Failed items stay queued with the
+  protocol error shown verbatim — on the wasm transport that is the
+  honest `Auth` (no operator) or `Backend` (OAuth + PR wiring pending)
+  answer.
 
 ## Deliberately absent (ported later, per ADR-030)
 
@@ -89,14 +123,14 @@ accident:
 
 - **camera scan / lookup-by-QR** (Tauri mobile gets the native scan
   plugin)
-- **label print pipeline** (layout/size/copies — print events fold into
-  the audit spine, ADR-035 §0)
-- **bind queue / bulk bind flow**
-- mutation UI generally (`Create`/`Edit`/`Transition` are implemented
-  in the protocol layer and mock, exercised by tests, but have no
-  screens yet)
-- Tauri `invoke` transport; WASM transport wiring (see above)
-- auth/identity surfaces (`Whoami` is plumbed but unused)
+- **die-cut label sheets** (the print page targets continuous tape
+  only)
+- mint/edit/void screens (`Create`/`Edit`/`Transition{void}` are
+  implemented in the protocol layer and mock, exercised by tests, but
+  have no screens yet)
+- Tauri `invoke` transport
+- auth/identity surfaces (`Whoami` is plumbed; no sign-in UI yet, so
+  the wasm transport never calls `registry_set_operator`)
 
 ## Protocol notes
 

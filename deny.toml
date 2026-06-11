@@ -7,13 +7,6 @@
 version = 2
 yanked = "warn"
 ignore = [
-  # time 0.3.x < 0.3.47: DoS via stack exhaustion when parsing
-  # *untrusted RFC-2822* input. This workspace parses/formats RFC-3339
-  # only (well_known::Rfc3339 at every call site) — the vulnerable code
-  # path is unreachable. The patched 0.3.47 requires Rust 1.88; our
-  # toolchain is pinned 1.85 (ADR-024 repro-build discipline). Retire
-  # this ignore with the toolchain bump (obligations: `toolchain-bump-188`).
-  "RUSTSEC-2026-0009",
   # paste 1.x: unmaintained (archived upstream). Transitive dev-only
   # dep (imageproc -> nalgebra -> simba) used by the codec test raster
   # helper — not in any shipped artifact. Revisit when imageproc moves

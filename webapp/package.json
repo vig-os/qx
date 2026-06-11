@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:wasm": "wasm-pack build ../crates/wasm --target web --out-dir ../../webapp/src/wasm-pkg",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest"

@@ -1,7 +1,10 @@
 # Per ADR-024 §Reproducible builds: pin the toolchain for byte-identical
 # build artifacts across hosts. Bumps are PRs.
+# 1.85 -> 1.93 (2026-06-11): rmcp (pr mcp shell) and time >= 0.3.47
+# (the RUSTSEC-2026-0009 patch) both require rustc >= 1.88; bumping
+# retires the deny.toml advisory ignore (obligation toolchain-bump-188).
 [toolchain]
-channel = "1.85.0"
+channel = "1.93.0"
 components = ["rustfmt", "clippy"]
 targets = ["wasm32-unknown-unknown"]
 profile = "minimal"

@@ -957,12 +957,19 @@ fn poll_proposal(ctx: &AppContext, proposal: &ProposalRef) -> Response {
 
 fn whoami(ctx: &AppContext) -> Response {
     match ctx.identity.current() {
-        Ok(op) => Response::ok(json!({
-            "id": op.id.0,
-            "display_name": op.display_name,
-            "source": format!("{:?}", op.source),
-            "verified_at": op.verified_at.map(|t| rfc3339(&t)),
-        })),
+        Ok(op) => {
+            // `source` rides as the IdentitySource serde shape (not a
+            // Rust Debug string) so the wire form is a stable protocol
+            // value.
+            let source = serde_json::to_value(&op.source)
+                .unwrap_or_else(|_| serde_json::Value::String("unknown".into()));
+            Response::ok(json!({
+                "id": op.id.0,
+                "display_name": op.display_name,
+                "source": source,
+                "verified_at": op.verified_at.map(|t| rfc3339(&t)),
+            }))
+        }
         Err(e) => Response::error(ErrorKind::Auth, e.to_string()),
     }
 }

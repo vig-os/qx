@@ -136,6 +136,12 @@ enum Cmd {
         #[arg(long)]
         static_dir: Option<PathBuf>,
     },
+    /// Stdio MCP server speaking the command protocol (for agents).
+    #[cfg(feature = "mcp")]
+    Mcp,
+    /// Terminal UI — entity table + detail over the command protocol.
+    #[cfg(feature = "tui")]
+    Tui,
     /// ADR-016 gate over a data repo: structural validation (+ diff
     /// classification and policy with --base).
     Check {
@@ -164,7 +170,69 @@ fn main() -> ExitCode {
         Cmd::Check { path, base } => check(&path, base.as_deref()),
         #[cfg(feature = "serve")]
         Cmd::Serve { addr, static_dir } => serve_cmd(addr, static_dir),
+        #[cfg(feature = "mcp")]
+        Cmd::Mcp => mcp_cmd(),
+        #[cfg(feature = "tui")]
+        Cmd::Tui => tui_cmd(),
         protocol => protocol_cmd(protocol),
+    }
+}
+
+#[cfg(feature = "tui")]
+fn tui_cmd() -> ExitCode {
+    let cfg = match load_config() {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
+    // The TUI is read-only today (table + detail); a dry-run sink keeps
+    // it token-free.
+    let wiring = match build_wiring(&cfg, Some(DryRunTarget::Stdout)) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let ctx = app_context(&cfg, wiring);
+    match part_registry_cli::tui::run(ctx) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("tui failed: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(feature = "mcp")]
+fn mcp_cmd() -> ExitCode {
+    let cfg = match load_config() {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
+    // Same sink policy as serve: live when a token resolves, dry-run
+    // capture otherwise (stderr keeps stdout clean for the MCP wire).
+    let wiring = match build_wiring(&cfg, None) {
+        Ok(w) => w,
+        Err(_) => {
+            eprintln!(
+                "pr mcp: no GitHub token resolved — mutations will be captured as \
+                 dry-run JSON, not submitted (set PART_REGISTRY__TRANSPORT__GITHUB_TOKEN)."
+            );
+            // Stdout carries the MCP wire; dry-run capture must go to a
+            // file, never stdout.
+            let capture = std::env::temp_dir().join("pr-mcp-dry-run.jsonl");
+            eprintln!("pr mcp: dry-run proposals -> {}", capture.display());
+            match build_wiring(&cfg, Some(DryRunTarget::File(capture))) {
+                Ok(w) => w,
+                Err(e) => return e,
+            }
+        }
+    };
+    init_obs(&cfg, &wiring);
+    let ctx = app_context(&cfg, wiring);
+    match part_registry_cli::mcp::run(ctx) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("mcp failed: {e}");
+            ExitCode::FAILURE
+        }
     }
 }
 

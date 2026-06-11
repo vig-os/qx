@@ -19,11 +19,14 @@ export const partsDescribe: DescribeData = {
       name: "parts",
       id: { scheme: "nano14", default: true },
       lifecycle: { statuses: ["unbound", "bound", "void"] },
+      // Field roster, order, and labels mirror the engine's parts
+      // preset (crates/app/src/preset.rs parts_descriptor).
       fields: [
         { key: "type", type: "string", label: "Type", editable: true, meaningful_from: "bound" },
+        { key: "description", type: "string", label: "Description", editable: true, meaningful_from: "bound" },
         { key: "vendor", type: "string", label: "Vendor", editable: true, meaningful_from: "bound" },
-        { key: "location", type: "string", label: "Location", editable: true, meaningful_from: "bound" },
         { key: "part_number", type: "string", label: "Part number", editable: true, meaningful_from: "bound" },
+        { key: "location", type: "string", label: "Location", editable: true, meaningful_from: "bound" },
         { key: "notes", type: "string", label: "Notes", editable: true },
       ],
       render: { label_fields: ["id", "type"] },
@@ -61,6 +64,7 @@ export const partsEntities: Entity[] = [
     MINT_1,
     {
       type: "t-sensor",
+      description: "Thermocouple probe, type T",
       vendor: "Omega",
       location: "lab-1/shelf-A",
       part_number: "TJ36-CASS",
@@ -100,6 +104,7 @@ export const partsEntities: Entity[] = [
     MINT_1,
     {
       type: "pump",
+      description: 'Diaphragm pump, 5.5 l/min "lab grade"',
       vendor: "KNF",
       location: "rig-2",
       part_number: "N86KN.18",
