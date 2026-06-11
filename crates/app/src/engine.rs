@@ -954,10 +954,13 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
     let padding_mode = match options.padding_mode.as_deref() {
         None | Some("overlap") => PaddingMode::Overlap,
         Some("additive") => PaddingMode::Additive,
+        Some("clip") => PaddingMode::Clip,
         Some(other) => {
             return Response::error(
                 ErrorKind::Validation,
-                format!("unknown padding_mode {other:?}; modes: overlap, additive (ADR-031 §8)"),
+                format!(
+                    "unknown padding_mode {other:?}; modes: overlap, additive, clip (ADR-031 §8)"
+                ),
             );
         }
     };

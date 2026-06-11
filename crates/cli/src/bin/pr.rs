@@ -138,8 +138,10 @@ enum Cmd {
         #[arg(long)]
         padding: Option<u32>,
         /// Quiet-zone accounting for the deduction (ADR-031 §8):
-        /// overlap (quiet zone counts toward outside padding) or
-        /// additive (excluded; full-bleed/die-cut).
+        /// overlap (quiet zone counts toward outside padding),
+        /// additive (excluded; full-bleed/die-cut), or clip (no
+        /// embedded quiet zone — the printer's intrinsic margins
+        /// supply the safe space; maximal modules).
         #[arg(long, default_value = "overlap")]
         padding_mode: String,
         /// Dots per inch for the mm -> px conversion (default 300

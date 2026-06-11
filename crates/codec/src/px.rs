@@ -70,6 +70,13 @@ pub enum PaddingMode {
     /// full-bleed/die-cut contexts where the canvas edge is the
     /// physical edge.
     Additive,
+    /// The maximizer (ADR-031 §8): the artifact reserves NO quiet zone
+    /// at all — `data·m + 2·padding_min ≤ size` — because the printer's
+    /// intrinsic unreducible white (cut-feed margin, unprintable side
+    /// margins) supplies the safe space physically. The decode
+    /// guarantee transfers to the declared physical context (printer
+    /// profiles verify `intrinsic margin ≥ quiet·m` once they land).
+    Clip,
 }
 
 impl PaddingMode {
@@ -77,6 +84,7 @@ impl PaddingMode {
         match self {
             PaddingMode::Overlap => "overlap",
             PaddingMode::Additive => "additive",
+            PaddingMode::Clip => "clip",
         }
     }
 
@@ -92,6 +100,7 @@ impl PaddingMode {
         match self {
             PaddingMode::Overlap => data * m + 2 * pad.max(quiet * m),
             PaddingMode::Additive => (data + 2 * quiet) * m + 2 * pad,
+            PaddingMode::Clip => data * m + 2 * pad,
         }
     }
 }
@@ -463,6 +472,29 @@ mod tests {
                 "white {} >= quiet·m + pad",
                 l.white_px,
             );
+        }
+    }
+
+    #[test]
+    fn clip_mode_maximizes_modules() {
+        // No embedded quiet zone: max m with 17·m + 2·pad <= size —
+        // the printer's intrinsic margins supply the safe space.
+        let cases = [
+            // (size, pad_min, m, data_px)
+            (64, 0, 3, 51), // floor(64/17) = 3 (white 6 = remainder only)
+            (68, 0, 4, 68), // exact fit, ZERO white — vs overlap m=3
+            (35, 0, 2, 34), // overlap at 35 would only reach m=1
+            (64, 2, 3, 51), // 17·3 + 4 = 55 <= 64
+        ];
+        for (size, pad_min, m, data_px) in cases {
+            let l = render_mode(size, pad_min, true, PaddingMode::Clip);
+            assert_eq!(l.module_px, m, "size {size}/pad {pad_min}");
+            assert_eq!(l.data_px, data_px, "size {size}/pad {pad_min}");
+            assert_eq!(l.padding_mode, PaddingMode::Clip);
+            assert_eq!(l.height_px, size, "exact canvas");
+            // Clip beats or matches overlap at every size.
+            let o = render_mode(size, pad_min, true, PaddingMode::Overlap);
+            assert!(l.module_px >= o.module_px, "clip >= overlap at {size}");
         }
     }
 

@@ -260,6 +260,17 @@ and registries declare:
   printer *profiles* (§3) later declare their intrinsic margins so the
   deduction credits device white explicitly instead of the operator
   choosing a mode by feel.
+- **Symbology version + EC level are contract parameters, not
+  hardcodes** (2026-06-11): today M4/EC-M is fixed; for the nano14
+  payload the feasible space is exactly M4-L, M4-M, M3-L (M1/M2 can't
+  hold 14 alnum; M4-Q caps at 13). Expose `ec: l|m` (+ auto version):
+  M3-L has 15 data modules vs M4's 17, so the §8 deduction yields
+  bigger dots at the same canvas (clip@64: 4px vs 3px, +33%) at the
+  cost of ~7% vs ~15% codeword correction — on thermal media, dot
+  fidelity often binds before damage tolerance, so M3-L may decode
+  better; the printer A/B decides, the contract offers both. The
+  symbology contributes only its module counts to the one deduction
+  engine, so this is a declaration, not new math.
 - **`padding_mode: clip` — the maximizer** (2026-06-11): the digital
   artifact carries ZERO embedded quiet zone; `m = floor((size −
   2·pad_min)/data)` with pad defaulting 0, so modules fill the canvas
