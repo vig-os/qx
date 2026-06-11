@@ -398,6 +398,29 @@ revalidation_trigger = "major-bump"
 surveillance_owner = "shells-maintainer"
 notes = "fs feature only; SPA fallback to index.html."
 
+[[crate]]
+name = "spleen"
+version = "=2.1.0"
+class = 1
+license = "BSD-2-Clause"
+role = "bitmap font behind the px-true id-text — Spleen multi-cell glyph tables (ADR-031 §8 typography verdict)"
+used_by = ["codec"]
+maintenance_url = "https://github.com/fcambus/spleen"
+last_release_check = "2026-06-11"
+upstream_status = "active"
+revalidation_trigger = "any-version-bump"
+surveillance_owner = "shells-maintainer"
+notes = """
+Vendored as generated source, NOT a cargo dependency: the
+6x12/8x16/12x24/16x32/32x64 BDF faces are baked into const bit tables
+in crates/codec/src/glyphs_spleen.rs by tools/gen_spleen_glyphs.py
+(drift gate: `uv run tools/gen_spleen_glyphs.py --check`; per-cell
+ink-bit checksums asserted by the generated tests). The BSD-2-Clause
+notice is retained in the generated source per the license terms. On
+a version bump: regenerate the tables, rerun the codec px suite, and
+re-judge legibility against the printed bench before adopting.
+"""
+
 # Pending entries — added as adapter PRs land Class-3 deps not yet
 # in the workspace. Each entry below is a placeholder for an
 # expected dep that has not yet been pinned; the coverage tool

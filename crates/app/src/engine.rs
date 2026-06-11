@@ -1071,6 +1071,7 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
                 "module_px": l.module_px,
                 "data_px": l.data_px,
                 "glyph_px": l.glyph_px,
+                "glyph_cell": l.glyph_cell,
                 "white": l.white,
                 "padding_mode": l.padding_mode,
                 "symbology": l.symbology,

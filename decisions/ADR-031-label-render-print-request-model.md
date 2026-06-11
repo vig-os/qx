@@ -312,10 +312,14 @@ and registries declare:
   bit-tables in the codec. Selection: nominal block = rows·cell·k
   fitted closest into the OVERALL label size; ties favor the larger
   cell at lower k (native resolution beats integer upscaling). The
-  slack between cap ink and the canvas distributes as
-  top/between/bottom padding. Worked example (validated
-  `labels/px64-clip-m3l-spleen-v2/`): 64px label, `44` grouping →
-  16×32 @ k=1, nominal 64/64, ~24px cap rows, slack 6/7/7. The
+  slack between cap ink and the block is **JUSTIFIED to the
+  module-part span** (2026-06-11 refinement: outer white clipped —
+  top row flush with the QR's top edge, bottom row flush with its
+  bottom, slack absorbed between rows only; the text column mirrors
+  the QR's vertical extent — the co-sizing rule preserved). Worked
+  example (validated `labels/px64-clip-m3l-spleen-v3/`): 64px label,
+  `44` grouping → 16×32 @ k=1, nominal 64/64, ~24px cap rows, top
+  flush, between 16, bottom flush. The
   first-party 5×7 table remains the floor for blocks too small for
   the 12-cell. Glyph px is hereby decoupled from module px (a k=1
   native cell may be finer than the QR modules — the one-lattice

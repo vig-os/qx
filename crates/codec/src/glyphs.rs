@@ -11,6 +11,14 @@
 //! ADR-031 §8 prototype (printed + verified 2026-06-11),
 //! transliterated bit-for-bit.
 //!
+//! Under the superseding §8 typography verdict (same day, after the
+//! Spleen-v2 prototype) this table is the documented **floor**: the
+//! px renderer prefers the vendored Spleen cells
+//! ([`crate::glyphs_spleen`]) and falls back here when even the
+//! 12-cell at scale 1 overflows the label's controlling dimension —
+//! and for the `vert` layout, which stays on this path for now (see
+//! [`crate::px`] docs).
+//!
 //! Glyphs render through the same `<rect>` emitter as the QR modules
 //! ([`write_glyph_rects`]), so the whole label is one deterministic
 //! binary raster — identical across rsvg/browser/printer/wasm.

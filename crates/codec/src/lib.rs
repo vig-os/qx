@@ -15,8 +15,10 @@
 //!   (`label.py:97-251`)
 //! - [`px`] — px-true device-pixel renderer + job-uniformity pass
 //!   (ADR-031 §2–§4; obligation `px-true-qr-render`)
-//! - [`glyphs`] — first-party 5×7 bitmap glyph table for the px-true
-//!   id-text (ADR-031 §8 "glyphs ARE modules")
+//! - [`glyphs`] — first-party 5×7 bitmap glyph table, the documented
+//!   floor for the px-true id-text (ADR-031 §8 "glyphs ARE modules")
+//! - [`glyphs_spleen`] — GENERATED Spleen multi-cell bit tables
+//!   (ADR-031 §8 typography verdict; `tools/gen_spleen_glyphs.py`)
 //! - [`symbology`] — the `<family>[-<version>][-<ec>]` type grammar +
 //!   auto-fit resolution (ADR-031 §8 print contracts)
 //!
@@ -37,6 +39,7 @@ use thiserror::Error;
 
 pub mod format;
 pub mod glyphs;
+pub mod glyphs_spleen;
 pub mod px;
 pub mod qr;
 pub mod svg;
