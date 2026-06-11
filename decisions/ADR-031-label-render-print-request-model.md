@@ -294,7 +294,19 @@ and registries declare:
   down to the next integer `g` that fits, centrally aligned in the
   block. Exact fit at the default: 5×8 cell, `44` grouping →
   8m + 1m gap + 8m = 17m = the M4 module part, zero remainder.
-  License rides in the SOUP inventory. **ID-optimized by ownership**:
+  License rides in the SOUP inventory. **Bench verdict (2026-06-11,
+  printed + judged on hardware): the 5×7 const table WINS across the
+  entire practical ink range (1.2–5mm)** — the considered tier 2
+  (embedded outline font + pure-Rust rasterizer + 50% threshold at
+  device resolution) never crosses over and is therefore NOT BUILT: no
+  font bytes, no rasterizer dependency, no extra SOUP rows. The 5×7
+  table is the px print contract's typography, period. Bench artifacts:
+  `labels/typography-bench/bench3-*` (coarse 5×7 vs threshold-
+  rasterized JetBrainsMono vs AA control, lookalike pairs included).
+  Supersession trigger: label formats with ink heights well beyond
+  5mm where letterform aesthetics matter — re-run the bench before
+  reconsidering tier 2.
+  **ID-optimized by ownership**:
   nano14 already excludes `0/O/1/I/L` at the alphabet level; the
   remaining lookalike pairs (`8/B`, `5/S`, `2/Z`, `6/G`, `U/V`) are
   hand-tunable in our bit-table — the embedded micro-font is a

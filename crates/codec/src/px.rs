@@ -35,13 +35,18 @@
 //!   pixel on the bottom/right edge — deterministic.
 //! - QR→text gap = `max(round(1.5 · white), quiet·m)` over the white
 //!   on the QR's text side (right for `horz`, bottom for `vert`).
-//! - The id-text block is co-sized with the module part (spans exactly
-//!   `data_px`, top-aligned with it in `horz`) and lives on the same
-//!   module grid: font height and inter-row gaps are integer multiples
-//!   of `m` (row gap = one module); any remainder stays at the bottom
-//!   of the block. Monospace advance ≈ `29/40 · font` per glyph.
-//! - Modules draw at their canvas offsets on a `crispEdges` grid; the
-//!   quiet zone is **not** drawn — the white background supplies it.
+//! - The id-text is **bitmap typography on the module lattice** (§8
+//!   "glyphs ARE modules"): each char is a 5×7 dot matrix from the
+//!   first-party [`crate::glyphs`] table, rendered as `<rect>`s in the
+//!   same fill group as the QR modules — no `<text>`, no fonts, no
+//!   rasterizer variance. The glyph pixel `g` is the largest integer
+//!   with the block (`rows·7g` plus `(rows−1)·g` gaps) inside
+//!   `data_px`, capped at `module_px` — text dots = QR dots when it
+//!   fits. Advance is `6g` (5g glyph + 1g spacing, none trailing), row
+//!   pitch `8g`; the block centers in the module part span.
+//! - Modules and glyphs draw at their canvas offsets on a `crispEdges`
+//!   grid; the quiet zone is **not** drawn — the white background
+//!   supplies it.
 //!
 //! Integer-px structure proven on hardware by
 //! `tools/printer_test_62mm.py` (696 px = 62 mm tape) and the ADR-031
@@ -56,6 +61,7 @@ use std::fmt::Write as _;
 use serde::{Deserialize, Serialize};
 
 use crate::format::TextFormat;
+use crate::glyphs;
 use crate::svg::Layout;
 use crate::symbology::Symbology;
 use crate::CodecError;
@@ -169,6 +175,11 @@ pub struct PxLabel {
     /// The module part (data modules only) in device px
     /// (= `data modules * module_px`).
     pub data_px: u32,
+    /// Device px per bitmap-glyph dot (§8 typography): the largest
+    /// integer keeping the id-text block inside the module part,
+    /// capped at `module_px` — `glyph_px == module_px` means text dots
+    /// are QR dots.
+    pub glyph_px: u32,
     /// Actual per-side white, canvas edge → module part: the floors
     /// plus the controlling axis's remainder (extra px bottom/right).
     pub white: Padding,
@@ -199,15 +210,6 @@ fn deduce_module_px(
     module_px
 }
 
-/// Largest font on the module grid for a `rows`-row text block
-/// co-sized with a `data`-module part: font = `k·m`, row gap = `m`
-/// (one module), with `rows·k + (rows − 1) ≤ data` so the block never
-/// exceeds `data_px`; any remainder stays at the bottom of the block.
-fn grid_font_px(data: u32, rows: u32, module_px: u32) -> u32 {
-    let k = (data.saturating_sub(rows - 1) / rows).max(1);
-    k * module_px
-}
-
 /// QR→text gap over the white on the QR's text side:
 /// `max(round(1.5 · white), quiet·m)`, half rounding up — the §8
 /// safe-space clamp (typography can never invade the quiet zone, even
@@ -236,7 +238,11 @@ fn qr_text_gap(white_side: u32, quiet: u32, module_px: u32) -> u32 {
 /// - [`CodecError::Render`] when the resolved symbol cannot fit one
 ///   device pixel per module inside the padding floors; the message
 ///   carries the minimum workable sizes for 1/2/3 px modules under the
-///   active `padding_mode`.
+///   active `padding_mode`. Also when the module part cannot fit the
+///   id-text block at one device px per glyph dot (the message
+///   suggests fewer rows via `--chars` or a larger size), and — purely
+///   defensively, nano14 payloads cannot trigger it — for a char
+///   outside the [`crate::glyphs`] alphabet.
 /// - [`CodecError::Unsupported`] for [`Layout::Flag`] — the px-true
 ///   flag geometry (wrap-zone width in device px) is not specified yet;
 ///   ADR-031 §5 lists it, this renderer covers `horz`/`vert` first.
@@ -318,59 +324,45 @@ pub fn render_label_px(
         Layout::Flag { .. } => unreachable!("rejected above"),
     };
 
-    // Text on the module grid (§8): block co-sized with the module
-    // part, font = k·m, row gap = m.
+    // Bitmap id-text on the module lattice (§8 "glyphs ARE modules"):
+    // the glyph pixel g is the largest integer keeping the block —
+    // rows of 7g glyphs with 1g gaps between rows — inside data_px,
+    // capped at module_px so text dots equal QR dots when they fit.
     let rows = text_format.split(canonical);
     let n_rows = rows.len() as u32;
-    let font_px = grid_font_px(data, n_rows, module_px);
-    let row_gap = module_px;
     let max_chars = rows.iter().map(|r| r.chars().count()).max().unwrap_or(0) as u32;
-    // Monospace advance ≈ 0.725 · font per glyph (= 29/40, integer math).
-    let text_w = font_px * 29 * max_chars / 40;
-
-    let (width_px, height_px, text_lines) = match layout {
-        Layout::Horz => {
-            // Height is EXACTLY size_px; the module part sits white.top
-            // from the top, white.left from the left, and the text
-            // block top-aligns with it.
-            let tx = white.left + data_px + gap;
-            let w = tx + text_w + white.right;
-            let lines: Vec<String> = rows
-                .iter()
-                .enumerate()
-                .map(|(i, row)| {
-                    let ty = white.top + font_px + i as u32 * (font_px + row_gap);
-                    format!("<text x=\"{tx}\" y=\"{ty}\">{row}</text>")
-                })
-                .collect();
-            (w, size_px, lines)
-        }
-        Layout::Vert => {
-            // Width is EXACTLY size_px; the text column stays inside
-            // the module part's width, so cap the font (still a
-            // multiple of m — snapped down on the grid).
-            let font_px = if max_chars > 0 {
-                let fit = data_px * 40 / (29 * max_chars);
-                font_px.min((fit / module_px).max(1) * module_px)
-            } else {
-                font_px
-            };
-            let text_h = n_rows * font_px + (n_rows - 1) * row_gap;
-            let ty0 = white.top + data_px + gap;
-            let h = ty0 + text_h + white.bottom;
-            let cx = size_px / 2;
-            let lines: Vec<String> = rows
-                .iter()
-                .enumerate()
-                .map(|(i, row)| {
-                    let ty = ty0 + font_px + i as u32 * (font_px + row_gap);
-                    format!("<text x=\"{cx}\" y=\"{ty}\" text-anchor=\"middle\">{row}</text>")
-                })
-                .collect();
-            (size_px, h, lines)
-        }
-        Layout::Flag { .. } => unreachable!("rejected above"),
-    };
+    // Block height in g-units: 8 per row minus the missing last gap.
+    let block_units = 8 * n_rows - 1;
+    // Widest-row width in g-units: 6 per char (5 glyph + 1 spacing)
+    // minus the missing trailing spacing.
+    let row_units = (6 * max_chars).saturating_sub(1).max(1);
+    let mut glyph_px = (data_px / block_units).min(module_px);
+    if matches!(layout, Layout::Vert) {
+        // Below the QR the rows must also fit the module-part width.
+        glyph_px = glyph_px.min(data_px / row_units);
+    }
+    if glyph_px < 1 {
+        let (need, what) = if data_px / block_units < 1 {
+            (
+                block_units,
+                format!("a {n_rows}-row id-text block (7px glyph rows + 1px row gaps)"),
+            )
+        } else {
+            (
+                row_units,
+                format!("a {max_chars}-char id-text row (5px glyphs + 1px spacing)"),
+            )
+        };
+        return Err(CodecError::Render(format!(
+            "module part {data_px}px cannot fit {what}: it needs at least \
+             {need}px at 1px per glyph dot; use fewer rows via --chars or \
+             a larger size"
+        )));
+    }
+    let block_h = block_units * glyph_px;
+    let advance = 6 * glyph_px;
+    let row_pitch = 8 * glyph_px;
+    let max_row_w = (max_chars * advance).saturating_sub(glyph_px);
 
     // Module rects at their canvas offsets — every coordinate an
     // integer device px. The quiet zone is not drawn; the white
@@ -391,14 +383,53 @@ pub fn render_label_px(
         }
     }
 
+    // Glyph rects join the SAME crispEdges fill group as the modules:
+    // the whole label is one deterministic binary raster.
+    let (width_px, height_px) = match layout {
+        Layout::Horz => {
+            // Height is EXACTLY size_px; the text sits right of the QR
+            // at the clamped gap, the block centers vertically in the
+            // module part span, and the canvas ends exactly at the
+            // widest row plus the right white floor — no trailing
+            // white.
+            let tx = white.left + data_px + gap;
+            let ty0 = white.top + (data_px - block_h) / 2;
+            for (ri, row) in rows.iter().enumerate() {
+                let y0 = ty0 + ri as u32 * row_pitch;
+                for (ci, ch) in row.chars().enumerate() {
+                    let x0 = tx + ci as u32 * advance;
+                    glyphs::write_glyph_rects(&mut rects, ch, x0, y0, glyph_px)?;
+                }
+            }
+            (tx + max_row_w + white.right, size_px)
+        }
+        Layout::Vert => {
+            // Width is EXACTLY size_px; the text sits below the QR at
+            // the clamped gap, each row centers horizontally in the
+            // module part span, and the canvas ends exactly at the
+            // block bottom plus the bottom white floor.
+            let ty0 = white.top + data_px + gap;
+            for (ri, row) in rows.iter().enumerate() {
+                let chars = row.chars().count() as u32;
+                let row_w = (chars * advance).saturating_sub(glyph_px);
+                let x_row = white.left + (data_px - row_w) / 2;
+                let y0 = ty0 + ri as u32 * row_pitch;
+                for (ci, ch) in row.chars().enumerate() {
+                    let x0 = x_row + ci as u32 * advance;
+                    glyphs::write_glyph_rects(&mut rects, ch, x0, y0, glyph_px)?;
+                }
+            }
+            (size_px, ty0 + block_h + white.bottom)
+        }
+        Layout::Flag { .. } => unreachable!("rejected above"),
+    };
+
     let svg = format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width_px}\" height=\"{height_px}\" \
 viewBox=\"0 0 {width_px} {height_px}\">\
 <rect width=\"{width_px}\" height=\"{height_px}\" fill=\"white\"/>\
 <g fill=\"black\" shape-rendering=\"crispEdges\">{rects}</g>\
-<g font-family=\"monospace\" font-size=\"{font_px}\" fill=\"black\">{texts}</g>\
 </svg>\n",
-        texts = text_lines.join(""),
     );
 
     Ok(PxLabel {
@@ -409,6 +440,7 @@ viewBox=\"0 0 {width_px} {height_px}\">\
         module_px,
         modules,
         data_px,
+        glyph_px,
         white,
         padding_mode,
         symbology: resolved.compact(),
@@ -663,8 +695,20 @@ mod tests {
         assert_eq!(l.height_px, 64, "exact canvas");
         // Remainder 4 splits 2/2 on the controlling axis.
         assert_eq!((l.white.top, l.white.bottom), (2, 2));
+        // Typography rides the same deduction: g = min(m, 60/15) = 4,
+        // and the 2-row block is 15·4 = 60 = data_px — an exact fit,
+        // zero centering offset, text dots = QR dots.
+        assert_eq!(l.glyph_px, 4);
+        let (_, glyph_dots) = split_rects(&l, Layout::Horz);
+        assert_eq!(glyph_dots.iter().map(|r| r.1).min(), Some(l.white.top));
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.1 + r.3).max(),
+            Some(l.white.top + l.data_px),
+            "block bottom == module part bottom"
+        );
         let m4 = render_mode(64, 0, true, PaddingMode::Clip);
         assert_eq!(m4.module_px, 3, "M4 (17 modules) reaches only 3px");
+        assert_eq!(m4.glyph_px, 3, "M4 glyphs follow at 3px");
     }
 
     #[test]
@@ -721,7 +765,12 @@ mod tests {
         assert_eq!((l.white.left, l.white.right), (6, 10));
         assert_eq!(l.height_px, 64, "exact canvas");
         // Gap follows the RIGHT side's white: max(round(1.5·10), 6) = 15.
-        assert!(l.svg.contains("<text x=\"72\""), "tx = 6+51+15: {}", l.svg);
+        let (_, glyph_dots) = split_rects(&l, Layout::Horz);
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.0).min(),
+            Some(72),
+            "tx = 6 + 51 + 15"
+        );
     }
 
     #[test]
@@ -762,9 +811,11 @@ mod tests {
 
     // ---------- uniform white, gap law, module placement ----------
 
+    type Rect = (u32, u32, u32, u32);
+
     /// All non-background `<rect>` x/y/width/height values (the
-    /// background rect carries `fill`, modules do not).
-    fn module_rects(svg: &str) -> Vec<(u32, u32, u32, u32)> {
+    /// background rect carries `fill`, content rects do not).
+    fn content_rects(svg: &str) -> Vec<Rect> {
         let doc = roxmltree::Document::parse(svg).expect("well-formed SVG");
         doc.descendants()
             .filter(|n| n.tag_name().name() == "rect" && n.attribute("fill").is_none())
@@ -779,6 +830,38 @@ mod tests {
             .collect()
     }
 
+    /// Partition content rects into (QR modules, glyph dots): the
+    /// bitmap id-text lives strictly right of the module part in
+    /// `horz` and strictly below it in `vert`.
+    fn split_rects(l: &PxLabel, layout: Layout) -> (Vec<Rect>, Vec<Rect>) {
+        content_rects(&l.svg)
+            .into_iter()
+            .partition(|r| match layout {
+                Layout::Horz => r.0 < l.white.left + l.data_px,
+                Layout::Vert => r.1 < l.white.top + l.data_px,
+                Layout::Flag { .. } => unreachable!("px mode rejects flag"),
+            })
+    }
+
+    /// Dark-module count of FIXED_ID's symbol under `spec` — the QR
+    /// side of the rect-count ledger.
+    fn dark_modules(spec: &str) -> usize {
+        let (_, matrix) = sym(spec).resolve(FIXED_ID).expect("resolves");
+        (0..matrix.size)
+            .map(|r| (0..matrix.size).filter(|&c| matrix.get(r, c)).count())
+            .sum()
+    }
+
+    /// Total ink dots of FIXED_ID's text rows under `fmt` — the glyph
+    /// side of the rect-count ledger, counted from the table.
+    fn expected_ink(fmt: TextFormat) -> usize {
+        fmt.split(FIXED_ID)
+            .iter()
+            .flat_map(|r| r.chars())
+            .map(|c| crate::glyphs::ink_bits(c).expect("nano14 alphabet") as usize)
+            .sum()
+    }
+
     #[test]
     fn white_floors_hold_and_quiet_zone_is_not_drawn() {
         // 64/2 overlap micro: m=3, data 51, white top/left 6
@@ -787,8 +870,8 @@ mod tests {
         let l = render(64, true);
         assert_eq!((l.module_px, l.data_px), (3, 51));
         assert_eq!(l.white, Padding::sides(6, 6, 7, 6));
-        let rects = module_rects(&l.svg);
-        assert!(!rects.is_empty());
+        let (rects, glyph_dots) = split_rects(&l, Layout::Horz);
+        assert!(!rects.is_empty() && !glyph_dots.is_empty());
         let min_x = rects.iter().map(|r| r.0).min().expect("rects");
         let min_y = rects.iter().map(|r| r.1).min().expect("rects");
         let max_y = rects.iter().map(|r| r.1 + r.3).max().expect("rects");
@@ -816,14 +899,12 @@ mod tests {
             // gap = max(round(1.5·white.right), quiet·m), half up.
             let gap = (l.white.right + l.white.right.div_ceil(2)).max(MICRO_QUIET * l.module_px);
             let expected_tx = l.white.left + l.data_px + gap;
-            let doc = roxmltree::Document::parse(&l.svg).expect("well-formed");
-            for text in doc.descendants().filter(|n| n.tag_name().name() == "text") {
-                let x: u32 = text.attribute("x").expect("x").parse().expect("integer x");
-                assert_eq!(
-                    x, expected_tx,
-                    "size {size}/pad {pad}: text x = white.left + data + gap"
-                );
-            }
+            let (_, glyph_dots) = split_rects(&l, Layout::Horz);
+            let min_x = glyph_dots.iter().map(|r| r.0).min().expect("glyph dots");
+            assert_eq!(
+                min_x, expected_tx,
+                "size {size}/pad {pad}: text starts at white.left + data + gap"
+            );
         }
     }
 
@@ -835,10 +916,11 @@ mod tests {
         assert_eq!((l.module_px, l.white.right), (3, 0));
         let gap = MICRO_QUIET * l.module_px;
         let tx = l.white.left + l.data_px + gap;
-        assert!(
-            l.svg.contains(&format!("<text x=\"{tx}\"")),
-            "text clamped {gap}px off the symbol: {}",
-            l.svg
+        let (_, glyph_dots) = split_rects(&l, Layout::Horz);
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.0).min(),
+            Some(tx),
+            "text clamped {gap}px off the symbol"
         );
     }
 
@@ -854,25 +936,44 @@ mod tests {
         assert_eq!(l.width_px, 64, "vert width == size exactly");
         assert_eq!((l.module_px, l.data_px), (3, 51));
         assert_eq!((l.white.left, l.white.top), (6, 6));
-        let rects = module_rects(&l.svg);
+        let (rects, _) = split_rects(&l, Layout::Vert);
         let min_x = rects.iter().map(|r| r.0).min().expect("rects");
         let min_y = rects.iter().map(|r| r.1).min().expect("rects");
         assert_eq!((min_x, min_y), (6, 6), "left white == top white");
     }
 
-    // ---------- text on the module grid ----------
+    // ---------- bitmap typography on the module lattice (§8) ----------
 
-    fn font_size(svg: &str) -> u32 {
-        let doc = roxmltree::Document::parse(svg).expect("well-formed SVG");
-        doc.descendants()
-            .find_map(|n| n.attribute("font-size"))
-            .expect("font-size present")
-            .parse()
-            .expect("integer font size")
+    #[test]
+    fn px_svg_carries_no_text_elements_or_fonts() {
+        // The whole label is one binary raster: glyphs share the QR's
+        // crispEdges fill group and nothing references a font.
+        for layout in [Layout::Horz, Layout::Vert] {
+            for fmt in [
+                TextFormat::FourFour,
+                TextFormat::FourFourFour,
+                TextFormat::FiveFiveFour,
+            ] {
+                let l = render_label_px(
+                    FIXED_ID,
+                    layout,
+                    100,
+                    fmt,
+                    &sym("micro"),
+                    Padding::uniform(2),
+                    PaddingMode::Overlap,
+                )
+                .expect("renders");
+                assert!(!l.svg.contains("<text"), "no <text> ({layout:?}, {fmt:?})");
+                assert!(!l.svg.contains("font-family"), "no font ({layout:?})");
+                assert!(!l.svg.contains("font-size"), "no font size ({layout:?})");
+                assert_eq!(l.svg.matches("<g ").count(), 1, "one fill group");
+            }
+        }
     }
 
     #[test]
-    fn text_block_is_co_sized_on_the_module_grid() {
+    fn glyph_px_is_maximal_inside_the_module_part_capped_at_module_px() {
         let formats = [
             (TextFormat::FourFour, 2_u32),
             (TextFormat::FourFourFour, 3),
@@ -890,37 +991,133 @@ mod tests {
                     PaddingMode::Overlap,
                 )
                 .expect("renders");
-                let f = font_size(&l.svg);
-                assert_eq!(f % l.module_px, 0, "font is k·m ({fmt:?}, size {size})");
-                let block = rows * f + (rows - 1) * l.module_px;
+                let g = l.glyph_px;
+                let units = 8 * rows - 1;
                 assert!(
-                    block <= l.data_px,
-                    "block {block} <= data_px {} ({fmt:?}, size {size})",
+                    g >= 1 && g <= l.module_px,
+                    "1 <= g {g} <= m {} ({fmt:?}, size {size})",
+                    l.module_px,
+                );
+                assert!(
+                    units * g <= l.data_px,
+                    "block {units}·{g} inside data_px {} ({fmt:?}, size {size})",
                     l.data_px,
+                );
+                // Maximal: either text dots equal QR dots already, or
+                // one more glyph px would overflow the module part.
+                assert!(
+                    g == l.module_px || units * (g + 1) > l.data_px,
+                    "g {g} is maximal ({fmt:?}, size {size})"
                 );
             }
         }
-        // The exact-fit cases: micro 2 rows → 2·8m + m = 17m = data_px.
+        // The default cap engages: micro@64/2, 2 rows → 51/15 = 3 = m,
+        // so text dots ARE QR dots.
         let l = render(64, true);
-        assert_eq!(font_size(&l.svg), 24, "k = (17−1)/2 = 8 → 8·3");
-        assert_eq!(2 * 24 + 3, l.data_px, "block == data_px exactly");
+        assert_eq!(l.glyph_px, l.module_px);
+        assert_eq!(l.glyph_px, 3);
     }
 
     #[test]
-    fn horz_text_top_aligns_with_the_module_part() {
-        // 64/2 micro 44: white.top 6, font 24, row gap 3 → baselines at
-        // 6+24=30 and 30+27=57; the block spans exactly data_px.
+    fn horz_glyph_block_centers_in_the_module_part() {
+        // 64/2 micro 44: white.top 6, m=3, data 51, g=3, block
+        // 15·3 = 45 → top offset (51−45)/2 = 3, block spans y 9..54.
+        // tx = 6 + 51 + max(round(1.5·6), 6) = 66.
         let l = render(64, true);
-        assert!(
-            l.svg.contains("<text x=\"66\" y=\"30\">K7M3</text>"),
-            "{}",
-            l.svg
+        assert_eq!(l.glyph_px, 3);
+        let (_, glyph_dots) = split_rects(&l, Layout::Horz);
+        assert_eq!(glyph_dots.len(), expected_ink(TextFormat::FourFour));
+        assert_eq!(glyph_dots.iter().map(|r| r.1).min(), Some(9), "block top");
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.1 + r.3).max(),
+            Some(54),
+            "block bottom mirrors the centering"
         );
-        assert!(
-            l.svg.contains("<text x=\"66\" y=\"57\">PQ9R</text>"),
-            "{}",
-            l.svg
+        // Every dot is g-sized on the g lattice anchored at (66, 9).
+        for (x, y, w, h) in &glyph_dots {
+            assert_eq!((*w, *h), (3, 3), "dot == glyph_px");
+            assert_eq!((x - 66) % 3, 0, "x on the lattice");
+            assert_eq!((y - 9) % 3, 0, "y on the lattice");
+        }
+        // Exact width: 4·18 − 3 = 69 wide rows end at width − right
+        // white — no trailing white.
+        assert_eq!(l.width_px, 66 + 69 + l.white.right);
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.0 + r.2).max(),
+            Some(l.width_px - l.white.right),
+            "last ink column touches the right white floor"
         );
+    }
+
+    #[test]
+    fn rect_count_is_dark_modules_plus_glyph_ink() {
+        for (spec, fmt) in [
+            ("micro", TextFormat::FourFour),
+            ("micro", TextFormat::FourFourFour),
+            ("micro", TextFormat::FiveFiveFour),
+            ("qr", TextFormat::FourFour),
+        ] {
+            for layout in [Layout::Horz, Layout::Vert] {
+                let l = render_label_px(
+                    FIXED_ID,
+                    layout,
+                    100,
+                    fmt,
+                    &sym(spec),
+                    Padding::uniform(2),
+                    PaddingMode::Overlap,
+                )
+                .expect("renders");
+                let (qr, glyph_dots) = split_rects(&l, layout);
+                assert_eq!(qr.len(), dark_modules(spec), "{spec} {layout:?}");
+                assert_eq!(
+                    glyph_dots.len(),
+                    expected_ink(fmt),
+                    "{spec} {fmt:?} {layout:?}"
+                );
+                for (_, _, w, h) in &glyph_dots {
+                    assert_eq!((*w, *h), (l.glyph_px, l.glyph_px), "dot == glyph_px");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn glyph_block_that_cannot_fit_errors_with_a_chars_hint() {
+        // micro at 25/2 overlap → m=1, module part 17px; a 3-row block
+        // needs 7+1+7+1+7 = 23px at 1px per glyph dot.
+        let err = render_label_px(
+            FIXED_ID,
+            Layout::Horz,
+            25,
+            TextFormat::FiveFiveFour,
+            &sym("micro"),
+            Padding::uniform(2),
+            PaddingMode::Overlap,
+        )
+        .expect_err("17px module part cannot hold a 3-row block");
+        let msg = err.to_string();
+        assert!(matches!(err, CodecError::Render(_)), "got {err:?}");
+        assert!(msg.contains("3-row"), "rows named: {msg}");
+        assert!(msg.contains("23px"), "minimum named: {msg}");
+        assert!(msg.contains("--chars"), "fewer-rows hint: {msg}");
+
+        // vert: the width cap binds — a 4-char row is 23px wide at
+        // g=1 but the module part is 17px.
+        let err = render_label_px(
+            FIXED_ID,
+            Layout::Vert,
+            21,
+            TextFormat::FourFour,
+            &sym("micro"),
+            Padding::uniform(0),
+            PaddingMode::Overlap,
+        )
+        .expect_err("17px module part cannot hold a 4-char row");
+        let msg = err.to_string();
+        assert!(matches!(err, CodecError::Render(_)), "got {err:?}");
+        assert!(msg.contains("4-char"), "row width named: {msg}");
+        assert!(msg.contains("23px"), "minimum named: {msg}");
     }
 
     // ---------- impossible fit errors with mode-aware hints ----------
@@ -1017,7 +1214,7 @@ mod tests {
     // ---------- integer-px grid ----------
 
     #[test]
-    fn every_qr_rect_sits_on_the_integer_px_grid() {
+    fn every_rect_sits_on_the_integer_px_grid() {
         for (layout, spec) in [
             (Layout::Horz, "micro"),
             (Layout::Horz, "qr"),
@@ -1034,49 +1231,23 @@ mod tests {
                 PaddingMode::Overlap,
             )
             .expect("renders");
-            let rects = module_rects(&l.svg);
-            assert!(!rects.is_empty(), "QR rects present for {layout:?}");
-            for (_, _, w, h) in rects {
+            let (qr, glyph_dots) = split_rects(&l, layout);
+            assert!(!qr.is_empty(), "QR rects present for {layout:?}");
+            assert!(!glyph_dots.is_empty(), "glyph dots present for {layout:?}");
+            for (_, _, w, h) in qr {
                 assert_eq!((w, h), (l.module_px, l.module_px), "rect == module_px");
+            }
+            for (_, _, w, h) in glyph_dots {
+                assert_eq!((w, h), (l.glyph_px, l.glyph_px), "dot == glyph_px");
             }
             assert!(l.svg.contains("shape-rendering=\"crispEdges\""));
         }
     }
 
-    // ---------- layouts carry the expected text rows ----------
-
-    fn text_rows(svg: &str) -> Vec<String> {
-        let doc = roxmltree::Document::parse(svg).expect("well-formed SVG");
-        doc.descendants()
-            .filter(|n| n.tag_name().name() == "text")
-            .map(|n| n.text().unwrap_or_default().to_string())
-            .collect()
-    }
+    // ---------- vert: glyph block below the QR, centered ----------
 
     #[test]
-    fn horz_layout_renders_text_rows_per_format() {
-        let cases: [(TextFormat, &[&str]); 3] = [
-            (TextFormat::FourFour, &["K7M3", "PQ9R"]),
-            (TextFormat::FourFourFour, &["K7M3", "PQ9R", "T5VA"]),
-            (TextFormat::FiveFiveFour, &["K7M3P", "Q9RT5", "VAXY"]),
-        ];
-        for (fmt, expected) in cases {
-            let l = render_label_px(
-                FIXED_ID,
-                Layout::Horz,
-                64,
-                fmt,
-                &sym("micro"),
-                Padding::uniform(2),
-                PaddingMode::Overlap,
-            )
-            .expect("renders");
-            assert_eq!(text_rows(&l.svg), expected, "format {fmt:?}");
-        }
-    }
-
-    #[test]
-    fn vert_layout_renders_text_rows_below_the_qr() {
+    fn vert_glyph_block_sits_below_the_qr_centered() {
         let l = render_spec(
             "micro",
             Layout::Vert,
@@ -1084,19 +1255,31 @@ mod tests {
             Padding::uniform(2),
             PaddingMode::Overlap,
         );
-        assert_eq!(text_rows(&l.svg), ["K7M3", "PQ9R"]);
-        // Text baselines sit below the module part by at least the
-        // clamped gap; the font stays on the module grid.
-        let gap = (l.white.bottom + l.white.bottom.div_ceil(2)).max(MICRO_QUIET * l.module_px);
-        assert_eq!(font_size(&l.svg) % l.module_px, 0);
-        let doc = roxmltree::Document::parse(&l.svg).expect("well-formed SVG");
-        for text in doc.descendants().filter(|n| n.tag_name().name() == "text") {
-            let y: u32 = text.attribute("y").expect("y").parse().expect("integer y");
-            assert!(
-                y > l.white.top + l.data_px + gap,
-                "baseline {y} below QR + gap"
-            );
-        }
+        // Controlling axis is horizontal: m=3, data 51, white left 6 /
+        // right 7 (remainder px right), top/bottom at their floors 6.
+        // gap = max(round(1.5·6), 6) = 9. The row-width cap binds: a
+        // 4-char row is 23g wide, 23·3 > 51, so g=2 (block cap is 3).
+        assert_eq!((l.module_px, l.data_px, l.glyph_px), (3, 51, 2));
+        let ty0 = l.white.top + l.data_px + 9;
+        let block_h = 15 * l.glyph_px;
+        let (_, glyph_dots) = split_rects(&l, Layout::Vert);
+        assert_eq!(glyph_dots.len(), expected_ink(TextFormat::FourFour));
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.1).min(),
+            Some(ty0),
+            "block top = qr bottom + gap"
+        );
+        // Exact height: block bottom + the bottom white floor, no
+        // trailing white.
+        assert_eq!(l.height_px, ty0 + block_h + l.white.bottom);
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.1 + r.3).max(),
+            Some(ty0 + block_h),
+            "last ink row touches the bottom white floor"
+        );
+        // Rows center in the module part span: 4·12 − 2 = 46 wide →
+        // x starts at 6 + (51 − 46)/2 = 8.
+        assert_eq!(glyph_dots.iter().map(|r| r.0).min(), Some(8));
     }
 
     // ---------- the ADR-031 §8 worked example, full geometry ----------
@@ -1106,22 +1289,33 @@ mod tests {
         // size 67 / pad 2, overlap micro: m=3 (51 + 2·max(2,6) = 63),
         // data 51, controlling floors 6/6, remainder 4 lands as top 8
         // and bottom 8, non-controlling sides at their floors (6/6).
-        // gap = max(round(1.5·6), 6) = 9, font 8·3 = 24 → text at
-        // x = 6+51+9 = 66, baselines 32 / 59, width 66 + 69 + 6 = 141.
+        // gap = max(round(1.5·6), 6) = 9 → text at x = 6+51+9 = 66.
+        // Glyphs: g = min(m, 51/15) = 3, block 15·3 = 45 centered at
+        // y = 8 + (51−45)/2 = 11, widest row 4·18 − 3 = 69 → width
+        // 66 + 69 + 6 = 141 with no trailing white.
         let l = render_pad(67, 2, true);
         assert_eq!((l.width_px, l.height_px), (141, 67));
-        assert_eq!((l.data_px, l.module_px), (51, 3));
+        assert_eq!((l.data_px, l.module_px, l.glyph_px), (51, 3, 3));
         assert_eq!(l.white, Padding::sides(8, 6, 8, 6));
         assert_eq!((l.qr_px, l.modules), (63, 21));
-        assert!(
-            l.svg.contains("<text x=\"66\" y=\"32\">K7M3</text>"),
-            "{}",
-            l.svg
+        let (qr, glyph_dots) = split_rects(&l, Layout::Horz);
+        assert_eq!(qr.len(), dark_modules("micro"), "QR side of the ledger");
+        assert_eq!(glyph_dots.len(), expected_ink(TextFormat::FourFour));
+        assert_eq!(glyph_dots.iter().map(|r| r.0).min(), Some(66), "tx");
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.1).min(),
+            Some(11),
+            "block top: centering offset 3"
         );
-        assert!(
-            l.svg.contains("<text x=\"66\" y=\"59\">PQ9R</text>"),
-            "{}",
-            l.svg
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.1 + r.3).max(),
+            Some(56),
+            "block bottom"
+        );
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.0 + r.2).max(),
+            Some(l.width_px - l.white.right),
+            "exact width: no trailing white"
         );
     }
 

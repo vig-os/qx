@@ -501,8 +501,13 @@ fn print_px_true_deduces_module_from_exact_canvas() {
     assert_eq!(label["symbology"], json!("micro-m4-m"));
     assert_eq!(label["height_px"], json!(64), "exact canvas");
     assert_eq!(label["id"], json!("23456789ABCDEF"));
+    // ADR-031 §8 bitmap typography: glyph px rides the response and
+    // the SVG is one font-free binary raster.
+    assert_eq!(label["glyph_px"], json!(3), "text dots = QR dots");
     let svg = label["svg"].as_str().expect("svg");
     assert!(svg.contains("shape-rendering=\"crispEdges\""));
+    assert!(!svg.contains("<text"), "no <text> in px output");
+    assert!(!svg.contains("font-family"), "no fonts in px output");
     assert_eq!(d["unit"], json!("px"));
     assert_eq!(d["size_px"], json!(64));
     assert_eq!(d["padding_mode"], json!("overlap"));
@@ -634,6 +639,11 @@ fn print_px_symbology_pin_resolves_and_flows_into_the_deduction() {
     assert_eq!(label["symbology"], json!("micro-m3-l"));
     assert_eq!(label["module_px"], json!(4), "clip@64 on 15 modules");
     assert_eq!(label["data_px"], json!(60));
+    assert_eq!(
+        label["glyph_px"],
+        json!(4),
+        "2-row block 15·4 = 60 = data_px"
+    );
     assert_eq!(label["height_px"], json!(64), "exact canvas");
 
     // Version-only pin: EC auto-falls to the strongest feasible (L at
