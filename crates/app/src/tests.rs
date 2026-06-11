@@ -470,6 +470,127 @@ fn print_by_filter_selection() {
     assert_eq!(d["labels"].as_array().expect("labels").len(), 1);
 }
 
+// ADR-031 §2 px-true path, corrected semantics (obligation
+// `px-true-qr-render`): size_px is the EXACT output canvas, padding
+// the floor, module_px DEDUCED. The hardware-validated boundary:
+// 64/pad 2 → 2px modules (42px symbol); 64/pad 0 → 3px (63px symbol).
+#[test]
+fn print_px_true_deduces_module_from_exact_canvas() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","padding_px":2}}),
+    );
+    let d = r.data().expect("ok");
+    let label = &d["labels"][0];
+    assert_eq!(label["qr_px"], json!(42));
+    assert_eq!(label["module_px"], json!(2));
+    assert_eq!(label["height_px"], json!(64), "exact canvas");
+    assert_eq!(label["id"], json!("23456789ABCDEF"));
+    let svg = label["svg"].as_str().expect("svg");
+    assert!(svg.contains("shape-rendering=\"crispEdges\""));
+    assert_eq!(d["unit"], json!("px"));
+    assert_eq!(d["size_px"], json!(64));
+    // Print events still log, with the resolved px params as evidence.
+    let events = ctx
+        .repo
+        .list_print_events(&PrintEventFilter::default())
+        .expect("events");
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].extra["qr_px"], json!(42));
+    assert_eq!(events[0].extra["module_px"], json!(2));
+
+    // padding 0 reaches 3px modules at the same 64px canvas.
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","padding_px":0,"log":false}}),
+    );
+    let label = &r.data().expect("ok")["labels"][0];
+    assert_eq!(label["qr_px"], json!(63));
+    assert_eq!(label["module_px"], json!(3));
+    assert_eq!(label["height_px"], json!(64), "exact canvas");
+}
+
+#[test]
+fn print_px_job_fills_to_uniform_footprint() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF","23456789GHJKMN"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","padding_px":2,"log":false}}),
+    );
+    let d = r.data().expect("ok");
+    let labels = d["labels"].as_array().expect("labels");
+    assert_eq!(labels.len(), 2);
+    assert_eq!(labels[0]["width_px"], labels[1]["width_px"]);
+    assert_eq!(labels[0]["height_px"], labels[1]["height_px"]);
+}
+
+#[test]
+fn print_px_mm_dpi_converts_then_snaps() {
+    // 8 mm at the default 300 dpi rounds to a 94 px canvas, and the
+    // Micro M4 (21 modules) deduces module_px 4 with qr_px 84.
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_mm":8.0,"micro":true,
+                          "chars":"44","log":false}}),
+    );
+    let d = r.data().expect("ok");
+    assert_eq!(d["size_px"], json!(94));
+    assert_eq!(d["dpi"], json!(300.0));
+    assert_eq!(d["labels"][0]["qr_px"], json!(84));
+    assert_eq!(d["labels"][0]["module_px"], json!(4));
+}
+
+#[test]
+fn print_px_below_minimum_is_validation_with_hint() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":20,"micro":true,"chars":"44"}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(e.message.contains("21px"), "hint missing: {}", e.message);
+}
+
+#[test]
+fn print_px_flag_layout_is_unsupported() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"layout":"flag","chars":"44"}}),
+    );
+    assert_eq!(r.err().expect("err").kind, ErrorKind::Unsupported);
+}
+
+#[test]
+fn print_unknown_unit_is_validation() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"inch"}}),
+    );
+    assert_eq!(r.err().expect("err").kind, ErrorKind::Validation);
+}
+
 #[test]
 fn print_flag_requires_cable_od() {
     let (ctx, _) = ctx_with(fixture_parts());

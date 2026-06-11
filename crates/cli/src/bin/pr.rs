@@ -123,6 +123,23 @@ enum Cmd {
         no_log: bool,
         #[arg(long, default_value = "labels")]
         out_dir: PathBuf,
+        /// Sizing unit (ADR-031 §3): mm (default, the mm-native
+        /// renderer) or px (the px-true device-pixel renderer).
+        #[arg(long, default_value = "mm")]
+        unit: String,
+        /// EXACT output canvas in device px (unit=px; overrides
+        /// size_mm + dpi). Module size is deduced from
+        /// (size - 2*padding) / modules; errors if the symbol can't fit.
+        #[arg(long)]
+        size_px: Option<u32>,
+        /// Minimum padding in device px (ADR-031 §4 floor consumed by
+        /// the deduction; actual padding absorbs the remainder).
+        #[arg(long)]
+        padding: Option<u32>,
+        /// Dots per inch for the mm -> px conversion (default 300
+        /// = Brother QL class).
+        #[arg(long)]
+        dpi: Option<f64>,
     },
     /// Current operator identity.
     Whoami,
@@ -442,11 +459,26 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
         copies,
         no_log,
         out_dir,
+        unit,
+        size_px,
+        padding,
+        dpi,
     } = cmd
     {
-        return protocol_print(
-            &ctx, ids, layout, size_mm, chars, micro, cable_od, copies, no_log, &out_dir,
-        );
+        let options = part_registry_app::PrintOptions {
+            layout,
+            size_mm,
+            chars,
+            micro,
+            cable_od_mm: cable_od,
+            copies,
+            log: !no_log,
+            unit,
+            size_px,
+            padding_px: padding,
+            dpi,
+        };
+        return protocol_print(&ctx, ids, options, &out_dir);
     }
 
     let req = match cmd {
@@ -544,17 +576,10 @@ fn protocol_export(
     }
 }
 
-#[allow(clippy::too_many_arguments)] // CLI surface mirrors the flag set 1:1
 fn protocol_print(
     ctx: &AppContext,
     ids: Vec<String>,
-    layout: String,
-    size_mm: f64,
-    chars: String,
-    micro: bool,
-    cable_od: Option<f64>,
-    copies: u32,
-    no_log: bool,
+    options: part_registry_app::PrintOptions,
     out_dir: &Path,
 ) -> ExitCode {
     let resp = dispatch(
@@ -562,15 +587,7 @@ fn protocol_print(
         Request::Print {
             collection: "parts".into(),
             selection: part_registry_app::Selection::Ids(ids),
-            options: part_registry_app::PrintOptions {
-                layout,
-                size_mm,
-                chars,
-                micro,
-                cable_od_mm: cable_od,
-                copies,
-                log: !no_log,
-            },
+            options,
         },
     );
     match resp {

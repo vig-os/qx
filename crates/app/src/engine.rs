@@ -13,7 +13,8 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use part_registry_codec::{
-    check_format_warning, recommend_format, render_label, Layout, TextFormat,
+    check_format_warning, fill_to_max, recommend_format, render_label, render_label_px, CodecError,
+    Layout, PxLabel, TextFormat,
 };
 use part_registry_domain::{
     Diff, DiffEdit, DiffRow, Operator, OperatorRef, Part, PartId, PartStatus, PrintEvent, Proposal,
@@ -759,6 +760,14 @@ fn edit(
 // Print — render is universal; delivery is the shell's (ADR-031)
 // -------------------------------------------------------------------
 
+/// Default dots-per-inch for the ADR-031 §3 mm → px conversion when
+/// the request carries none. 300 dpi ≈ the Brother QL class of
+/// thermal heads; the per-printer profile default is an ADR-031 open
+/// question, so until that lands this is the documented fallback.
+const DEFAULT_DPI: f64 = 300.0;
+
+const MM_PER_INCH: f64 = 25.4;
+
 fn print(
     ctx: &AppContext,
     collection: &str,
@@ -771,6 +780,81 @@ fn print(
     if options.copies < 1 {
         return Response::error(ErrorKind::BadRequest, "copies must be >= 1");
     }
+    match options.unit.as_str() {
+        "mm" => print_mm(ctx, selection, options),
+        "px" => print_px(ctx, selection, options),
+        other => Response::error(
+            ErrorKind::Validation,
+            format!("unknown unit {other:?}; units: mm, px (ADR-031 §3)"),
+        ),
+    }
+}
+
+/// Human-ID grouping → `TextFormat` (+ legibility warning).
+/// `legibility_mm` is the *physical* label size the warning tiers are
+/// defined over — for px-mode requests it is the dpi-converted size.
+fn parse_chars(chars: &str, legibility_mm: f64) -> Result<(TextFormat, Option<String>), Response> {
+    match chars {
+        "auto" => Ok(recommend_format(legibility_mm)),
+        "44" => Ok((
+            TextFormat::FourFour,
+            check_format_warning(legibility_mm, TextFormat::FourFour),
+        )),
+        "444" => Ok((
+            TextFormat::FourFourFour,
+            check_format_warning(legibility_mm, TextFormat::FourFourFour),
+        )),
+        "554" => Ok((
+            TextFormat::FiveFiveFour,
+            check_format_warning(legibility_mm, TextFormat::FiveFiveFour),
+        )),
+        other => Err(Response::error(
+            ErrorKind::Validation,
+            format!("unknown chars grouping {other:?}; nano14 declares: 44, 444, 554, auto"),
+        )),
+    }
+}
+
+fn chars_name(fmt: TextFormat) -> &'static str {
+    match fmt {
+        TextFormat::FourFour => "44",
+        TextFormat::FourFourFour => "444",
+        TextFormat::FiveFiveFour => "554",
+    }
+}
+
+/// Selection → parts (shared by the mm and px render paths).
+fn select_targets(ctx: &AppContext, selection: &Selection) -> Result<Vec<Part>, Response> {
+    let targets = match selection {
+        Selection::Ids(ids) => {
+            let mut out = Vec::with_capacity(ids.len());
+            for id in ids {
+                out.push(resolve_part(ctx, id)?);
+            }
+            out
+        }
+        Selection::Filter(filter) => {
+            let entities = load_entities(ctx)?;
+            let selected = apply_filter(entities, filter);
+            let mut out = Vec::with_capacity(selected.len());
+            for e in &selected {
+                out.push(resolve_part(ctx, &e.id)?);
+            }
+            out
+        }
+    };
+    if targets.is_empty() {
+        return Err(Response::error(
+            ErrorKind::NotFound,
+            "selection matched no entities",
+        ));
+    }
+    Ok(targets)
+}
+
+/// The original mm-native render path — behavior unchanged from
+/// pre-ADR-031-§2 (`unit: "mm"`, the default).
+fn print_mm(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> Response {
     let layout = match options.layout.as_str() {
         "vert" => Layout::Vert,
         "horz" => Layout::Horz,
@@ -790,59 +874,14 @@ fn print(
             );
         }
     };
-    let (text_format, warning) = match options.chars.as_str() {
-        "auto" => recommend_format(options.size_mm),
-        "44" => (
-            TextFormat::FourFour,
-            check_format_warning(options.size_mm, TextFormat::FourFour),
-        ),
-        "444" => (
-            TextFormat::FourFourFour,
-            check_format_warning(options.size_mm, TextFormat::FourFourFour),
-        ),
-        "554" => (
-            TextFormat::FiveFiveFour,
-            check_format_warning(options.size_mm, TextFormat::FiveFiveFour),
-        ),
-        other => {
-            return Response::error(
-                ErrorKind::Validation,
-                format!("unknown chars grouping {other:?}; nano14 declares: 44, 444, 554, auto"),
-            );
-        }
+    let (text_format, warning) = match parse_chars(&options.chars, options.size_mm) {
+        Ok(x) => x,
+        Err(r) => return r,
     };
-
-    // Selection → parts.
-    let targets: Vec<Part> = match selection {
-        Selection::Ids(ids) => {
-            let mut out = Vec::with_capacity(ids.len());
-            for id in ids {
-                match resolve_part(ctx, id) {
-                    Ok(p) => out.push(p),
-                    Err(r) => return r,
-                }
-            }
-            out
-        }
-        Selection::Filter(filter) => {
-            let entities = match load_entities(ctx) {
-                Ok(e) => e,
-                Err(r) => return r,
-            };
-            let selected = apply_filter(entities, filter);
-            let mut out = Vec::with_capacity(selected.len());
-            for e in &selected {
-                match resolve_part(ctx, &e.id) {
-                    Ok(p) => out.push(p),
-                    Err(r) => return r,
-                }
-            }
-            out
-        }
+    let targets = match select_targets(ctx, selection) {
+        Ok(t) => t,
+        Err(r) => return r,
     };
-    if targets.is_empty() {
-        return Response::error(ErrorKind::NotFound, "selection matched no entities");
-    }
 
     let mut labels = Vec::with_capacity(targets.len());
     for p in &targets {
@@ -885,13 +924,146 @@ fn print(
     Response::ok(json!({
         "labels": labels,
         "size_mm": options.size_mm,
-        "chars": match text_format {
-            TextFormat::FourFour => "44",
-            TextFormat::FourFourFour => "444",
-            TextFormat::FiveFiveFour => "554",
-        },
+        "chars": chars_name(text_format),
         "warning": warning,
     }))
+}
+
+/// The ADR-031 §2 px-true render path (`unit: "px"`). Native unit is
+/// device px; an mm-expressed size converts at `dpi` and the codec
+/// snaps it to the integer-module grid. The whole job then fills to
+/// the batch's largest footprint (§4).
+fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> Response {
+    let dpi = options.dpi.unwrap_or(DEFAULT_DPI);
+    if !dpi.is_finite() || dpi <= 0.0 {
+        return Response::error(
+            ErrorKind::Validation,
+            format!("dpi must be a positive number, got {dpi}"),
+        );
+    }
+    // §3: size_px (the EXACT output canvas) is direct; otherwise
+    // mm → px at `dpi` defines the canvas. The codec deduces the
+    // module size inside it (§2 corrected 2026-06-11).
+    let size_px = match options.size_px {
+        Some(px) => px,
+        None => (options.size_mm / MM_PER_INCH * dpi).round() as u32,
+    };
+    let padding_px = options.padding_px.unwrap_or(0);
+    // px mode does not require cable_od_mm up front: the codec rejects
+    // the flag layout itself (Unsupported, ADR-031 §5) with the
+    // authoritative message.
+    let layout = match options.layout.as_str() {
+        "vert" => Layout::Vert,
+        "horz" => Layout::Horz,
+        "flag" => Layout::Flag {
+            cable_od_mm: options.cable_od_mm.unwrap_or(0.0),
+        },
+        other => {
+            return Response::error(
+                ErrorKind::Validation,
+                format!("unknown layout {other:?}; presets: vert, horz, flag"),
+            );
+        }
+    };
+    // Legibility tiers are physical-mm rules; evaluate them at the
+    // physical size this canvas maps to.
+    let legibility_mm = f64::from(size_px) * MM_PER_INCH / dpi;
+    let (text_format, warning) = match parse_chars(&options.chars, legibility_mm) {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    let targets = match select_targets(ctx, selection) {
+        Ok(t) => t,
+        Err(r) => return r,
+    };
+
+    let mut rendered: Vec<PxLabel> = Vec::with_capacity(targets.len());
+    for p in &targets {
+        match render_label_px(
+            p.id.as_str(),
+            layout,
+            size_px,
+            text_format,
+            options.micro,
+            padding_px,
+        ) {
+            Ok(l) => rendered.push(l),
+            Err(e) => return px_codec_error(e),
+        }
+    }
+    // §4: padding is a floor; the job fills to the largest footprint
+    // so a mixed batch comes out physically uniform.
+    fill_to_max(&mut rendered, padding_px);
+
+    let labels: Vec<serde_json::Value> = targets
+        .iter()
+        .zip(&rendered)
+        .map(|(p, l)| {
+            json!({
+                "id": p.id.as_str(),
+                "svg": l.svg,
+                "width_px": l.width_px,
+                "height_px": l.height_px,
+                "qr_px": l.qr_px,
+                "module_px": l.module_px,
+            })
+        })
+        .collect();
+
+    if options.log {
+        let printed_by = match operator(ctx) {
+            Ok(o) => OperatorRef(o.id),
+            Err(r) => return r,
+        };
+        let now = OffsetDateTime::now_utc();
+        for (p, l) in targets.iter().zip(&rendered) {
+            let ev = PrintEvent {
+                id: p.id.clone(),
+                printed_at: now,
+                printed_by: printed_by.clone(),
+                layout: options.layout.clone(),
+                // The physical size the snapped symbol maps to at `dpi`
+                // — resolved params are the audit evidence (ADR-031 §7).
+                size_mm: f64::from(l.qr_px) * MM_PER_INCH / dpi,
+                extra: json!({
+                    "chars": options.chars,
+                    "micro": options.micro,
+                    "unit": "px",
+                    "qr_px": l.qr_px,
+                    "module_px": l.module_px,
+                    "padding_px": padding_px,
+                    "dpi": dpi,
+                }),
+                copies: options.copies,
+                output_mode: "app-dispatch-svg".into(),
+                batch_label: None,
+            };
+            if let Err(e) = ctx.repo.append_print_event(ev) {
+                tracing::warn!(error = %e, "append_print_event failed");
+            }
+        }
+    }
+
+    Response::ok(json!({
+        "labels": labels,
+        "unit": "px",
+        "size_px": size_px,
+        "padding_px": padding_px,
+        "dpi": dpi,
+        "chars": chars_name(text_format),
+        "warning": warning,
+    }))
+}
+
+/// Map a px-render codec failure into the protocol taxonomy: an
+/// undersized target is caller-fixable (`Validation`, carries the
+/// minimum-size hint); a not-yet-implemented mode is `Unsupported`.
+fn px_codec_error(e: CodecError) -> Response {
+    match e {
+        CodecError::Unsupported(m) => Response::error(ErrorKind::Unsupported, m),
+        CodecError::Render(m) => Response::error(ErrorKind::Validation, m),
+        other => Response::error(ErrorKind::Backend, other.to_string()),
+    }
 }
 
 // -------------------------------------------------------------------

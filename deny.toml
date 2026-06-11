@@ -6,13 +6,13 @@
 [advisories]
 version = 2
 yanked = "warn"
-ignore = [
-  # paste 1.x: unmaintained (archived upstream). Transitive dev-only
-  # dep (imageproc -> nalgebra -> simba) used by the codec test raster
-  # helper — not in any shipped artifact. Revisit when imageproc moves
-  # off it or if it enters a non-dev dependency path.
-  "RUSTSEC-2024-0436",
-]
+# Unmaintained advisories error only for DIRECT workspace deps (our
+# choices, each with a SOUP row per ADR-028). Transitive unmaintained
+# crates live inside upstream trees we track at the direct-dep grain —
+# e.g. tauri's Linux closure (gtk3-rs bindings, unic-*) and imageproc's
+# (paste) — and are fixed by bumping the direct dep, not by us.
+unmaintained = "workspace"
+ignore = []
 
 [licenses]
 version = 2

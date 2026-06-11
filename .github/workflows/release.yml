@@ -222,3 +222,38 @@ jobs:
               --title "${TAG}" \
               --notes-file release-notes.md
           fi
+
+  # The `pr` multicall binary (ADR-030 §2) — the artifact data-repo CI
+  # gates pin (check.yml.tmpl fetches it by tag + sha256; ADR-034 §2:
+  # CI runs the released binary, not a from-source build). Lean build —
+  # `pr check` needs no serve/mcp/tui features.
+  pr-binary:
+    needs: [test, bundle]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build pr (release, lean)
+        run: cargo build --release -p part-registry-cli --bin pr
+
+      - name: Stage + checksum
+        run: |
+          TAG="${{ needs.bundle.outputs.tag }}"
+          cp target/release/pr "pr-x86_64-unknown-linux-gnu"
+          sha256sum "pr-x86_64-unknown-linux-gnu" > "pr-sha256sums-${TAG}.txt"
+          cat "pr-sha256sums-${TAG}.txt"
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ needs.bundle.outputs.tag }}"
+          gh release upload "${TAG}" \
+            "pr-x86_64-unknown-linux-gnu" \
+            "pr-sha256sums-${TAG}.txt" \
+            --repo "${GITHUB_REPOSITORY}" --clobber

@@ -57,7 +57,7 @@ adr = "ADR-016"
 statement = "Registry changes are gated by PR-diff policy enforcement in CI (pr check --diff)"
 kind = "gate"
 status = "pending"
-tracking = "pr check built (crates/cli/src/bin/pr.rs) + check.yml.tmpl; data-repo seeding + branch-protection wiring pending"
+tracking = "code-repo side complete: pr check + release pr-binary job + bootstrap --pr-release seeding; satisfied when a data repo runs the gate (needs first release tag)"
 
 # ---- Core architecture (ADR-017) ----------------------------------------
 
@@ -75,7 +75,7 @@ adr = "ADR-017"
 statement = "Python CLI (label.py/mint.py/bind.py/validators) deleted once the Rust binaries reach parity"
 kind = "issue"
 status = "pending"
-tracking = "ADR-017 strangler-fig steps 1-9; label.py et al still present"
+tracking = "Phase A unblocked (mint/bind/label/validators have in-tree parity tests); Phase B gated on px-true codec (printer_test_62mm.py), compose-sheet port (sheet.py), and the Rust ADR-029 joiner (obligations_check.py)"
 
 # ---- The ports (ADR-018/019/020/021/022) --------------------------------
 
@@ -218,10 +218,18 @@ satisfied_by = "flake.nix"
 [[obligation]]
 id = "px-true-qr-render"
 adr = "ADR-031"
-statement = "QR render is px-true: symbol_px % module_count == 0 (integer module px; no malformed dots)"
+statement = "px-true render: size = exact output canvas, padding = floor, module_px DEDUCED from (size-2*pad)/N, ERROR on impossible fit; symbol_px % N == 0"
 kind = "test"
 status = "pending"
-tracking = "ADR-031 §2; codec px-true mode + test not yet built (generalizes printer_test_62mm.py)"
+tracking = "ADR-031 §2 (corrected 2026-06-11); codec implementation in flight (agent), must use the deduce-from-canvas semantics"
+
+[[obligation]]
+id = "print-contracts"
+adr = "ADR-031"
+statement = "Print contracts SSOT: one deduction engine (symbology contributes only N); groupings are data vectors with one text renderer; descriptor declares offered contracts/presets per feature, manifest gates the feature"
+kind = "crate"
+status = "pending"
+tracking = "ADR-031 §8; engine + grouping-vector renderer + descriptor render-block declaration not yet built"
 
 [[obligation]]
 id = "structured-print-request"
@@ -317,7 +325,7 @@ adr = "ADR-034"
 statement = "Write/review authz is host-enforced (branch protection + CODEOWNERS); tool classifies + advises, does not gate"
 kind = "ci"
 status = "pending"
-tracking = "ADR-034 §1-2,6; bootstrap must set branch protection + seed CODEOWNERS from the manifest"
+tracking = "bootstrap --protect + --approvers apply protection/CODEOWNERS; manifest-driven CODEOWNERS generation pending (manifest.toml not yet built)"
 
 [[obligation]]
 id = "registry-manifest"
@@ -333,7 +341,7 @@ adr = "ADR-034"
 statement = "A self-audit verifies a registry's branch protection + CODEOWNERS still match its manifest (no silent drift)"
 kind = "ci"
 status = "pending"
-tracking = "ADR-034 §open; cron Actions self-audit (administration:read), warn/issue on drift; no App for now"
+tracking = "protection-audit.yml.tmpl built (weekly cron, PAT administration:read, issue on drift); satisfied when seeded in a data repo"
 
 # ---- Part data model: tiered schema + JSONL (ADR-035) -------------------
 

@@ -68,20 +68,28 @@ human ID as two rows of four, ≥2 px padding.
 
 ### 2. px-true rendering (the load-bearing rule)
 
-A QR symbol of `N×N` modules (quiet zone included) is rendered with an
-**integer module pixel size**:
+**`--size` is the exact output canvas** (the label's controlling
+dimension in device px); **`--padding` is the minimum padding**; the
+module size is **deduced**:
 
 ```
-module_px = floor(target_qr_px / N)        # N = modules incl. quiet zone
-symbol_px = N * module_px                   # ⇒ symbol_px % N == 0, always
+available  = size_px - 2 * padding_min_px
+module_px  = floor(available / N)          # N = modules incl. quiet zone
+           → ERROR if module_px < 1        # chosen QR/payload cannot fit
+symbol_px  = N * module_px                  # ⇒ symbol_px % N == 0, always
+actual_pad = (size_px - symbol_px) / 2      # absorbs the remainder; ≥ floor
 ```
 
-Every module is therefore an identical whole number of device pixels —
-no fractional edges, no malformed dots. `module_px ≥ 1` is required (if
-the requested size can't fit one pixel per module, the render errors with
-a minimum-size hint rather than producing an unscannable symbol). This
-generalizes the pixel-grid discipline already proven in
-`tools/printer_test_62mm.py` into a first-class codec mode.
+The output is **exactly** the requested size; every module is an
+identical whole number of device pixels (no fractional edges, no
+malformed dots); the remainder distributes into padding — which is
+*why* §4 defines padding as a floor. An impossible fit (the payload's
+symbol can't reach 1 px/module inside the padding floor) is a hard
+**error with a minimum-size hint**, never a silently degraded render.
+Worked example: `size 64, padding 2` → available 60, Micro QR M4
+(17+2·2 = 21 modules) → `module_px 2`, symbol 42 px, actual padding
+11 px — a 64 px output. This generalizes the pixel-grid discipline
+proven in `tools/printer_test_62mm.py` into a first-class codec mode.
 
 ### 3. Sizing, units, DPI
 
@@ -206,6 +214,41 @@ matrix) while giving the bench a terse one-liner.
   in the core or stays a CLI-only concern is an Open question.
 - **Print-event audit** (ADR-015/022) is written from the same request,
   recording layout/size/copies/operator as today.
+
+### 8. Print contracts (2026-06-11 — SSOT/DRY across every print type)
+
+The §2 workflow is not micro-QR-specific: it is the first instance of a
+**print contract** — a named parameterization the tool implements once
+and registries declare:
+
+- **One deduction engine.** The §2 math (`size`, `padding_min`, `N` →
+  `module_px` | ERROR) is written **once**; a symbology contributes only
+  its module count `N` (incl. quiet zone): `micro-qr` M4 → 21,
+  standard `qr` V1 → 25, future symbologies likewise. No per-type
+  re-implementation of the sizing/error logic.
+- **Groupings are data, not code.** A chars grouping is a vector of row
+  lengths — `44` = `[4,4]`, `444` = `[4,4,4]`, `554` = `[5,5,4]` — and
+  **one** text renderer consumes the vector. The id-scheme declares
+  which vectors are legal (`nano14` declares all three; ADR-035 §0
+  typed ids); adding a grouping is a declaration, not a renderer.
+- **Offered vs allowed is contract-land** (the ADR-033/034/035
+  split): the tool ships print-contract *implementations*; a
+  collection descriptor's **render block declares** which contracts +
+  named presets the registry offers; the **manifest gates** whether
+  `Print` is enabled at all (op×collection grain). Same single-home
+  rule as every other render concern — no print capability is decided
+  in shell code.
+
+## Corrections
+
+> **2026-06-11:** §2 as first accepted read `--size` as the *QR symbol
+> target* and snapped the symbol down (64 → 63 px output). Hardware
+> testing the same day surfaced the intended semantics: **size is the
+> exact output canvas**, padding is the floor, and the module size is
+> *deduced* from `(size − 2·padding_min) / N`, erroring when the chosen
+> QR/payload cannot fit. §2 rewritten above (worked example: 64/2 →
+> 42 px symbol, 11 px actual padding, 64 px output); this entry
+> preserves the original misreading for audit.
 
 ## Open questions / supersession triggers
 

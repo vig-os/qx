@@ -83,9 +83,10 @@ pub enum Selection {
     Filter(Filter),
 }
 
-/// Print options (ADR-031). v1 drives the existing mm-based renderer;
-/// the px-true mode lands with the ADR-031 §2 codec work (tracked as
-/// obligation `px-true-qr-render`).
+/// Print options (ADR-031). `unit` selects the renderer: "mm" (the
+/// default — the original mm-native renderer, behavior unchanged) or
+/// "px" (the ADR-031 §2 px-true device-pixel renderer; obligation
+/// `px-true-qr-render`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PrintOptions {
     /// Geometry: "vert" | "horz" | "flag".
@@ -106,6 +107,28 @@ pub struct PrintOptions {
     /// Append print events to the audit surface (default true).
     #[serde(default = "default_true")]
     pub log: bool,
+    /// Sizing unit (ADR-031 §3): "mm" (default) or "px".
+    #[serde(default = "default_unit")]
+    pub unit: String,
+    /// The EXACT output canvas in device px along the label's
+    /// controlling dimension (unit = "px"; ADR-031 §2 corrected): the
+    /// module size is deduced from `(size_px − 2·padding_px) / N` and
+    /// the render errors if the symbol cannot fit. When absent,
+    /// `size_mm` converts at `dpi` into this canvas size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_px: Option<u32>,
+    /// Minimum padding in device px — the ADR-031 §4 floor consumed by
+    /// the module deduction; actual padding absorbs the remainder so
+    /// the canvas stays exactly `size_px`. Default 0 (max module size
+    /// at the requested canvas).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub padding_px: Option<u32>,
+    /// Dots per inch for the mm → px conversion. Default 300.0 ≈
+    /// Brother QL class heads (ADR-031 §3; the per-printer profile
+    /// default is an ADR-031 open question — until it lands, 300 dpi
+    /// is the documented fallback).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dpi: Option<f64>,
 }
 
 fn default_layout() -> String {
@@ -123,6 +146,9 @@ fn default_copies() -> u32 {
 fn default_true() -> bool {
     true
 }
+fn default_unit() -> String {
+    "mm".into()
+}
 
 impl Default for PrintOptions {
     fn default() -> Self {
@@ -134,6 +160,10 @@ impl Default for PrintOptions {
             cable_od_mm: None,
             copies: default_copies(),
             log: default_true(),
+            unit: default_unit(),
+            size_px: None,
+            padding_px: None,
+            dpi: None,
         }
     }
 }

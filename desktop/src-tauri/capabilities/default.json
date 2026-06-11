@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability for the main window: core Tauri APIs only. App-defined commands (dispatch) are outside the ACL and always callable.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

@@ -20,6 +20,7 @@ members = [
     "crates/cli",
     "crates/wasm",
     "crates/port_tests",
+    "desktop/src-tauri",
 ]
 
 # Per ADR-017 + ADR-024: workspace pins shared dep versions so every

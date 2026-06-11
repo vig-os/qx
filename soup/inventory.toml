@@ -347,6 +347,19 @@ surveillance_owner = "shells-maintainer"
 notes = "Thin shell: tools map 1:1 onto protocol op families; serde (not the advertised JSON schemas) validates requests. Agent mutations flow through the same proposal/policy gates as every shell (ADR-030/034)."
 
 [[crate]]
+name = "tauri"
+version = "=2"
+class = 2
+role = "desktop webview shell hosting the webapp + the in-process dispatch command (ADR-030 §3)"
+used_by = ["desktop/src-tauri"]
+maintenance_url = "https://github.com/tauri-apps/tauri"
+last_release_check = "2026-06-11"
+upstream_status = "active"
+revalidation_trigger = "minor-bump"
+surveillance_owner = "shells-maintainer"
+notes = "Large transitive closure (wry/tao; gtk3 bindings on Linux carry unmaintained advisories tracked upstream — deny.toml scopes unmaintained to direct deps for this reason). Thin shell: all policy stays in crates/app."
+
+[[crate]]
 name = "ratatui"
 version = "=0.29"
 class = 1
