@@ -111,18 +111,27 @@ pub struct PrintOptions {
     #[serde(default = "default_unit")]
     pub unit: String,
     /// The EXACT output canvas in device px along the label's
-    /// controlling dimension (unit = "px"; ADR-031 §2 corrected): the
-    /// module size is deduced from `(size_px − 2·padding_px) / N` and
-    /// the render errors if the symbol cannot fit. When absent,
-    /// `size_mm` converts at `dpi` into this canvas size.
+    /// controlling dimension (unit = "px"; ADR-031 §2/§8): the module
+    /// size is deduced per `padding_mode` (overlap: max `m` with
+    /// `data·m + 2·max(padding_px, quiet·m) ≤ size_px`) and the render
+    /// errors if the symbol cannot fit. When absent, `size_mm`
+    /// converts at `dpi` into this canvas size.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_px: Option<u32>,
-    /// Minimum padding in device px — the ADR-031 §4 floor consumed by
-    /// the module deduction; actual padding absorbs the remainder so
-    /// the canvas stays exactly `size_px`. Default 0 (max module size
-    /// at the requested canvas).
+    /// Minimum padding in device px, measured canvas edge → module
+    /// part — the ADR-031 §4 floor consumed by the module deduction;
+    /// the actual uniform white absorbs the remainder so the canvas
+    /// stays exactly `size_px`. Default 0 (max module size at the
+    /// requested canvas; the quiet zone still guarantees white under
+    /// "overlap").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub padding_px: Option<u32>,
+    /// How the quiet zone counts toward the `padding_px` floor
+    /// (ADR-031 §8): "overlap" (default — the quiet zone satisfies
+    /// outside padding; printers donate intrinsic margins) or
+    /// "additive" (quiet zone excluded; full-bleed/die-cut).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub padding_mode: Option<String>,
     /// Dots per inch for the mm → px conversion. Default 300.0 ≈
     /// Brother QL class heads (ADR-031 §3; the per-printer profile
     /// default is an ADR-031 open question — until it lands, 300 dpi
@@ -163,6 +172,7 @@ impl Default for PrintOptions {
             unit: default_unit(),
             size_px: None,
             padding_px: None,
+            padding_mode: None,
             dpi: None,
         }
     }

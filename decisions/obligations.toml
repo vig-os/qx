@@ -200,10 +200,10 @@ satisfied_by = ".pre-commit-config.yaml"
 [[obligation]]
 id = "spoke-feature-parity"
 adr = "ADR-030"
-statement = "Every spoke surfaces every Op; parity benched + FEATURE-MATRIX.md generated (layer 3)"
+statement = "Every spoke surfaces every Op AND every op×spoke cell carries its required test kinds (contract-vector floor; +canary-golden for mutations; +red for gates; +parity for wasm/TS; +roundtrip for print) — FEATURE-MATRIX.md generated from test-inventory receipts, never hand-kept"
 kind = "test"
 status = "pending"
-tracking = "ADR-030 §8 op×spoke dimension; depends on app-layer-dispatch"
+tracking = "ADR-030 §8 layer 3 enriched with the test-kind axis; generator joins golden-vector replay receipts + test-name harvest + canary cell receipts; gate fails cells missing required kinds (tasks #10/#11)"
 
 [[obligation]]
 id = "guardrails-flake-wired"
@@ -221,7 +221,7 @@ adr = "ADR-031"
 statement = "px-true render: size = exact output canvas, padding = floor, module_px DEDUCED from (size-2*pad)/N, ERROR on impossible fit; symbol_px % N == 0"
 kind = "test"
 status = "pending"
-tracking = "ADR-031 §2 (corrected 2026-06-11); codec implementation in flight (agent), must use the deduce-from-canvas semantics"
+tracking = "ADR-031 §8 geometry landing (codec px.rs: overlap/additive deduction, module-grid text, uniform white, 1.5x gap — agent in flight); REMAINING: padding_mode=clip (zero embedded quiet zone, m=floor((size-2pad)/data), profile-verified safe space), per-side CSS padding, --size <N>[px|mm] suffix, gap clamp >= quiet*m, profile intrinsic-margin/cut-tolerance checks"
 
 [[obligation]]
 id = "print-contracts"
@@ -334,6 +334,14 @@ statement = "Per-registry manifest.toml declares enabled ops, feature flags, ide
 kind = "artifact"
 status = "pending"
 tracking = "ADR-034 §3-4; .part-registry/manifest.toml + roles.toml not yet defined/seeded"
+
+[[obligation]]
+id = "canary-pipeline"
+adr = "ADR-034"
+statement = "Live canary CI (golden-path + red-test matrix) exercises the released pr artifact against EPHEMERAL sandbox repos created/torn down by the part-registry-provisioner GitHub App"
+kind = "ci"
+status = "pending"
+tracking = "task #11; needs first pushed release tag + the provisioner App (Administration rw, per-run installation tokens, always() teardown + orphan sweeper); green runs = satisfied-evidence for pr-diff-policy-gate / host-enforced-authz / protection-drift-selfaudit"
 
 [[obligation]]
 id = "protection-drift-selfaudit"

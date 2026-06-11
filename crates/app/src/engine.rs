@@ -14,7 +14,7 @@ use time::OffsetDateTime;
 
 use part_registry_codec::{
     check_format_warning, fill_to_max, recommend_format, render_label, render_label_px, CodecError,
-    Layout, PxLabel, TextFormat,
+    Layout, PaddingMode, PxLabel, TextFormat,
 };
 use part_registry_domain::{
     Diff, DiffEdit, DiffRow, Operator, OperatorRef, Part, PartId, PartStatus, PrintEvent, Proposal,
@@ -929,10 +929,11 @@ fn print_mm(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
     }))
 }
 
-/// The ADR-031 §2 px-true render path (`unit: "px"`). Native unit is
-/// device px; an mm-expressed size converts at `dpi` and the codec
-/// snaps it to the integer-module grid. The whole job then fills to
-/// the batch's largest footprint (§4).
+/// The ADR-031 §2/§8 px-true render path (`unit: "px"`). Native unit
+/// is device px; an mm-expressed size converts at `dpi` and the codec
+/// deduces the module size per `padding_mode` (quiet-zone accounting,
+/// §8). The whole job then fills to the batch's largest footprint
+/// (§4).
 fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> Response {
     let dpi = options.dpi.unwrap_or(DEFAULT_DPI);
     if !dpi.is_finite() || dpi <= 0.0 {
@@ -943,12 +944,23 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
     }
     // §3: size_px (the EXACT output canvas) is direct; otherwise
     // mm → px at `dpi` defines the canvas. The codec deduces the
-    // module size inside it (§2 corrected 2026-06-11).
+    // module size inside it (§2/§8, 2026-06-11).
     let size_px = match options.size_px {
         Some(px) => px,
         None => (options.size_mm / MM_PER_INCH * dpi).round() as u32,
     };
     let padding_px = options.padding_px.unwrap_or(0);
+    // §8: how the quiet zone counts toward the padding floor.
+    let padding_mode = match options.padding_mode.as_deref() {
+        None | Some("overlap") => PaddingMode::Overlap,
+        Some("additive") => PaddingMode::Additive,
+        Some(other) => {
+            return Response::error(
+                ErrorKind::Validation,
+                format!("unknown padding_mode {other:?}; modes: overlap, additive (ADR-031 §8)"),
+            );
+        }
+    };
     // px mode does not require cable_od_mm up front: the codec rejects
     // the flag layout itself (Unsupported, ADR-031 §5) with the
     // authoritative message.
@@ -986,6 +998,7 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
             text_format,
             options.micro,
             padding_px,
+            padding_mode,
         ) {
             Ok(l) => rendered.push(l),
             Err(e) => return px_codec_error(e),
@@ -1006,6 +1019,9 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
                 "height_px": l.height_px,
                 "qr_px": l.qr_px,
                 "module_px": l.module_px,
+                "data_px": l.data_px,
+                "white_px": l.white_px,
+                "padding_mode": l.padding_mode,
             })
         })
         .collect();
@@ -1031,7 +1047,10 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
                     "unit": "px",
                     "qr_px": l.qr_px,
                     "module_px": l.module_px,
+                    "data_px": l.data_px,
+                    "white_px": l.white_px,
                     "padding_px": padding_px,
+                    "padding_mode": l.padding_mode,
                     "dpi": dpi,
                 }),
                 copies: options.copies,
@@ -1049,6 +1068,7 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
         "unit": "px",
         "size_px": size_px,
         "padding_px": padding_px,
+        "padding_mode": padding_mode,
         "dpi": dpi,
         "chars": chars_name(text_format),
         "warning": warning,

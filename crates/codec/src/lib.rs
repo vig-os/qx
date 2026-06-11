@@ -37,7 +37,7 @@ pub mod qr;
 pub mod svg;
 
 pub use format::{check_format_warning, recommend_format, TextFormat};
-pub use px::{fill_to_max, render_label_px, PxLabel};
+pub use px::{fill_to_max, render_label_px, PaddingMode, PxLabel};
 #[cfg(feature = "decoder")]
 pub use qr::decode_qr;
 pub use qr::{encode, QrMatrix};

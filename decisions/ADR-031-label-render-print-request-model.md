@@ -231,6 +231,78 @@ and registries declare:
   **one** text renderer consumes the vector. The id-scheme declares
   which vectors are legal (`nano14` declares all three; ADR-035 §0
   typed ids); adding a grouping is a declaration, not a renderer.
+- **The id-text payload shares the QR's sizing system** (2026-06-11):
+  the text block spans exactly the QR's *module part* (co-sized), and
+  font height + row gaps are **integer multiples of `module_px`** — the
+  whole payload lives on one device-pixel lattice, deduced once from
+  `size`/`padding` (§2). No second sizing dialect: change the canvas
+  and symbol + typography scale together, both grid-crisp.
+- **Padding references the MODULE part; the quiet zone counts toward
+  it** (2026-06-11): the deduction maximizes `m` subject to
+  `data·m + 2·max(padding_min, quiet·m) ≤ size` (micro M4: data 17,
+  quiet 2). The quiet zone's whitespace satisfies padding — it is not
+  double-counted outside it — and `white ≥ quiet·m` is structural, so
+  padding can never starve decodability. Worked example: size 64 /
+  pad 2 → m=3 (17·3 + 2·max(2,6) = 63 ≤ 64), module part 51px,
+  uniform white ≈ 6–7px.
+- **Uniform padding, derived gap** (2026-06-11): the actual white is
+  the SAME on all four canvas edges (remainder absorbed uniformly),
+  and the QR→text gap is **1.5 × the actual padding** — both derived
+  from the one deduction, no independent layout constants.
+- **`padding_mode` flag** (2026-06-11): `overlap` (default) = the
+  geometry above — the quiet zone counts toward outside padding,
+  because printers contribute intrinsic unprintable margins
+  before/after/beside the label, so the device already donates outer
+  white and the label spends its pixels on modules. `additive` = the
+  quiet zone is excluded from outside padding
+  (`(data + 2·quiet)·m + 2·pad ≤ size`) — for full-bleed/die-cut
+  contexts where the canvas edge is the physical edge. Forward hook:
+  printer *profiles* (§3) later declare their intrinsic margins so the
+  deduction credits device white explicitly instead of the operator
+  choosing a mode by feel.
+- **`padding_mode: clip` — the maximizer** (2026-06-11): the digital
+  artifact carries ZERO embedded quiet zone; `m = floor((size −
+  2·pad_min)/data)` with pad defaulting 0, so modules fill the canvas
+  maximally (size 68, M4: clip → 4px modules/68px vs overlap → 3px/63 —
+  a third bigger). Rationale: the printer's intrinsic unreducible
+  white (cut-feed margin ≈1.5mm, unprintable side margins) IS a quiet
+  zone supplied by the hardware — the spec requires contrast area at
+  scan time, not pixels in the file. Safety stays declared, not
+  assumed: the printer profile's intrinsic margins are checked against
+  `quiet·m` at the configured dpi; the renderer warns when the
+  physical context can't cover the safe space (die-cut sides,
+  dark mounting surfaces at the cut edge). Clip is the explicit
+  escape hatch; overlap stays the context-free default.
+- **Safe-space (quiet zone) clipping invariants** (2026-06-11): the
+  quiet zone is unclippable in the digital artifact by construction —
+  `white_side ≥ quiet·m` per side (overlap) / quiet zone inside the
+  placed symbol (additive) — and the text side carries an explicit
+  clamp, `gap ≥ max(round(1.5·white), quiet·m)`, so per-side padding
+  can never let typography invade the safe space. The residual risk is
+  PHYSICAL: cut/feed jitter (±1mm ≈ ±11px on a QL) can clip a
+  quiet zone that touches the cut line. Printer profiles (§3) declare
+  cut tolerance; the renderer credits it in the slack math and emits a
+  legibility-tier WARNING when quiet-zone slack < tolerance
+  ("increase padding or use additive mode") — the cut edge gets no
+  intrinsic-margin credit, because the cut is at the label.
+- **`--size <N>[px|mm]` — the unit rides the value** (2026-06-11):
+  `--size 64px` | `--size 8mm` | `--size 8` (bare = mm, preserving the
+  default); one clap value parser expands the suffix into the
+  protocol's explicit `{unit, size_px|size_mm}` fields (wire stays
+  explicit; terseness is CLI sugar). This retires the redundant
+  `--unit px --size-px 64` pair — §1's original example reads
+  accordingly. px is integer-only; mm accepts fractions.
+- **Per-side padding, CSS shorthand** (2026-06-11): `--padding`
+  accepts `2` | `2,6` | `2,6,4,6` (all / vertical,horizontal /
+  top,right,bottom,left — CSS clockwise), parsed by one custom clap
+  value parser into `Padding{t,r,b,l}`; the protocol mirrors it as
+  serde-untagged `2 | [2,6] | [2,6,4,6]` — one type, one expansion
+  rule shared by CLI and wire. Uniform stays the default; asymmetric
+  values are the printer-intrinsic-margin escape (leader strip ≠ side
+  margins). The deduction generalizes per axis: each side
+  independently satisfies `white_side ≥ max(pad_side, quiet·m)`
+  (overlap mode), deterministic remainder distribution on top of the
+  floors. Lands as a compatible wrapper after the uniform geometry.
 - **Offered vs allowed is contract-land** (the ADR-033/034/035
   split): the tool ships print-contract *implementations*; a
   collection descriptor's **render block declares** which contracts +

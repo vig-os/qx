@@ -470,10 +470,11 @@ fn print_by_filter_selection() {
     assert_eq!(d["labels"].as_array().expect("labels").len(), 1);
 }
 
-// ADR-031 §2 px-true path, corrected semantics (obligation
-// `px-true-qr-render`): size_px is the EXACT output canvas, padding
-// the floor, module_px DEDUCED. The hardware-validated boundary:
-// 64/pad 2 → 2px modules (42px symbol); 64/pad 0 → 3px (63px symbol).
+// ADR-031 §2/§8 px-true path (obligation `px-true-qr-render`):
+// size_px is the EXACT output canvas, padding references the MODULE
+// part, module_px DEDUCED per padding_mode. The §8 worked example:
+// micro M4 (data 17, quiet 2) at 64/pad 2 overlap → m=3 (17·3 +
+// 2·max(2,6) = 63 ≤ 64), module part 51px, uniform white 6px.
 #[test]
 fn print_px_true_deduces_module_from_exact_canvas() {
     let (ctx, _) = ctx_with(fixture_parts());
@@ -486,35 +487,59 @@ fn print_px_true_deduces_module_from_exact_canvas() {
     );
     let d = r.data().expect("ok");
     let label = &d["labels"][0];
-    assert_eq!(label["qr_px"], json!(42));
-    assert_eq!(label["module_px"], json!(2));
+    assert_eq!(label["module_px"], json!(3));
+    assert_eq!(label["data_px"], json!(51));
+    assert_eq!(label["white_px"], json!(6));
+    assert_eq!(label["qr_px"], json!(63));
+    assert_eq!(label["padding_mode"], json!("overlap"));
     assert_eq!(label["height_px"], json!(64), "exact canvas");
     assert_eq!(label["id"], json!("23456789ABCDEF"));
     let svg = label["svg"].as_str().expect("svg");
     assert!(svg.contains("shape-rendering=\"crispEdges\""));
     assert_eq!(d["unit"], json!("px"));
     assert_eq!(d["size_px"], json!(64));
+    assert_eq!(d["padding_mode"], json!("overlap"));
     // Print events still log, with the resolved px params as evidence.
     let events = ctx
         .repo
         .list_print_events(&PrintEventFilter::default())
         .expect("events");
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].extra["qr_px"], json!(42));
-    assert_eq!(events[0].extra["module_px"], json!(2));
+    assert_eq!(events[0].extra["module_px"], json!(3));
+    assert_eq!(events[0].extra["data_px"], json!(51));
+    assert_eq!(events[0].extra["white_px"], json!(6));
+    assert_eq!(events[0].extra["padding_mode"], json!("overlap"));
 
-    // padding 0 reaches 3px modules at the same 64px canvas.
+    // additive excludes the quiet zone from the padding floor:
+    // (17 + 2·2)·m + 2·2 ≤ 64 → m=2, module part 34px.
     let r = dispatch_json(
         &ctx,
         json!({"op":"Print","collection":"parts",
                "selection":{"ids":["23456789ABCDEF"]},
                "options":{"unit":"px","size_px":64,"micro":true,
-                          "chars":"44","padding_px":0,"log":false}}),
+                          "chars":"44","padding_px":2,
+                          "padding_mode":"additive","log":false}}),
     );
     let label = &r.data().expect("ok")["labels"][0];
-    assert_eq!(label["qr_px"], json!(63));
-    assert_eq!(label["module_px"], json!(3));
+    assert_eq!(label["module_px"], json!(2));
+    assert_eq!(label["data_px"], json!(34));
+    assert_eq!(label["padding_mode"], json!("additive"));
     assert_eq!(label["height_px"], json!(64), "exact canvas");
+}
+
+#[test]
+fn print_px_unknown_padding_mode_is_validation() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "padding_mode":"bleed","log":false}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(e.message.contains("overlap"), "modes listed: {}", e.message);
 }
 
 #[test]
@@ -536,8 +561,9 @@ fn print_px_job_fills_to_uniform_footprint() {
 
 #[test]
 fn print_px_mm_dpi_converts_then_snaps() {
-    // 8 mm at the default 300 dpi rounds to a 94 px canvas, and the
-    // Micro M4 (21 modules) deduces module_px 4 with qr_px 84.
+    // 8 mm at the default 300 dpi rounds to a 94 px canvas; Micro M4
+    // (data 17, quiet 2, pad 0, overlap) deduces m=4: 17·4 +
+    // 2·max(0,8) = 84 ≤ 94 → module part 68px.
     let (ctx, _) = ctx_with(fixture_parts());
     let r = dispatch_json(
         &ctx,
@@ -549,12 +575,14 @@ fn print_px_mm_dpi_converts_then_snaps() {
     let d = r.data().expect("ok");
     assert_eq!(d["size_px"], json!(94));
     assert_eq!(d["dpi"], json!(300.0));
-    assert_eq!(d["labels"][0]["qr_px"], json!(84));
     assert_eq!(d["labels"][0]["module_px"], json!(4));
+    assert_eq!(d["labels"][0]["data_px"], json!(68));
+    assert_eq!(d["labels"][0]["qr_px"], json!(84));
 }
 
 #[test]
 fn print_px_below_minimum_is_validation_with_hint() {
+    // Overlap minimum for micro M4 at pad 0: 17 + 2·2 = 21px.
     let (ctx, _) = ctx_with(fixture_parts());
     let r = dispatch_json(
         &ctx,
@@ -565,6 +593,19 @@ fn print_px_below_minimum_is_validation_with_hint() {
     let e = r.err().expect("err");
     assert_eq!(e.kind, ErrorKind::Validation);
     assert!(e.message.contains("21px"), "hint missing: {}", e.message);
+
+    // The hint follows the ACTIVE mode: additive minimum at pad 2 is
+    // (17 + 4)·1 + 4 = 25px.
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":24,"micro":true,"chars":"44",
+                          "padding_px":2,"padding_mode":"additive"}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(e.message.contains("25px"), "hint missing: {}", e.message);
 }
 
 #[test]

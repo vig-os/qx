@@ -128,14 +128,20 @@ enum Cmd {
         #[arg(long, default_value = "mm")]
         unit: String,
         /// EXACT output canvas in device px (unit=px; overrides
-        /// size_mm + dpi). Module size is deduced from
-        /// (size - 2*padding) / modules; errors if the symbol can't fit.
+        /// size_mm + dpi). Module size is deduced per --padding-mode
+        /// (ADR-031 §8); errors if the symbol can't fit.
         #[arg(long)]
         size_px: Option<u32>,
-        /// Minimum padding in device px (ADR-031 §4 floor consumed by
-        /// the deduction; actual padding absorbs the remainder).
+        /// Minimum padding in device px, canvas edge -> module part
+        /// (ADR-031 §4 floor consumed by the deduction; the uniform
+        /// white absorbs the remainder).
         #[arg(long)]
         padding: Option<u32>,
+        /// Quiet-zone accounting for the deduction (ADR-031 §8):
+        /// overlap (quiet zone counts toward outside padding) or
+        /// additive (excluded; full-bleed/die-cut).
+        #[arg(long, default_value = "overlap")]
+        padding_mode: String,
         /// Dots per inch for the mm -> px conversion (default 300
         /// = Brother QL class).
         #[arg(long)]
@@ -462,6 +468,7 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
         unit,
         size_px,
         padding,
+        padding_mode,
         dpi,
     } = cmd
     {
@@ -476,6 +483,7 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
             unit,
             size_px,
             padding_px: padding,
+            padding_mode: Some(padding_mode),
             dpi,
         };
         return protocol_print(&ctx, ids, options, &out_dir);
