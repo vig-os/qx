@@ -1,6 +1,6 @@
 # ADR-014 — Web app architecture: extension interfaces, SSOT, plugin model
 
-- Status: Proposed
+- Status: Superseded by ADR-030
 - Date: 2026-05-08
 - Component / area: `web/` static SPA. Implements the FE half of
   ADR-013.

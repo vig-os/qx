@@ -210,6 +210,38 @@ PARTREG_IDENTITY_PROVIDER=sigstore_keyless  # future
 The `cli/` crate's wiring code matches on this value and constructs
 the appropriate `Box<dyn IdentityProvider>`.
 
+### Credential resolution order (refinement — 2026-06-10)
+
+> Additive refinement, driven by ADR-030's multi-shell surface. It does
+> not change any decision above (trait shapes, `Operator`, the authz
+> table); it specifies *where the GitHub token comes from* before the
+> interactive device flow — a gap the original ADR left implicit. The
+> `identity_github_oauth` adapter (and the CI path) resolve credentials
+> first-hit-wins, every step reusing existing IdP state per the ADR-023
+> "no bespoke keys" constraint:
+
+1. **Explicit token** — `config.github_token`
+   (`PART_REGISTRY__TRANSPORT__GITHUB_TOKEN`); also accept the
+   conventional `GITHUB_TOKEN` / `GH_TOKEN` names. This is the CI path.
+2. **Cached token** — `FileTokenStore`
+   (`~/.config/part-registry/github-token.json`) from a prior login;
+   `verified_at` = token issue time.
+3. **Borrow system auth** *(opt-in adapter, no hard dependency)* —
+   `gh auth token`, a git credential helper, or the OS keychain, **if
+   present**. Used only when available, so the toolbelt never *requires*
+   `gh`; the borrowed token still attests the user via `GET /user`
+   (`source: GitHubOAuth`).
+4. **Interactive device flow** — `github.com/login/device` (the MVP
+   path). Native shells only.
+
+**Per-shell consequence (ADR-030).** A serverless web shell (GH Pages)
+**cannot** run the device flow: GitHub's device/token endpoints are not
+CORS-enabled for browser JS. Its write-path credential must therefore
+come from a backend/proxy — the `pr serve` / GitHub App named in
+ADR-030. Read of a public registry stays anonymous. This is the one
+shell that cannot self-serve write auth, and the concrete reason the
+GitHub App exists.
+
 ### `&Operator` is a structural parameter
 
 Every state-changing call in the workspace takes `&Operator` as a

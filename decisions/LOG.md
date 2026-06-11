@@ -3,6 +3,134 @@
 Append-only chronological record of decisions for the parts registry.
 Newest entries first.
 
+## 2026-06-11 — Design corpus completed + accepted (ADR-031…035; 030–035 → Accepted)
+
+**Context:** continuation of the 2026-06-10 multi-tier session. Five
+further ADRs were authored interactively, then the whole set was put
+through a two-agent generalization review and a contradiction pass, and
+flipped to Accepted.
+
+**ADRs authored:**
+
+| ADR | Decision (headline) |
+|---|---|
+| 031 | Label render + structured print request: px-true QR (`symbol_px % modules == 0`), device-dot sizing, padding-as-floor/job-fills-to-max, optimistic mint+print with pre-flight; later generalized to `Print{collection, Selection}` with named presets in the descriptor's render block |
+| 032 | Scan pipeline: `FrameSource → decode-image → Resolve{id} → RollingAccumulator → Sink` — one processor, sources/sinks per shell; drop `zxing-wasm` after an rxing A/B gate |
+| 033 | Registry anatomy: one repo = one registry; self-describing data repo (own versioned contract, `[min,max]` tool compat); scalar custom-field types + `attachment`; operator workspace (`registries.toml`) |
+| 034 | Manifest + capabilities: host-enforced authz (branch protection + CODEOWNERS; tool classifies/advises); SSoT-core gate runs locally + in CI from a pinned artifact; manifest grain = op-family × collection × edge; CI-only protection-drift self-audit (no App yet) |
+| 035 | Registry data model — the capstone: collections metamodel (one engine, descriptors, code-owned presets, one meta level); git-native NDJSON **entity store** (global typed ids `(scheme,value)`, micro-core, kind tree w/ inheritance, generic List/Count, no join DSL); declared relations + derived backlinks; JSONL primary / CSV export-only; `batch` **retired** (audit spine is the mint event); `minted_at`≡`created_at`, `bound_at`→`transitioned_at[bound]` under the materialization rule; print events folded into the ONE audit stream; content-addressed attachments |
+
+**Generalization review (2026-06-11):** two fresh-context agents
+(`a6db4773`, `a08dc250`) swept the corpus. Adopted (13): created_at
+unification, lifecycle-timestamp materialization rule, `{collection,
+op-kind}` unified change vocabulary (016/020/022), print-fold,
+kind-as-descriptor-capability, collection-generic Repository port
+(ADR-018 refinement note), uncommit `registry.csv`, manifest capability
+grain, shared `Selection`/`Filter`, scan→`Resolve{id}`,
+Transition-with-payload (bind/rebind dissolve), render-metadata
+single-home, batches-roster regression scrub. Rejected (rightly):
+printer-profiles-as-entities, logs-as-collections, stream-descriptor
+meta-machinery. Deferred to open question: operators directory
+collection; type-BOM vs as-built.
+
+**Contradiction pass:** four wording-level contradictions found and
+fixed (ADR-030 "one variant per operation" → op-families; ADR-031 §1
+`mint_count` residue; ADR-032 diagram `resolve-part` → `Resolve{id}`;
+ADR-034 "feature-flag" residue). No structural contradictions. Two
+intentional asymmetries re-confirmed as documented-not-bugs: `file://`
+local-trust enforcement; fail-open audit vs lenient materialization
+cross-check.
+
+**Acceptance:** ADR-030…035 flipped Proposed → Accepted (reviewer Lars
+Gerchow, 2026-06-11). README index reconciled with file statuses —
+ADR-016…029 had been Accepted in-file while the index said "none yet";
+ADR-014 status corrected to "Superseded by ADR-030". Obligations
+registry at 51 rows / 21 in-force ADRs, gate green throughout.
+
+**Next:** implementation per ADR-030 build order — `crates/app`
+(collection engine + protocol) first, then un-gate live PR submission.
+
+## 2026-06-10 — Multi-tier shells over one application layer (ADR-030)
+
+**Context:** the user asked for a multi-tier app design — CLI, TUI,
+Tauri (desktop + mobile), local server ("to-localhost"), web, potential
+mobile, and CI — interacting either with a local deployed part-registry
+git folder or a GitHub part-registry repo, with every app "always fully
+capable" and the ground truth + validation always in the Rust core.
+Review of the existing ADR set showed ADR-017 already commits the
+Rust-core/ports/adapters shape and names these surfaces, but (a) leaves
+the frontend strategy as an explicit open question, (b) has no
+application layer — `crates/cli` bins and `crates/wasm` each wire the
+ports themselves, so "thin shell" was discipline not structure — and
+(c) the ADR-014 TypeScript web app is a development drag the user wants
+scrapped.
+
+**Decisions reached interactively** (recorded in ADR-030, Proposed):
+
+| Fork | Decision |
+|---|---|
+| Core↔shell boundary | Single serde command protocol `app::dispatch(Request)->Response`; typed-Rust "hybrid" filed as a triggered escalation (>2 (de)serialize round-trips on a hot native path, or >~40 `Request` variants) |
+| Bundles | 3 families: one native `pr` binary (CLI+TUI+serve+MCP+CI); one Vite/React/TS/Tailwind webview (web + Tauri desktop + Tauri mobile); optional uniffi deferred |
+| Scope | CLI + TUI + server + web + Tauri desktop + mobile all committed; embedded still deferred |
+| Web app | Scrapped — supersedes ADR-014; features ported individually |
+| FE stack | Vite + React + TS + Tailwind (Astro rejected for the app — content-first grain vs serverless stateful WASM SPA; reserved for optional docs site) |
+| TUI / CLI | ratatui + crossterm; clap derive, consolidated `pr` multicall binary (revises ADR-017's three separate bins) |
+| MCP | Yes — `pr mcp` (stdio, tier 1) + MCP-over-HTTP in `pr serve`, via `rmcp` + `schemars`; an MCP tool is `dispatch()` + JSON-Schema, so it falls out of the protocol choice and is gated by the same identity/authz |
+| CI gating | The same `pr` binary runs `pr check --diff` in a deployed repo's GitHub Actions (realizes ADR-016); GitHub App is the scale/host upgrade (multi-registry, hosted serve+MCP+OAuth), not a reimplementation |
+
+**Deferred to the next session:** the registry **manifest / capabilities
+descriptor** (what a deployed registry exposes + allows) — entangled with
+the feature-set discussion the user wants next; gets its own ADR. Until
+then capabilities = identity/authz (ADR-020) × wired adapters.
+
+**Feature-parity guardrail (ADR-030 §8):** the user asked for a
+guardrail/tests ensuring every spoke exposes the same features (no lazy
+stubs). Recorded as a five-layer scheme attacking two failure modes —
+op *missing* from a spoke (layers 1–3: catalog-generated spokes,
+exhaustive match, parity test + generated `FEATURE-MATRIX.md`) and op
+*present-but-hollow* (layer 0: guardrails `no-fake-impl`, already active;
+layer 4: per-spoke contract smoke test). Lands as dimension 7 of the
+ADR-029 validator, reusing its exemption-with-expiry mechanism; ADR-029
+forward-compat got a light cross-ref (no change to its Accepted decision).
+
+**Upstream-to-guardrails triage:** most of the parity scheme is
+app-architecture-specific (depends on the `dispatch`/spoke shape) and
+stays in part-registry. The one generic primitive worth upstreaming is
+**time-boxed escape hatches** — `guardrails-ok` is currently permanent;
+an expiring variant (`guardrails-ok-until:YYYY-MM-DD` + a gate that fails
+once the date passes) generalizes ADR-029's exemption-with-expiry into
+the shared toolbelt and is already on guardrails' roadmap ("generated
+escape registries"). Candidate PR pending user go-ahead.
+
+**Built this session — the first feeder (consumer-side):** rather than
+leave the coverage story on paper, shipped the structured shortlist of
+"what falls out of the ADRs" as data + a prek gate so nothing is lost
+logically:
+
+- `decisions/obligations.toml` — 21 rows, one per load-bearing ADR
+  commitment (`id`, `adr`, `statement`, `kind`, `status`,
+  `satisfied_by`/`tracking`/`exempt_until`). Structured data, not prose.
+- `tools/obligations_check.py` — benches reality against it: row-schema,
+  `satisfied_by` path resolution, `pending` requires `tracking`, expiring
+  exemptions (exit 3), orphan refs (exit 2), and coverage teeth — every
+  in-force ADR (minus `[meta].excluded` = 014/015) must have ≥1 row.
+  Emits feeder-JSON for the future ADR-029 joiner. Verified: clean=0,
+  expired-exemption=3, orphan=2, and a new ADR with no row Fails the
+  prek hook with "something fell out".
+- `.pre-commit-config.yaml` — `adr-obligations` hook runs it when any
+  ADR or `obligations.toml` changes.
+
+This is ADR-029 dimension 4 as a standalone prek feeder, built before the
+full Rust joiner per the extraction discipline (joiner extracts upstream
+on a second consumer). The expiry semantics (`exempt_until` → exit 3)
+are the consumer-side mirror of the proposed guardrails `guardrails-ok-
+until` primitive.
+
+**Process notes:** ADR-030 is **Proposed**, not Accepted — awaiting
+review. The architectural invariant (shells depend on `crates/app` only,
+never on adapter crates) is assigned to the ADR-029 coverage validator
+to enforce. ADR number 026 remains unused; 030 keeps numbering monotonic.
+
 ## 2026-05-11 — SOUP discipline + architectural coverage validator (ADR-028 + ADR-029)
 
 **Context:** the user surfaced a regulatory gap during the foundation

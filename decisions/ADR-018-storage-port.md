@@ -75,6 +75,23 @@ already exists.
 
 ## Decision
 
+> **Refinement (2026-06-11, per ADR-035 — additive; the port's
+> load-bearing property is unchanged):** the trait surface goes
+> **collection-generic** to match the ADR-035 metamodel: `get(&Id) →
+> Entity` (global resolve), `list(collection, &Filter) → Vec<Entity>`,
+> `append_audit_event`, `snapshot_hash` — where `Entity` is the
+> micro-core + descriptor-typed fields, and the typed `Part` is a
+> *preset binding* in `crates/domain`, not a port concern. `PrintEvent`
+> / `list_print_events` / `append_print_event` **leave the port**:
+> print events fold into the audit spine as a typed event kind (the
+> fold ADR-022 §Migration decided). `snapshot_hash` computes over the
+> contract-declared collection roster + the audit stream — adding a
+> collection changes hash inputs by data, not code. **Read +
+> audit-append only** is unchanged and easier to police: one method set
+> instead of one per entity type. Primary adapter becomes
+> `storage_jsonl_git` (ADR-035 §4); `storage_csv_git` demotes to the
+> export path.
+
 Storage is a port. The Rust workspace declares a `Repository` trait in
 `crates/storage/src/lib.rs` and ships exactly one adapter for the MVP:
 `crates/storage_csv_git/`, which implements `Repository` over the

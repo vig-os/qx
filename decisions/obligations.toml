@@ -1,0 +1,466 @@
+# ADR obligations — the structured shortlist of "what falls out of the ADRs".
+#
+# This is the first *feeder* per ADR-030 §8 (and ADR-029 dimension 4, "ADR
+# commitments"): one row per load-bearing commitment an ADR makes, in
+# structured data so a checker can bench reality against it and nothing gets
+# logically lost. Benched by `tools/obligations_check.py` (prek-wired); see that
+# file for exit codes. NOT loose prose — every row is machine-checked.
+#
+# The checker emits feeder-JSON per row for the future ADR-029 coverage joiner:
+#   { "dimension": "adr-obligation", "obligation": <id>, "satisfied": <bool>,
+#     "citation": <satisfied_by | tracking>, "exempt_until": <date|null> }
+#
+# Row schema:
+#   id            unique slug
+#   adr           "ADR-NNN" — must match a decisions/ADR-NNN-*.md file
+#   statement     one line: the commitment, in plain language
+#   kind          crate | gate | test | artifact | doc | ci | issue
+#   status        satisfied | pending | exempt
+#   satisfied_by  path or glob (string or list) — REQUIRED when status=satisfied;
+#                 the checker fails if it doesn't resolve
+#   tracking      where the open work lives — REQUIRED when status=pending
+#   exempt_until  "YYYY-MM-DD" — REQUIRED when status=exempt; checker fails once past
+#   exempt_reason why — REQUIRED when status=exempt
+#
+# Teeth: every in-force ADR (not in [meta].excluded) must have >=1 row, so a new
+# ADR can't land without declaring what falls out of it.
+
+[meta]
+schema_version = 1
+# In-force ADRs are checked for coverage; these are intentionally omitted, with why.
+excluded = [
+  { adr = "ADR-014", reason = "superseded by ADR-030 (TS SPA retired)" },
+  { adr = "ADR-015", reason = "generalised by ADR-022 audit-log layer" },
+]
+
+# ---- Identification + data contract -------------------------------------
+
+[[obligation]]
+id = "id-scheme-ssot"
+adr = "ADR-012"
+statement = "Part ID scheme (nano-id alphabet/length + statuses) is the machine-readable SSOT"
+kind = "artifact"
+status = "satisfied"
+satisfied_by = "schema/registry-contract.json"
+
+[[obligation]]
+id = "web-app-static-deploy"
+adr = "ADR-013"
+statement = "The registry web app deploys as a static GitHub Pages build"
+kind = "ci"
+status = "satisfied"
+satisfied_by = ".github/workflows/pages.yml"
+
+[[obligation]]
+id = "pr-diff-policy-gate"
+adr = "ADR-016"
+statement = "Registry changes are gated by PR-diff policy enforcement in CI (pr check --diff)"
+kind = "gate"
+status = "pending"
+tracking = "ADR-030 build order step 6 (pr check --diff); realizes ADR-016"
+
+# ---- Core architecture (ADR-017) ----------------------------------------
+
+[[obligation]]
+id = "rust-core-ssot"
+adr = "ADR-017"
+statement = "Canonical domain logic lives once in the Rust workspace; no parallel reimplementation"
+kind = "crate"
+status = "satisfied"
+satisfied_by = "crates/domain/src/lib.rs"
+
+[[obligation]]
+id = "python-strangler-deleted"
+adr = "ADR-017"
+statement = "Python CLI (label.py/mint.py/bind.py/validators) deleted once the Rust binaries reach parity"
+kind = "issue"
+status = "pending"
+tracking = "ADR-017 strangler-fig steps 1-9; label.py et al still present"
+
+# ---- The ports (ADR-018/019/020/021/022) --------------------------------
+
+[[obligation]]
+id = "storage-port-read-append-only"
+adr = "ADR-018"
+statement = "Repository port is read + audit-append only; record mutations flow through ProposalSink"
+kind = "crate"
+status = "satisfied"
+satisfied_by = "crates/storage/src/lib.rs"
+
+[[obligation]]
+id = "proposal-sink-port"
+adr = "ADR-019"
+statement = "State-changing mutations go through the ProposalSink port (PR-based proposal flow)"
+kind = "crate"
+status = "satisfied"
+satisfied_by = "crates/transport/src/lib.rs"
+
+[[obligation]]
+id = "identity-authz-port"
+adr = "ADR-020"
+statement = "Identity + authorization is a port; what operations are allowed is gated there"
+kind = "crate"
+status = "satisfied"
+satisfied_by = "crates/identity/src/lib.rs"
+
+[[obligation]]
+id = "config-12-factor"
+adr = "ADR-021"
+statement = "12-factor config: env-first, typed parse-at-boundary, no hardcoded paths/repo names"
+kind = "crate"
+status = "satisfied"
+satisfied_by = "crates/config/src/lib.rs"
+
+[[obligation]]
+id = "single-tracing-spine"
+adr = "ADR-022"
+statement = "One tracing/audit spine; no scattered debug prints (enforced by the no-debug-leftovers gate)"
+kind = "gate"
+status = "satisfied"
+satisfied_by = ["crates/observability/src/lib.rs", ".pre-commit-config.yaml"]
+
+# ---- Security / crypto / distribution (ADR-023/024/025) -----------------
+
+[[obligation]]
+id = "crypto-reopen-triggers-watched"
+adr = "ADR-023"
+statement = "Crypto re-open triggers T1-T6 are surveyed, not silently resolved"
+kind = "test"
+status = "pending"
+tracking = "ADR-029 dimension 5 (trigger watchers); validator binary not yet built"
+
+[[obligation]]
+id = "reproducible-signed-releases"
+adr = "ADR-024"
+statement = "Release builds are reproducible and signed"
+kind = "ci"
+status = "pending"
+tracking = ".github/workflows/release.yml hardening (repro verify + signing)"
+
+[[obligation]]
+id = "distribution-integrity"
+adr = "ADR-025"
+statement = "Release artifacts carry integrity evidence (signatures, SRI, repro-build proof)"
+kind = "ci"
+status = "pending"
+tracking = "distribution-integrity pipeline; not yet wired"
+
+# ---- Verification discipline (ADR-027/028/029) --------------------------
+
+[[obligation]]
+id = "port-conformance-wired"
+adr = "ADR-027"
+statement = "Every adapter wires the generic port-conformance suite from crates/port_tests"
+kind = "test"
+status = "pending"
+tracking = "crates/port_tests/src/lib.rs still has TODO bodies; populate per adapter"
+
+[[obligation]]
+id = "soup-inventory-complete"
+adr = "ADR-028"
+statement = "Every third-party dependency is identified in the SOUP inventory (IEC 62304 §5.3.3)"
+kind = "artifact"
+status = "satisfied"
+satisfied_by = "soup/inventory.toml"
+
+[[obligation]]
+id = "obligations-benched"
+adr = "ADR-029"
+statement = "Architectural obligations are benched as structured data so nothing falls out (this feeder)"
+kind = "test"
+status = "satisfied"
+satisfied_by = "tools/obligations_check.py"
+
+[[obligation]]
+id = "coverage-joiner"
+adr = "ADR-029"
+statement = "The full coverage validator (joiner over all dimensions) emits one auditor-readable matrix"
+kind = "issue"
+status = "pending"
+tracking = "part-registry-coverage binary in crates/port_tests (ADR-029 Decision); this feeder is dimension 1 of it"
+
+# ---- Multi-tier shells (ADR-030) ----------------------------------------
+
+[[obligation]]
+id = "app-layer-dispatch"
+adr = "ADR-030"
+statement = "crates/app exposes dispatch(Request)->Response; shells depend on app only, never on adapters"
+kind = "crate"
+status = "pending"
+tracking = "ADR-030 build order step 1 (crates/app not yet created)"
+
+[[obligation]]
+id = "no-fake-impl-active"
+adr = "ADR-030"
+statement = "no-fake-impl gate blocks stub handlers (feature-parity failure mode B, layer 0)"
+kind = "gate"
+status = "satisfied"
+satisfied_by = ".pre-commit-config.yaml"
+
+[[obligation]]
+id = "spoke-feature-parity"
+adr = "ADR-030"
+statement = "Every spoke surfaces every Op; parity benched + FEATURE-MATRIX.md generated (layer 3)"
+kind = "test"
+status = "pending"
+tracking = "ADR-030 §8 op×spoke dimension; depends on app-layer-dispatch"
+
+[[obligation]]
+id = "guardrails-flake-wired"
+adr = "ADR-030"
+statement = "Dev shell + commit gates ride on the shared guardrails flake (mkDevShell + pre-commit)"
+kind = "ci"
+status = "satisfied"
+satisfied_by = "flake.nix"
+
+# ---- Label render + print-request model (ADR-031) -----------------------
+
+[[obligation]]
+id = "px-true-qr-render"
+adr = "ADR-031"
+statement = "QR render is px-true: symbol_px % module_count == 0 (integer module px; no malformed dots)"
+kind = "test"
+status = "pending"
+tracking = "ADR-031 §2; codec px-true mode + test not yet built (generalizes printer_test_62mm.py)"
+
+[[obligation]]
+id = "structured-print-request"
+adr = "ADR-031"
+statement = "Print{collection, Selection, …} — Selection = Ids|Filter sharing THE List filter; mint_count out (CLI -n composes Create→Print); groupings from the id-scheme declaration"
+kind = "crate"
+status = "pending"
+tracking = "ADR-031 §1+§7; depends on app-layer-dispatch (ADR-030)"
+
+[[obligation]]
+id = "optimistic-mint-preflight"
+adr = "ADR-031"
+statement = "mint+print is optimistic with pre-flight: fetch contract+registry from main, validate locally, then print"
+kind = "test"
+status = "pending"
+tracking = "ADR-031 §6; pre-flight read path + optimistic mint not yet built"
+
+# ---- Auth credential resolution (ADR-020 refinement) --------------------
+
+[[obligation]]
+id = "auth-credential-resolver"
+adr = "ADR-020"
+statement = "GitHub token resolves first-hit-wins: explicit env → cached → borrow system (gh/keychain) → device flow"
+kind = "crate"
+status = "pending"
+tracking = "ADR-020 'Credential resolution order' refinement; borrow-system + conventional env names not yet built"
+
+# ---- Scan pipeline + decode-image (ADR-032) -----------------------------
+
+[[obligation]]
+id = "decode-image-surfaced"
+adr = "ADR-032"
+statement = "Rust codec decode is surfaced via app + wasm façade as decode-image; no JS QR codec"
+kind = "crate"
+status = "pending"
+tracking = "ADR-032 §1; codec::qr::decode_qr exists but is excluded from the wasm façade"
+
+[[obligation]]
+id = "scan-processor-dry"
+adr = "ADR-032"
+statement = "One scan processor (FrameSource→decode→resolve→RollingAccumulator→Sink); sources/sinks are the only per-shell parts"
+kind = "test"
+status = "pending"
+tracking = "ADR-032 §2; scan module + replay-fixture conformance not yet built"
+
+[[obligation]]
+id = "zxing-wasm-dropped"
+adr = "ADR-032"
+statement = "zxing-wasm removed from web deps + SOUP inventory after the rxing-vs-zxing A/B gate passes"
+kind = "issue"
+status = "pending"
+tracking = "ADR-032 §3 / ADR-017 step-8 A/B; zxing-wasm still the FE decoder"
+
+# ---- Registry anatomy (ADR-033) -----------------------------------------
+
+[[obligation]]
+id = "registry-self-describing"
+adr = "ADR-033"
+statement = "Data repo carries its own versioned contract in .part-registry/; tool validates against the declared version"
+kind = "artifact"
+status = "pending"
+tracking = "ADR-033 §2; bootstrap seeds no contract today; contract lives only in the tool repo"
+
+[[obligation]]
+id = "core-plus-custom-schema"
+adr = "ADR-033"
+statement = "Schema = fixed regulated core + registry-declared custom fields; consumers operate over core∪declared"
+kind = "crate"
+status = "pending"
+tracking = "ADR-033 §3; validators/codec/FE are hardcoded to the core column list today"
+
+[[obligation]]
+id = "operator-workspace"
+adr = "ADR-033"
+statement = "Operator workspace (registries.toml) lists registries an operator uses for switching + cross-registry views"
+kind = "artifact"
+status = "pending"
+tracking = "ADR-033 §5; workspace file + multi-registry UX not yet built"
+
+# ---- Registry manifest + capabilities (ADR-034) -------------------------
+
+[[obligation]]
+id = "host-enforced-authz"
+adr = "ADR-034"
+statement = "Write/review authz is host-enforced (branch protection + CODEOWNERS); tool classifies + advises, does not gate"
+kind = "ci"
+status = "pending"
+tracking = "ADR-034 §1-2,6; bootstrap must set branch protection + seed CODEOWNERS from the manifest"
+
+[[obligation]]
+id = "registry-manifest"
+adr = "ADR-034"
+statement = "Per-registry manifest.toml declares enabled ops, feature flags, identity, and the advisory role→capability map"
+kind = "artifact"
+status = "pending"
+tracking = "ADR-034 §3-4; .part-registry/manifest.toml + roles.toml not yet defined/seeded"
+
+[[obligation]]
+id = "protection-drift-selfaudit"
+adr = "ADR-034"
+statement = "A self-audit verifies a registry's branch protection + CODEOWNERS still match its manifest (no silent drift)"
+kind = "ci"
+status = "pending"
+tracking = "ADR-034 §open; cron Actions self-audit (administration:read), warn/issue on drift; no App for now"
+
+# ---- Part data model: tiered schema + JSONL (ADR-035) -------------------
+
+[[obligation]]
+id = "tiered-data-model"
+adr = "ADR-035"
+statement = "Part = tier-1 core (incl. kind + components) + tier-2 per-kind schema + tier-3 open properties; validation dispatches on kind"
+kind = "crate"
+status = "pending"
+tracking = "ADR-035 §1; domain Part + kind-dispatching validators not yet built"
+
+[[obligation]]
+id = "component-graph-integrity"
+adr = "ADR-035"
+statement = "components is a core relation; validators enforce ref-existence + acyclicity + void/cascade policy"
+kind = "test"
+status = "pending"
+tracking = "ADR-035 §1a; graph-integrity validators not yet built"
+
+[[obligation]]
+id = "jsonl-storage"
+adr = "ADR-035"
+statement = "JSONL (storage_jsonl_git) is the primary on-disk format behind the ADR-018 port; CSV demotes to export"
+kind = "crate"
+status = "pending"
+tracking = "ADR-035 §4; storage_jsonl_git adapter not yet built (storage_csv_git is current)"
+
+[[obligation]]
+id = "properties-promotion"
+adr = "ADR-035"
+statement = "Open properties bag is shape-checked; a promote op moves a hot key into a typed tier-2 field"
+kind = "test"
+status = "pending"
+tracking = "ADR-035 §3; promote op + shape-check not yet built"
+
+[[obligation]]
+id = "idd-controlled-vocab"
+adr = "ADR-035"
+statement = "types/products/vendors/locations are id'd entities (stable id + mutable label); parts reference by id; FK integrity is core (rename-safe)"
+kind = "crate"
+status = "pending"
+tracking = "ADR-035 §5; collections/*.jsonl entity tables + FK validators not yet built"
+
+[[obligation]]
+id = "collections-metamodel"
+adr = "ADR-035"
+statement = "One generic collection engine (descriptor: id-scheme/fields/lifecycle/relations); code-owned presets non-weakenable; ops parameterized by collection"
+kind = "crate"
+status = "pending"
+tracking = "ADR-035 §0; generic engine + parts/vocab presets not yet built"
+
+[[obligation]]
+id = "batch-deprecated"
+adr = "ADR-035"
+statement = "batch retired from core: grouping = shared minted_at / mint audit-entry; removed from validators, CLI selection, print events, web pickers; legacy B-* migrated"
+kind = "issue"
+status = "pending"
+tracking = "ADR-035 §0+§1b; batch still in validators REQUIRED_ALWAYS, mint/label CLIs, web bulk-add"
+
+[[obligation]]
+id = "timestamp-trust"
+adr = "ADR-035"
+statement = "Audit-spine timestamps: one stamp per mint event; prefer server time online; skew sanity-check; time_source provenance; CI plausibility backstop"
+kind = "test"
+status = "pending"
+tracking = "ADR-035 §1b; pre-flight skew check + time_source + CI check not yet built"
+
+[[obligation]]
+id = "entity-store"
+adr = "ADR-035"
+statement = "Git-native NDJSON entity store: global id space + Resolve{id}; entity micro-core; kind tree w/ inheritance in types; generic List{collection,filter}; no join DSL"
+kind = "crate"
+status = "pending"
+tracking = "ADR-035 §0 entity store; global-id resolve + kind tree + generic query not yet built"
+
+[[obligation]]
+id = "lifecycle-timestamps"
+adr = "ADR-035"
+statement = "created_at replaces minted_at (micro-core); transitioned_at[status] replaces bound_at — engine-materialized, validator-checked caches of the audit spine (the materialization rule)"
+kind = "test"
+status = "pending"
+tracking = "ADR-035 §1b materialization rule; stamp==AuditEntry.ts cross-check validator not yet built"
+
+[[obligation]]
+id = "unified-change-vocabulary"
+adr = "ADR-035"
+statement = "Diff classes, audit ActionKind, authz Action all key on {collection, op-kind}; descriptor_change generalizes header_change; TargetRef = typed id; classification covers every collection"
+kind = "crate"
+status = "pending"
+tracking = "ADR-035 §0 one-change-vocabulary; ADR-016/020/022 enums still parts-specific in code"
+
+[[obligation]]
+id = "print-fold-audit-spine"
+adr = "ADR-035"
+statement = "Print events are typed audit events (one stream); print_log retired from anatomy; PrintEvent leaves the storage port (ADR-018 refinement; per ADR-022 §Migration)"
+kind = "issue"
+status = "pending"
+tracking = "ADR-035 §0 guardrail 3 + ADR-018 refinement note; PrintEvent still in crates/storage"
+
+[[obligation]]
+id = "export-never-committed"
+adr = "ADR-035"
+statement = "Exports (CSV) are generated via Export op / Pages build — never committed beside the source of truth"
+kind = "ci"
+status = "pending"
+tracking = "ADR-035 §0 + ADR-033 consequences; Pages build must generate CSV until WASM read path lands"
+
+[[obligation]]
+id = "attachments-content-addressed"
+adr = "ADR-035"
+statement = "attachment field type: sha256: typed-id ref to attachments/<hash>.<ext>; validators enforce ref-exists + hash-matches (tamper-evident); prose = md attachment"
+kind = "test"
+status = "pending"
+tracking = "ADR-035 §4 attachments; field type + integrity validator not yet built"
+
+[[obligation]]
+id = "capability-grain"
+adr = "ADR-034"
+statement = "Manifest enables ops at (op-family × collection [× edge]) grain; render structure lives only in descriptors; CI validates manifest↔contract FK"
+kind = "ci"
+status = "pending"
+tracking = "ADR-034 §3 (2026-06-11 grain); manifest schema + FK validator not yet built"
+
+[[obligation]]
+id = "typed-ids"
+adr = "ADR-035"
+statement = "Ids are (scheme,value), canonical scheme:value; schemes declared per contract; one default scheme with bare short form (QR/labels stay bare nano14); mintable vs imported per descriptor"
+kind = "crate"
+status = "pending"
+tracking = "ADR-035 §0 typed ids; domain Id type + scheme-dispatched validators not yet built"
+
+[[obligation]]
+id = "declared-relations"
+adr = "ADR-035"
+statement = "Relations declared per descriptor (components = parts preset instance); store one direction, derive backlinks; naming/labels in descriptor — no hardcoded display strings in shells"
+kind = "crate"
+status = "pending"
+tracking = "ADR-035 §1a relations-generalize; relations[]/backlinks/labels in contract not yet built"

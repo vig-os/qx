@@ -6,6 +6,14 @@
   # (for Python parity tests + tools/), wasm-pack, wasm-bindgen-cli,
   # Playwright + chromium, gh, jq, actionlint. CI can `nix develop -c
   # <cmd>` to get the same env as a contributor's machine.
+  #
+  # The dev shell is composed on top of the shared `guardrails` flake
+  # (gerchowl/guardrails): its toolbelt (prek, gitleaks, cargo-deny,
+  # cargo-mutants/-bloat/-criterion, tokei, the `guardrails` CLI + the
+  # editable gate scripts) rides in, and entering the shell auto-installs
+  # the pre-commit hooks defined in `.pre-commit-config.yaml` so commits
+  # are gated the same way everywhere. `guardrails info` lists the gates
+  # and every config knob; escape one line with `guardrails-ok`.
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
@@ -14,9 +22,17 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Shared code-quality / observability / perf governance. Consumed via
+    # `guardrails.lib.${system}.mkDevShell`; follows our nixpkgs/flake-utils
+    # so the closure stays deduplicated.
+    guardrails = {
+      url = "github:gerchowl/guardrails";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.flake-utils.follows = "flake-utils";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay, guardrails }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
@@ -37,10 +53,14 @@
         wasmBindgenCli = pkgs.wasm-bindgen-cli;
 
       in {
-        devShells.default = pkgs.mkShell {
+        # mkDevShell layers the guardrails toolbelt + auto-hook-install
+        # under our project tools (`extra`), the shell `name`, the
+        # Playwright env vars (`env`), and our cheatsheet (`hook`).
+        devShells.default = guardrails.lib.${system}.mkDevShell {
+          inherit pkgs;
           name = "part-registry-dev";
 
-          buildInputs = with pkgs; [
+          extra = with pkgs; [
             # Rust workspace
             rustToolchain
             wasmBindgenCli
@@ -69,10 +89,20 @@
           # the driver. nixpkgs ships them at a fixed store path that
           # we surface via these env vars so `npx playwright test`
           # works without network access.
-          PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
-          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
+          env = {
+            PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+            PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
 
-          shellHook = ''
+            # `tools/` holds CLI scripts whose job is to write to stdout/stderr
+            # (sheet.py, obligations_check.py, …). Declare it an output surface so
+            # guardrails' no-debug-leftovers gate stays high-signal on lib/app
+            # code instead of flagging legitimate command output.
+            GUARDRAILS_OUTPUT_GLOBS = "tools/*:*/tools/*";
+          };
+
+          # Appended after the guardrails banner so the project cheatsheet
+          # is the last thing printed on shell entry.
+          hook = ''
             echo "part-registry dev shell"
             echo "  rust:      $(rustc --version)"
             echo "  node:      $(node --version)"

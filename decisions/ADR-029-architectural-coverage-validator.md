@@ -430,9 +430,30 @@ This ADR does **not** commit the project to:
   required — the path is configurable.
 - **`cargo-audit` integration.** When CVE surveillance is wired
   (today: not committed; recommended for a successor ADR), a
-  seventh dimension `[advisories]` activates via the same mechanism.
+  dimension `[advisories]` activates via the same mechanism.
   `cargo-audit` becomes a feeder whose JSON output is consumed
   alongside the SOUP inventory.
+- **Spoke-parity dimension (ADR-030).** [ADR-030](ADR-030-multi-tier-shells-and-application-layer.md)
+  §8 adds a `[[spokes]]` dimension (op × spoke parity) via this same
+  mechanism: the `Op`/`Request` catalog is the SSOT, each shell declares
+  its surfaced ops, and a missing op trips exit code 1 unless an
+  expiring `[exemptions]` row covers it. No validator code change beyond
+  the new dimension reader; reuses exit code 3 (expired exemption) and
+  the WARN-local / ERROR-CI posture unchanged.
+- **First feeder is live, standalone, ahead of the joiner.** Dimension 4
+  ("ADR commitments") ships now as a prek-wired standalone feeder —
+  `decisions/obligations.toml` (structured "what falls out of the ADRs")
+  benched by `tools/obligations_check.py`, which enforces row-schema,
+  satisfied-path resolution, pending-tracking, expiring exemptions (exit
+  code 3, mirroring this ADR), and coverage teeth (every in-force ADR has
+  ≥1 row, so a new ADR can't land without declaring its obligations). It
+  emits feeder-JSON (`{dimension, obligation, satisfied, citation,
+  exempt_until}`) — the contract the future `part-registry-coverage`
+  joiner consumes. **Extraction trigger (per ADR-030 §8):** when a second
+  consumer needs it (another repo, or guardrails benching its own gate
+  set), the joiner + feeder-JSON schema promote into the shared guardrails
+  flake; until then the joiner stays in-repo to avoid abstracting on a
+  sample size of one.
 - **Schema versioning.** `coverage.toml` carries `schema_version =
   1` as its first key. Schema migrations are explicit: the validator
   refuses to run against an unsupported `schema_version` and the
