@@ -305,7 +305,14 @@ and registries declare:
   rasterized JetBrainsMono vs AA control, lookalike pairs included).
   Supersession trigger: label formats with ink heights well beyond
   5mm where letterform aesthetics matter — re-run the bench before
-  reconsidering tier 2.
+  reconsidering tier 2. **Final verdict (2026-06-11): the first-party
+  5×7 table IS the typography** — the Spleen 5×8 alternative (BSD-2,
+  same 7-row cap resolution at label sizes; A/B set
+  `labels/px64-clip-m3l-spleen/`) was evaluated and not adopted; no
+  third-party font enters the codec. The shipped table lives in
+  `crates/codec/src/glyphs.rs` (checksum-locked), hand-tunable per
+  lookalike pair. Multi-cell font families and closest-fit selection
+  remain documented options behind the same supersession trigger.
   **ID-optimized by ownership**:
   nano14 already excludes `0/O/1/I/L` at the alphabet level; the
   remaining lookalike pairs (`8/B`, `5/S`, `2/Z`, `6/G`, `U/V`) are
