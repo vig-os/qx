@@ -346,12 +346,29 @@ column holds tier 3). The domain `Part` is format-agnostic, so this is an
 **Attachments & prose live out-of-line (2026-06-11).** Large content —
 how-tos, long comments, datasheets, images — would wreck JSONL's
 line-diff reviewability, so it never lives in a JSONL line. Instead: an
-**`attachment` field type** (in the ADR-033 scalar set) whose value is a
-**`sha256:` typed id** (§0), with the blob stored at
-`attachments/<sha256>.<ext>` — the extension carries the media type
-("file ending decides") and keeps files humanly openable; per-field
-constraints narrow it (`attachment(md)`, `attachment(pdf|png)`); prose =
-a markdown attachment, rendered inline by the opinionated views.
+**`attachment` field type** (in the ADR-033 scalar set) whose value is
+(refined same day):
+
+```json
+{ "ref": "sha256:…", "name": "datasheet-rev3.pdf", "desc": "optional caption" }
+```
+
+- `ref` — the `sha256:` typed id (§0), the integrity anchor.
+- `name` — the original filename (capture metadata, not derivable: the
+  blob is renamed on disk); supplies the extension → media type ("file
+  ending decides") and the human download/render name.
+- `desc?` — optional per-value caption (the descriptor labels the
+  *field*, e.g. "Datasheet"; `desc` captions this *value*).
+- **No stored path/link** — derived: `attachments/<hex(ref)>.<ext(name)>`
+  (store one direction; a future layout change — sharding, git-lfs — is
+  a render change, not a data migration). **No stored who/when** — the
+  audit event of the mutation that added it records operator + ts.
+- Content-addressing **dedups**: one blob, many references, each with
+  its own `name`/`desc`.
+
+Per-field constraints narrow the type (`attachment(md)`,
+`attachment(pdf|png)`); prose = a markdown attachment, rendered inline
+by the opinionated views.
 Content-addressing makes attachments **tamper-evident**: editing one
 yields a new hash, so the referencing entity visibly changes in the PR
 diff — evidence cannot be silently rewritten. Validators enforce

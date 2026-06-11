@@ -59,9 +59,10 @@ remove or redefine core fields.
 
 **Custom-field types** (resolved 2026-06-11): a fixed **scalar set** —
 `string` (optional `pattern`), `enum` (value list), `integer`, `number`,
-`date` (ISO-8601), `bool`, and `attachment` (a content-addressed
-`sha256:` ref to a blob under `attachments/`, optionally
-type-constrained, e.g. `attachment(md)` — ADR-035 §4) — each with
+`date` (ISO-8601), `bool`, and `attachment` (value =
+`{ref: sha256:…, name: original-filename, desc?}`; blob at the derived
+path `attachments/<hash>.<ext>`; optionally type-constrained, e.g.
+`attachment(md)` — ADR-035 §4) — each with
 optional `required` and `meaningful_from: <status>`. Values serialize as
 JSON (ADR-035 §4); the type is a validation + rendering rule the
 schema-driven validators / grid / label-render dispatch on. Typed

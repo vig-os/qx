@@ -436,7 +436,7 @@ tracking = "ADR-035 §0 + ADR-033 consequences; Pages build must generate CSV un
 [[obligation]]
 id = "attachments-content-addressed"
 adr = "ADR-035"
-statement = "attachment field type: sha256: typed-id ref to attachments/<hash>.<ext>; validators enforce ref-exists + hash-matches (tamper-evident); prose = md attachment"
+statement = "attachment field = {ref: sha256, name, desc?}; path derived (never stored); validators enforce ref-exists + hash-matches (tamper-evident); prose = md attachment"
 kind = "test"
 status = "pending"
 tracking = "ADR-035 §4 attachments; field type + integrity validator not yet built"
