@@ -305,14 +305,22 @@ and registries declare:
   rasterized JetBrainsMono vs AA control, lookalike pairs included).
   Supersession trigger: label formats with ink heights well beyond
   5mm where letterform aesthetics matter — re-run the bench before
-  reconsidering tier 2. **Final verdict (2026-06-11): the first-party
-  5×7 table IS the typography** — the Spleen 5×8 alternative (BSD-2,
-  same 7-row cap resolution at label sizes; A/B set
-  `labels/px64-clip-m3l-spleen/`) was evaluated and not adopted; no
-  third-party font enters the codec. The shipped table lives in
-  `crates/codec/src/glyphs.rs` (checksum-locked), hand-tunable per
-  lookalike pair. Multi-cell font families and closest-fit selection
-  remain documented options behind the same supersession trigger.
+  reconsidering tier 2. **Typography verdict (2026-06-11, superseding
+  the same-day 5×7-only call after the Spleen-v2 prototype): Spleen
+  multi-cell, better-res selection.** Cells {6×12, 8×16, 12×24,
+  16×32, 32×64} (BSD-2; the 5×8 is excluded), vendored as const
+  bit-tables in the codec. Selection: nominal block = rows·cell·k
+  fitted closest into the OVERALL label size; ties favor the larger
+  cell at lower k (native resolution beats integer upscaling). The
+  slack between cap ink and the canvas distributes as
+  top/between/bottom padding. Worked example (validated
+  `labels/px64-clip-m3l-spleen-v2/`): 64px label, `44` grouping →
+  16×32 @ k=1, nominal 64/64, ~24px cap rows, slack 6/7/7. The
+  first-party 5×7 table remains the floor for blocks too small for
+  the 12-cell. Glyph px is hereby decoupled from module px (a k=1
+  native cell may be finer than the QR modules — the one-lattice
+  principle holds per element, not across them). SOUP row: Spleen,
+  BSD-2, notice retained in glyphs source.
   **ID-optimized by ownership**:
   nano14 already excludes `0/O/1/I/L` at the alphabet level; the
   remaining lookalike pairs (`8/B`, `5/S`, `2/Z`, `6/G`, `U/V`) are
