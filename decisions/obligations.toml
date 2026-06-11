@@ -57,7 +57,7 @@ adr = "ADR-016"
 statement = "Registry changes are gated by PR-diff policy enforcement in CI (pr check --diff)"
 kind = "gate"
 status = "pending"
-tracking = "ADR-030 build order step 6 (pr check --diff); realizes ADR-016"
+tracking = "pr check built (crates/cli/src/bin/pr.rs) + check.yml.tmpl; data-repo seeding + branch-protection wiring pending"
 
 # ---- Core architecture (ADR-017) ----------------------------------------
 
@@ -186,8 +186,8 @@ id = "app-layer-dispatch"
 adr = "ADR-030"
 statement = "crates/app exposes dispatch(Request)->Response; shells depend on app only, never on adapters"
 kind = "crate"
-status = "pending"
-tracking = "ADR-030 build order step 1 (crates/app not yet created)"
+status = "satisfied"
+satisfied_by = "crates/app/src/lib.rs"
 
 [[obligation]]
 id = "no-fake-impl-active"
@@ -238,6 +238,15 @@ statement = "mint+print is optimistic with pre-flight: fetch contract+registry f
 kind = "test"
 status = "pending"
 tracking = "ADR-031 §6; pre-flight read path + optimistic mint not yet built"
+
+[[obligation]]
+id = "toolchain-bump-188"
+adr = "ADR-024"
+statement = "Bump rust-toolchain to >=1.88 and take time >=0.3.47, retiring the RUSTSEC-2026-0009 ignore in deny.toml"
+kind = "issue"
+status = "exempt"
+exempt_until = "2026-09-01"
+exempt_reason = "time 0.3.47 (advisory patch) needs Rust 1.88; toolchain pinned 1.85 per repro-build discipline; vulnerable RFC-2822 path unreachable (RFC-3339 only) — documented ignore in deny.toml until the coordinated toolchain bump"
 
 # ---- Auth credential resolution (ADR-020 refinement) --------------------
 
@@ -351,7 +360,7 @@ adr = "ADR-035"
 statement = "JSONL (storage_jsonl_git) is the primary on-disk format behind the ADR-018 port; CSV demotes to export"
 kind = "crate"
 status = "pending"
-tracking = "ADR-035 §4; storage_jsonl_git adapter not yet built (storage_csv_git is current)"
+tracking = "adapter built (crates/storage_jsonl_git, 23 tests); wiring-as-primary + data migration pending"
 
 [[obligation]]
 id = "properties-promotion"

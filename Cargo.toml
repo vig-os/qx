@@ -6,6 +6,8 @@ members = [
     "crates/validators",
     "crates/storage",
     "crates/storage_csv_git",
+    "crates/storage_jsonl_git",
+    "crates/app",
     "crates/identity",
     "crates/identity_git_config",
     "crates/identity_github_oauth",

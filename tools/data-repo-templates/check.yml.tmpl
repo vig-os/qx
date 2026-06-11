@@ -1,0 +1,35 @@
+# pr-check.yml — the ADR-016 gate for a deployed part-registry data repo.
+# Seeded by tools/bootstrap-data-repo.sh; branch protection must require
+# this check (ADR-034 §6 — without that, the host has no teeth).
+#
+# The gate logic is the SSoT Rust core (ADR-034 §2): the same `pr check`
+# an operator runs locally runs here from a pinned release artifact.
+name: pr-check
+on:
+  pull_request:
+    branches: ["__BRANCH__"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so `pr check --base` can diff against the base ref.
+          fetch-depth: 0
+
+      # Pinned release artifact (ADR-034: CI runs the released binary,
+      # not a from-source build, so the gate is the audited artifact).
+      # __PR_VERSION__ and __PR_SHA256__ are stamped by bootstrap.
+      - name: fetch pr binary
+        run: |
+          curl -fsSL -o pr \
+            "https://github.com/__CODE_REPO__/releases/download/__PR_VERSION__/pr-x86_64-unknown-linux-gnu"
+          echo "__PR_SHA256__  pr" | sha256sum -c -
+          chmod +x pr
+
+      - name: gate
+        run: ./pr check --path . --base "origin/${{ github.base_ref }}"

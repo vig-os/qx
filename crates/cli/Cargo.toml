@@ -18,7 +18,14 @@ path = "src/bin/label.rs"
 name = "bind"
 path = "src/bin/bind.rs"
 
+# The multicall binary per ADR-030 §2 — mint/label/bind (parity
+# delegates) + the protocol subcommands over app::dispatch + `check`.
+[[bin]]
+name = "pr"
+path = "src/bin/pr.rs"
+
 [dependencies]
+part-registry-app = { path = "../app" }
 part-registry-domain = { path = "../domain" }
 part-registry-config = { path = "../config" }
 part-registry-observability = { path = "../observability" }
@@ -33,6 +40,7 @@ part-registry-signing-git-commit = { path = "../signing_git_commit" }
 part-registry-codec = { path = "../codec" }
 part-registry-validators = { path = "../validators" }
 clap = { workspace = true }
+csv = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }

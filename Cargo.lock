@@ -1602,13 +1602,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "part-registry-app"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.2.17",
+ "part-registry-codec",
+ "part-registry-domain",
+ "part-registry-identity",
+ "part-registry-observability",
+ "part-registry-storage",
+ "part-registry-transport",
+ "part-registry-validators",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "time",
+ "tracing",
+]
+
+[[package]]
 name = "part-registry-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "csv",
  "getrandom 0.2.17",
  "image",
+ "part-registry-app",
  "part-registry-codec",
  "part-registry-config",
  "part-registry-domain",
@@ -1772,6 +1793,22 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "time",
+ "uuid",
+]
+
+[[package]]
+name = "part-registry-storage-jsonl-git"
+version = "0.1.0"
+dependencies = [
+ "part-registry-domain",
+ "part-registry-port-tests",
+ "part-registry-storage",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "time",
+ "tracing",
  "uuid",
 ]
 
