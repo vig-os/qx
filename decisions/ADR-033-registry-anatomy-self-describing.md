@@ -149,6 +149,19 @@ root (the collections an operator browses) clean.
   + roles (ADR-034 lives here too).
 - **`registries.toml`** is a new operator-side artifact (workspace).
 
+## Corrections
+
+> **2026-06-11:** three refinements from the audit-identity/anchoring
+> session (ADR-036/037/038): (1) the anatomy gains
+> `.part-registry/gate/` (vendored gate binary + sha256 + attestation +
+> source + Nix recipe — ADR-038 §1) and the `anchor.yml`/`bundle.yml`
+> workflows (ADR-037 §3); (2) the `[min, max]` tool-compat range splits
+> into a hard **metamodel parse floor** plus **derived per-op floors**
+> (ADR-038 §3) — the original single range overstated the cliff;
+> (3) `roles.toml` dissolves into the `personas` collection (ADR-036
+> §1) — identity is collection data, not a sidecar file. Original text
+> preserved above for audit.
+
 ## Open questions / supersession triggers
 
 - **Contract migration mechanics** across versions (the upgrade path) —

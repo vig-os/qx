@@ -8,10 +8,12 @@
 //! with `"op"`.
 
 use std::collections::BTreeMap;
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 
+use part_registry_codec::Padding;
 use part_registry_domain::ProposalRef;
 
 // -------------------------------------------------------------------
@@ -83,6 +85,59 @@ pub enum Selection {
     Filter(Filter),
 }
 
+/// Per-side padding floor on the wire — the CSS-shorthand expansion
+/// rule shared by CLI and wire (ADR-031 §8, 2026-06-11): `2` (all
+/// four sides) | `[2,6]` (vertical, horizontal) | `[2,6,4,6]` (top,
+/// right, bottom, left — CSS clockwise). The untagged integer form
+/// keeps pre-shorthand payloads (`"padding_px": 2`) deserializing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PaddingSpec {
+    /// `2` — the same floor on all four sides.
+    Uniform(u32),
+    /// `[2,6]` — vertical (top/bottom), horizontal (right/left).
+    VertHorz([u32; 2]),
+    /// `[2,6,4,6]` — top, right, bottom, left (CSS clockwise).
+    Sides([u32; 4]),
+}
+
+impl PaddingSpec {
+    /// The one expansion rule into the codec's per-side floors.
+    pub fn expand(self) -> Padding {
+        match self {
+            PaddingSpec::Uniform(all) => Padding::uniform(all),
+            PaddingSpec::VertHorz([v, h]) => Padding::axes(v, h),
+            PaddingSpec::Sides([t, r, b, l]) => Padding::sides(t, r, b, l),
+        }
+    }
+}
+
+impl FromStr for PaddingSpec {
+    type Err = String;
+
+    /// CSS-shorthand text form: `2` | `2,6` | `2,6,4,6` — the same
+    /// expansion the wire arrays use.
+    fn from_str(s: &str) -> Result<Self, String> {
+        let parts: Vec<u32> = s
+            .split(',')
+            .map(|p| {
+                p.trim()
+                    .parse::<u32>()
+                    .map_err(|_| format!("padding {s:?}: {p:?} is not a whole number of px"))
+            })
+            .collect::<Result<_, _>>()?;
+        match parts.as_slice() {
+            [all] => Ok(PaddingSpec::Uniform(*all)),
+            [v, h] => Ok(PaddingSpec::VertHorz([*v, *h])),
+            [t, r, b, l] => Ok(PaddingSpec::Sides([*t, *r, *b, *l])),
+            _ => Err(format!(
+                "padding {s:?}: expected 1, 2, or 4 comma-separated values \
+                 (all | vertical,horizontal | top,right,bottom,left)"
+            )),
+        }
+    }
+}
+
 /// Print options (ADR-031). `unit` selects the renderer: "mm" (the
 /// default — the original mm-native renderer, behavior unchanged) or
 /// "px" (the ADR-031 §2 px-true device-pixel renderer; obligation
@@ -97,8 +152,18 @@ pub struct PrintOptions {
     /// Human-ID grouping: "44" | "444" | "554" | "auto".
     #[serde(default = "default_chars")]
     pub chars: String,
+    /// Deprecated input (ADR-031 §8): `micro: true` means symbology
+    /// "micro" — consulted only when `symbology` is absent. Response
+    /// labels always carry the resolved `symbology` string.
     #[serde(default)]
     pub micro: bool,
+    /// Symbology in the canonical compact form the CLI speaks
+    /// (`<family>[-<version>][-<ec>]`: "micro", "micro-m3-l",
+    /// "qr-v1-m", …). Version/EC auto-fit against the payload when
+    /// unpinned; response labels carry the RESOLVED string
+    /// (e.g. "micro-m4-m"). Wins over the deprecated `micro` flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbology: Option<String>,
     /// Required when layout == "flag".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cable_od_mm: Option<f64>,
@@ -120,12 +185,14 @@ pub struct PrintOptions {
     pub size_px: Option<u32>,
     /// Minimum padding in device px, measured canvas edge → module
     /// part — the ADR-031 §4 floor consumed by the module deduction;
-    /// the actual uniform white absorbs the remainder so the canvas
-    /// stays exactly `size_px`. Default 0 (max module size at the
-    /// requested canvas; the quiet zone still guarantees white under
-    /// "overlap").
+    /// the controlling axis absorbs the remainder on top of its floors
+    /// so the canvas stays exactly `size_px`. Per-side CSS shorthand
+    /// (§8): `2` | `[2,6]` | `[2,6,4,6]` — the plain-integer form is
+    /// the pre-shorthand wire shape and still deserializes. Default 0
+    /// (max module size at the requested canvas; the quiet zone still
+    /// guarantees white under "overlap").
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub padding_px: Option<u32>,
+    pub padding_px: Option<PaddingSpec>,
     /// How the quiet zone counts toward the `padding_px` floor
     /// (ADR-031 §8): "overlap" (default — the quiet zone satisfies
     /// outside padding; printers donate intrinsic margins) or
@@ -166,6 +233,7 @@ impl Default for PrintOptions {
             size_mm: default_size_mm(),
             chars: default_chars(),
             micro: false,
+            symbology: None,
             cable_od_mm: None,
             copies: default_copies(),
             log: default_true(),

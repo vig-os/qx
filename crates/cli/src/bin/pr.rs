@@ -107,13 +107,28 @@ enum Cmd {
         ids: Vec<String>,
         #[arg(long, default_value = "horz")]
         layout: String,
-        #[arg(long, default_value_t = 8.0)]
+        /// Label size, unit riding the value (ADR-031 §8): 64px
+        /// (integer device px, selects the px-true renderer), 8mm, or
+        /// bare 8 / 8.5 (= mm). Wins over the hidden --unit/--size-mm/
+        /// --size-px aliases.
+        #[arg(long, value_parser = parse_size_spec)]
+        size: Option<SizeSpec>,
+        /// Hidden alias retired by --size (`--size 8mm`).
+        #[arg(long, default_value_t = 8.0, hide = true)]
         size_mm: f64,
         /// Human-id grouping: 44 | 444 | 554 | auto.
         #[arg(long, default_value = "auto")]
         chars: String,
+        /// Deprecated alias for `--type micro`; when both are given,
+        /// --type wins.
         #[arg(long)]
         micro: bool,
+        /// Symbology type, canonical compact form (ADR-031 §8):
+        /// <family>[-<version>][-<ec>], e.g. micro, micro-m3-l,
+        /// qr-v1-m. Families: micro, qr. Version/EC auto-fit against
+        /// the payload when unpinned.
+        #[arg(long = "type", value_name = "FAMILY[-VERSION][-EC]")]
+        symbology: Option<String>,
         #[arg(long)]
         cable_od: Option<f64>,
         #[arg(long, default_value_t = 1)]
@@ -123,20 +138,22 @@ enum Cmd {
         no_log: bool,
         #[arg(long, default_value = "labels")]
         out_dir: PathBuf,
-        /// Sizing unit (ADR-031 §3): mm (default, the mm-native
-        /// renderer) or px (the px-true device-pixel renderer).
-        #[arg(long, default_value = "mm")]
+        /// Hidden alias retired by --size (ADR-031 §8: the unit rides
+        /// the value): mm (default, the mm-native renderer) or px
+        /// (the px-true device-pixel renderer).
+        #[arg(long, default_value = "mm", hide = true)]
         unit: String,
-        /// EXACT output canvas in device px (unit=px; overrides
-        /// size_mm + dpi). Module size is deduced per --padding-mode
-        /// (ADR-031 §8); errors if the symbol can't fit.
-        #[arg(long)]
+        /// Hidden alias retired by --size (`--size 64px`): EXACT
+        /// output canvas in device px.
+        #[arg(long, hide = true)]
         size_px: Option<u32>,
         /// Minimum padding in device px, canvas edge -> module part
-        /// (ADR-031 §4 floor consumed by the deduction; the uniform
-        /// white absorbs the remainder).
-        #[arg(long)]
-        padding: Option<u32>,
+        /// (ADR-031 §4 floor consumed by the deduction; the
+        /// controlling axis absorbs the remainder on top of the
+        /// floors). CSS shorthand: 2 (all) | 2,6 (vertical,horizontal)
+        /// | 2,6,4,6 (top,right,bottom,left).
+        #[arg(long, value_parser = parse_padding_spec)]
+        padding: Option<part_registry_app::PaddingSpec>,
         /// Quiet-zone accounting for the deduction (ADR-031 §8):
         /// overlap (quiet zone counts toward outside padding),
         /// additive (excluded; full-bleed/die-cut), or clip (no
@@ -184,6 +201,46 @@ fn parse_key_val(s: &str) -> Result<(String, String), String> {
     s.split_once('=')
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .ok_or_else(|| format!("expected key=value, got {s:?}"))
+}
+
+/// `--size <N>[px|mm]` — the unit rides the value (ADR-031 §8). CLI
+/// sugar only: it expands into the protocol's explicit
+/// `{unit, size_px|size_mm}` fields, so the wire stays explicit.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum SizeSpec {
+    /// `64px` — exact output canvas in integer device px.
+    Px(u32),
+    /// `8mm` or bare `8` / `8.5` — physical mm (bare preserves the
+    /// pre-suffix default unit).
+    Mm(f64),
+}
+
+fn parse_size_spec(s: &str) -> Result<SizeSpec, String> {
+    let t = s.trim();
+    if let Some(px) = t.strip_suffix("px") {
+        return px
+            .trim()
+            .parse::<u32>()
+            .ok()
+            .filter(|n| *n > 0)
+            .map(SizeSpec::Px)
+            .ok_or_else(|| {
+                format!("size {t:?}: px sizes are whole positive device pixels (e.g. 64px)")
+            });
+    }
+    let mm = t.strip_suffix("mm").unwrap_or(t);
+    mm.trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .map(SizeSpec::Mm)
+        .ok_or_else(|| format!("size {t:?}: expected <N>[px|mm], e.g. 64px, 8mm, 8.5 (bare = mm)"))
+}
+
+/// `--padding 2 | 2,6 | 2,6,4,6` — the protocol's one CSS-shorthand
+/// expansion rule, exposed as a clap value parser.
+fn parse_padding_spec(s: &str) -> Result<part_registry_app::PaddingSpec, String> {
+    s.parse()
 }
 
 fn main() -> ExitCode {
@@ -460,9 +517,11 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
     if let Cmd::Print {
         ids,
         layout,
+        size,
         size_mm,
         chars,
         micro,
+        symbology,
         cable_od,
         copies,
         no_log,
@@ -474,11 +533,19 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
         dpi,
     } = cmd
     {
+        // --size wins over the hidden --unit/--size-mm/--size-px
+        // aliases; the suffix expands into the explicit wire fields.
+        let (unit, size_mm, size_px) = match size {
+            Some(SizeSpec::Px(n)) => ("px".into(), size_mm, Some(n)),
+            Some(SizeSpec::Mm(v)) => (unit, v, None),
+            None => (unit, size_mm, size_px),
+        };
         let options = part_registry_app::PrintOptions {
             layout,
             size_mm,
             chars,
             micro,
+            symbology,
             cable_od_mm: cable_od,
             copies,
             log: !no_log,
@@ -906,5 +973,58 @@ fn advise_policy(diff: &Diff, failures: &mut Vec<String>, notices: &mut Vec<Stri
         part_registry_domain::AuthDecision::Block { reason } => {
             failures.push(format!("policy: block — {reason}"));
         }
+    }
+}
+
+// ---------- tests ----------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ---------- --size: the unit rides the value (ADR-031 §8) ----------
+
+    #[test]
+    fn size_spec_parses_px_mm_and_bare_mm() {
+        let cases = [
+            ("64px", SizeSpec::Px(64)),
+            (" 64px ", SizeSpec::Px(64)),
+            ("8mm", SizeSpec::Mm(8.0)),
+            ("8", SizeSpec::Mm(8.0)),
+            ("8.5", SizeSpec::Mm(8.5)),
+            ("8.5mm", SizeSpec::Mm(8.5)),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(parse_size_spec(input), Ok(expected), "input {input:?}");
+        }
+    }
+
+    #[test]
+    fn size_spec_rejects_fractional_px_and_nonsense() {
+        for bad in [
+            "64.5px", "-3px", "0px", "px", "mm", "", "0", "-8", "NaNmm", "8cm",
+        ] {
+            assert!(parse_size_spec(bad).is_err(), "must reject {bad:?}");
+        }
+    }
+
+    // ---------- --padding: the CSS shorthand value parser ----------
+
+    #[test]
+    fn padding_value_parser_accepts_the_three_arities() {
+        for input in ["2", "2,6", "2,6,4,6"] {
+            assert!(parse_padding_spec(input).is_ok(), "input {input:?}");
+        }
+        for bad in ["2,6,4", "", "two"] {
+            assert!(parse_padding_spec(bad).is_err(), "must reject {bad:?}");
+        }
+    }
+
+    // ---------- clap wiring stays valid ----------
+
+    #[test]
+    fn cli_definition_is_internally_consistent() {
+        use clap::CommandFactory as _;
+        Cli::command().debug_assert();
     }
 }

@@ -1,0 +1,101 @@
+# bundle.yml — the ADR-037 monthly evidence package for a deployed
+# part-registry data repo. Seeded by tools/bootstrap-data-repo.sh.
+#
+# Publishes an immutable release whose assets are a complete offline
+# evidence package: full `git bundle` + gate report + manifest. Skipped
+# when the head hasn't moved since the last bundle (an unchanged bundle
+# adds no evidence). Host-custody caveat (ADR-037 §4): the package only
+# becomes GH-independent once the external watcher DOWNLOADS it to
+# offline storage — that scheduled fetch is a deployment
+# responsibility, documented in the qualification checklist.
+name: bundle
+on:
+  schedule:
+    - cron: "29 3 1 * *" # monthly (UTC, 1st)
+  workflow_dispatch: # + pre-audit, on demand
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: anchor-ledger # share the serialized-writer lane with anchor.yml
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the bundle must carry full history
+
+      - name: skip if unchanged
+        id: gatekeep
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          head_sha=$(git rev-parse HEAD)
+          prev_tag=$(gh release list --repo "${GITHUB_REPOSITORY}" \
+            --limit 100 --json tagName -q '[.[].tagName | select(startswith("bundle-"))][0] // empty')
+          prev_sha=""
+          if [ -n "$prev_tag" ]; then
+            gh release download "$prev_tag" --repo "${GITHUB_REPOSITORY}" \
+              --pattern "bundle-manifest.json" --output prev-manifest.json
+            prev_sha=$(jq -r .head_sha prev-manifest.json)
+          fi
+          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] && [ "$head_sha" = "$prev_sha" ]; then
+            echo "head unchanged since ${prev_tag} — no new evidence, skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "prev_tag=${prev_tag}" >> "$GITHUB_OUTPUT"
+          echo "prev_sha=${prev_sha}" >> "$GITHUB_OUTPUT"
+
+      - name: gate binary
+        if: steps.gatekeep.outputs.skip == 'false'
+        run: |
+          if [ -f .part-registry/gate/pr.zst ] && [ -f .part-registry/gate/pr.sha256 ]; then
+            zstd -d -o pr .part-registry/gate/pr.zst
+            sha256sum -c .part-registry/gate/pr.sha256
+          else
+            curl -fsSL -o pr \
+              "https://github.com/__CODE_REPO__/releases/download/__PR_VERSION__/pr-x86_64-unknown-linux-gnu"
+            echo "__PR_SHA256__  pr" | sha256sum -c -
+          fi
+          chmod +x pr
+
+      - name: verify + package
+        if: steps.gatekeep.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          head_sha=$(git rev-parse HEAD)
+          ./pr check --path . | tee gate-report.txt
+          git bundle create repo.bundle --all
+          git bundle verify repo.bundle
+          tag="bundle-$(date -u +%Y%m%d-%H%M%S)"
+          jq -n \
+            --arg head_sha "$head_sha" \
+            --arg prev_bundle_sha "${{ steps.gatekeep.outputs.prev_sha }}" \
+            --arg prev_bundle_tag "${{ steps.gatekeep.outputs.prev_tag }}" \
+            --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg run "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            '{head_sha:$head_sha, prev_bundle_sha:$prev_bundle_sha, prev_bundle_tag:$prev_bundle_tag, ts:$ts, run:$run}' \
+            > bundle-manifest.json
+          gh release create "$tag" repo.bundle gate-report.txt bundle-manifest.json \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "$head_sha" \
+            --title "$tag (evidence package)" \
+            --notes "ADR-037 evidence package at \`${head_sha}\`. Restore: \`git clone repo.bundle\`. Watcher: download all assets to offline storage."
+
+      - name: loud failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create --repo "${GITHUB_REPOSITORY}" \
+            --title "bundle failed: $(date -u +%Y-%m-%d) — evidence package missing" \
+            --body "The monthly evidence-package workflow failed on ${GITHUB_SHA}. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            || true

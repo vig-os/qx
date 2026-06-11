@@ -3,6 +3,32 @@
 Append-only chronological record of decisions for the parts registry.
 Newest entries first.
 
+## 2026-06-11 — Audit evidence: identity, trail integrity, gate lifecycle (ADR-036…038 Proposed)
+
+**Context:** a long interactive session ("expand into an HQ?") walked
+the e-signature, audit-trail, anchoring, vendoring, upgrade and CI
+questions to ground. The platform-expansion question itself stays
+exploratory (`explorations/platform-vs-registry.md`); the decided slice
+landed as three Proposed ADRs plus Corrections on 030/033/034.
+
+| ADR | Decision (headline) |
+|---|---|
+| 036 | `personas` as a collection (operator = typed FK; CODEOWNERS ⊆ active personas; resolves ADR-035's deferred operators question); accountability resolves host-side at merge (accountable-approver default, author-strict knob); signed commits = authorship+integrity, not identity; elevation = deliberate act under 2FA-*enrolled* host-auth (explicitly NOT fresh-per-act MFA); PR-is-truth, `file://` writes demoted to flagged-future; deferred rungs E1–E4 (Sigstore in-record, WebAuthn-UV presence, PAdES, QES) with triggers; GDPR note on public logs |
+| 037 | Per-entry `chain_hash` retired (redundant on-host; serializes concurrent PRs) → content_hash + gate append-only diff rule + **checkpoints** by the serialized anchor job; merge/review witness synced into the stream (durable vs API retention); producer = claim vs gate = evidence provenance (artifact sha + env digest recorded from the pin-verify step; pin is CODEOWNERS-gated); **anchor ledger = GitHub immutable releases** — per-push anchor + nightly heartbeat (silence unambiguous) + monthly bundle-if-changed + pre-audit; anchors only after `pr verify` green; ancestry/fast-forward rule = the tamper signal; freeze-line semantics stated honestly (window interior not proven); knob `anchor = releases \| +tsa \| +witness-org \| +rekor-public`; external watcher pulls bundles offline |
+| 038 | Gate **vendored** in `.part-registry/gate/` (blob+sha+attestation+source+Nix recipe; no LFS; measured 0.8–1.6 MB zst/binary); availability ≠ trust (pin-verify-before-exec unchanged); history retains all versions (rotation = forbidden rewrite); in-repo beats user-side fork structurally (anchor seals the gate; atomic upgrade PR; one-bundle evidence); upgrades = incumbent validates succession + successor shadow-run + monotonicity; compat = metamodel parse floor + derived per-op floors (re-print survives, new mint doesn't — federated degradation, no cliff); CI = pipeline-as-derivation (Nix), runner image → ghcr, data-repo workflows are logic-free shims, blocking gate stays the vendored zero-network binary; curl-able `install.sh` bootstrap |
+
+**Implementation landed with the ADRs:** `anchor.yml.tmpl` +
+`bundle.yml.tmpl` (data-repo ledger workflows), bootstrap `--anchor`
+seeding + `install.sh` curl entry, tool-repo `checks.obligations` flake
+output + thin `ci.yml` shim, release.yml runner-image→ghcr job,
+obligations rows for 036–038.
+
+**Review note:** the session explicitly *corrected two of its own
+earlier proposals* before filing — per-entry hash chaining (dropped for
+checkpoints after the concurrency/redundancy review) and "rung-2 =
+fresh 2FA" (weakened to enrolled+authenticated after checking what
+OAuth can actually prove). Both corrections are recorded in the ADRs.
+
 ## 2026-06-11 — Design corpus completed + accepted (ADR-031…035; 030–035 → Accepted)
 
 **Context:** continuation of the 2026-06-10 multi-tier session. Five

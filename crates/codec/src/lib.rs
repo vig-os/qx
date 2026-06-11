@@ -15,6 +15,8 @@
 //!   (`label.py:97-251`)
 //! - [`px`] — px-true device-pixel renderer + job-uniformity pass
 //!   (ADR-031 §2–§4; obligation `px-true-qr-render`)
+//! - [`symbology`] — the `<family>[-<version>][-<ec>]` type grammar +
+//!   auto-fit resolution (ADR-031 §8 print contracts)
 //!
 //! ## wasm32
 //! The decoder compiles to `wasm32-unknown-unknown` against rxing 0.9
@@ -35,13 +37,15 @@ pub mod format;
 pub mod px;
 pub mod qr;
 pub mod svg;
+pub mod symbology;
 
 pub use format::{check_format_warning, recommend_format, TextFormat};
-pub use px::{fill_to_max, render_label_px, PaddingMode, PxLabel};
+pub use px::{fill_to_max, render_label_px, Padding, PaddingMode, PxLabel};
 #[cfg(feature = "decoder")]
 pub use qr::decode_qr;
-pub use qr::{encode, QrMatrix};
+pub use qr::{encode, encode_pinned, QrMatrix};
 pub use svg::{render, render_flag, render_horz, render_vert, Layout};
+pub use symbology::{Ec, Family, ResolvedSymbology, Symbology};
 
 /// Errors surfaced by the codec.
 ///

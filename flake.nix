@@ -115,8 +115,21 @@
           '';
         };
 
-        # Future: `nix build` for the FE bundle as a derivation, so CI
-        # can consume the same artifact `release.yml` produces. Not in
-        # Phase 3 scope — release.yml stays the source of truth for now.
+        # Pipeline-as-derivation (ADR-038 §4): CI logic lives in flake
+        # outputs; .github/workflows/ci.yml is a thin shim running
+        # `nix flake check`. Hermetic by construction — the Nix sandbox
+        # gives the obligations gate no network and a pure source tree,
+        # so local `nix flake check` and CI are the same run.
+        checks.obligations = pkgs.runCommand "adr-obligations" { } ''
+          cd ${./.}
+          ${pkgs.python3}/bin/python3 tools/obligations_check.py
+          touch $out
+        '';
+
+        # Future: `nix build` for the FE bundle + the static (musl)
+        # gate binary + the dockerTools runner image as derivations
+        # (ADR-038 §4 end-state), so CI and release.yml consume the
+        # same artifacts. release.yml stays the source of truth until
+        # the gate build moves in-flake.
       });
 }

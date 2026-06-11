@@ -326,8 +326,38 @@ if [[ -n "$pr_release" ]]; then
   else
     log "  exists, skipping: protection-audit.yml"
   fi
+
+  # ADR-037: the anchor ledger (per-push immutable-release anchors +
+  # nightly heartbeat) and the monthly evidence package. Same pin as
+  # the gate so all three run the identical released artifact.
+  log "ensuring anchor.yml (ADR-037 anchor ledger)"
+  if [[ ! -e .github/workflows/anchor.yml || "$force_check" = 1 ]]; then
+    render_template \
+      "${TEMPLATES_DIR}/anchor.yml.tmpl" \
+      .github/workflows/anchor.yml \
+      "CODE_REPO=${CODE_REPO}" \
+      "BRANCH=main" \
+      "PR_VERSION=${pr_release}" \
+      "PR_SHA256=${pr_sha}"
+    log "  NOTE: enable the 'immutable releases' repo setting — a ledger on mutable releases is not a ledger (ADR-037 §5)"
+  else
+    log "  exists, skipping: anchor.yml"
+  fi
+
+  log "ensuring bundle.yml (ADR-037 evidence package)"
+  if [[ ! -e .github/workflows/bundle.yml || "$force_check" = 1 ]]; then
+    render_template \
+      "${TEMPLATES_DIR}/bundle.yml.tmpl" \
+      .github/workflows/bundle.yml \
+      "CODE_REPO=${CODE_REPO}" \
+      "PR_VERSION=${pr_release}" \
+      "PR_SHA256=${pr_sha}"
+    log "  NOTE: arrange the external watcher (separate admin domain) to download bundle releases to offline storage (ADR-037 §4)"
+  else
+    log "  exists, skipping: bundle.yml"
+  fi
 else
-  log "skipping pr-check.yml + protection-audit.yml (pass --pr-release <tag> to seed the ADR-016 gate)"
+  log "skipping pr-check.yml + protection-audit.yml + anchor.yml + bundle.yml (pass --pr-release <tag> to seed the ADR-016/037 gates)"
 fi
 
 if [[ -n "$approvers" ]]; then

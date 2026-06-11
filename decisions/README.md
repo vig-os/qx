@@ -70,6 +70,15 @@ Earlier accepted:
 
 ### Proposed
 
+Audit-evidence set (2026-06-11 session — identity, trail integrity,
+gate lifecycle; see [LOG.md](LOG.md)):
+
+- [ADR-036 — Audit identity: personas collection + host-resolved accountability](ADR-036-audit-identity-personas.md)
+- [ADR-037 — Audit-trail integrity: checkpoints, merge-sync, tool provenance, anchor ledger](ADR-037-audit-trail-integrity-anchoring.md)
+- [ADR-038 — Gate artifact lifecycle: vendoring, federated upgrades, host-independent CI](ADR-038-gate-artifact-upgrades-host-independent-ci.md)
+
+Earlier proposed:
+
 - [ADR-012 — Part identification: nano-id + QR labels with mint-then-bind workflow](ADR-012-part-identification.md) _(refined by ADR-035: `kind` + `components` added; `batch` retired; ids typed `(scheme,value)`)_
 - [ADR-013 — Parts registry web app: GH Pages + WASM DuckDB + PR-driven binds](ADR-013-parts-registry-web-app.md)
 - [ADR-015 — Print event log: non-destructive audit trail of every label print](ADR-015-print-event-log.md) _(folded into the ADR-022 audit stream; invariants restate as audit-spine validators per ADR-035)_

@@ -259,7 +259,52 @@ and registries declare:
   contexts where the canvas edge is the physical edge. Forward hook:
   printer *profiles* (§3) later declare their intrinsic margins so the
   deduction credits device white explicitly instead of the operator
-  choosing a mode by feel.
+  choosing a mode by feel. **Margins are PER-SIDE** (2026-06-11:
+  confirmed on hardware — the printer prints asymmetrically): profiles
+  declare {leading, trailing, left, right} in tape coordinates, the
+  per-axis deduction credits each side independently, and `--align` +
+  per-side `--padding` are the operator-level escapes until the
+  profile carries measured numbers.
+- **Payloads stay opaque ids — the security model is
+  symbology-independent** (2026-06-11): no symbology ever encodes
+  data, only the registry id ('data in matrix' is the anti-pattern: a
+  forged/wrong label carries its own unverifiable truth and no
+  checkpoint exists to catch it). The BIND is the certified roundtrip
+  — scan the physically applied label, resolve against the registry,
+  land the association as a reviewed/audited PR — so a wrong sticker
+  fails at the ceremony where physical meets digital, and every later
+  scan resolves to current (revocable, access-controlled) registry
+  truth. Symbology choice (qr/micro/dm) is therefore purely physical
+  ergonomics inside this contract: DM earns its place for tiny/curved/
+  DPM contexts (1-module quiet zone, denser) while qr/micro stays
+  default for native phone decoding. Roundtrip hardenings to wire into
+  bind: print-provenance (scanned id must exist in the print log) and
+  duplicate-bind detection (same id bound twice = cloned-sticker
+  alarm).
+- **Embedded bitmap-grid typography — glyphs ARE modules**
+  (2026-06-11): replace `font-family="monospace"` (rasterizer-dependent
+  — every renderer substitutes its own font and antialiasing) with an
+  embedded open-source bitmap monospace (Spleen, BSD-2-Clause, 5×8
+  cell; Cozette/MIT the fallback candidate), our ~36-glyph alphabet as
+  a const bit-table in the codec. Glyphs render through the SAME
+  module-rect emitter as the QR — `<text>` leaves the SVG entirely;
+  the label becomes one deterministic binary raster on the module
+  lattice, identical across rsvg/browser/printer/wasm. Glyph pixel
+  `g = module_px` when it fits (text dots = QR dots); otherwise snap
+  down to the next integer `g` that fits, centrally aligned in the
+  block. Exact fit at the default: 5×8 cell, `44` grouping →
+  8m + 1m gap + 8m = 17m = the M4 module part, zero remainder.
+  License rides in the SOUP inventory. **ID-optimized by ownership**:
+  nano14 already excludes `0/O/1/I/L` at the alphabet level; the
+  remaining lookalike pairs (`8/B`, `5/S`, `2/Z`, `6/G`, `U/V`) are
+  hand-tunable in our bit-table — the embedded micro-font is a
+  registry artifact tuned to exactly this alphabet. For VECTOR
+  contexts (webapp UI, large labels, exports): **Atkinson Hyperlegible
+  Mono** (OFL, Braille Institute — purpose-built character
+  disambiguation; B612 Mono the avionics-grade runner-up), named and
+  bundled explicitly — the generic `monospace` family (renderer-
+  substituted, em-box ambiguity, two bugs caught on hardware
+  2026-06-11) is retired everywhere.
 - **Symbology version + EC level are contract parameters, not
   hardcodes** (2026-06-11): today M4/EC-M is fixed; for the nano14
   payload the feasible space is exactly M4-L, M4-M, M3-L (M1/M2 can't
@@ -303,6 +348,39 @@ and registries declare:
   explicit; terseness is CLI sugar). This retires the redundant
   `--unit px --size-px 64` pair — §1's original example reads
   accordingly. px is integer-only; mm accepts fractions.
+- **`--align start|center|end` — slack-axis alignment** (2026-06-11):
+  wherever the canvas exceeds the content (fill_to_max batch
+  uniformity — center-hardcoded today; tape-width canvases; future
+  fixed `--width`), alignment places the content block along the slack
+  axis. One logical pair with physical aliases (`left`/`top` → start,
+  `right`/`bottom` → end); the layout interprets the axis (horz slack
+  is horizontal, vert slack vertical). Default center. Composes with
+  the cut-tolerance story: aligning AWAY from the cut edge donates the
+  slack to the risky side.
+- **`--size-mode exact|snap` — auto-padding is optional**
+  (2026-06-11): `exact` (default, the §2 corrected law) holds the
+  canvas at the requested size and distributes the lattice remainder
+  into auto padding; `snap` treats size as an UPPER BOUND and the
+  canvas snaps down to the content lattice — deduced geometry plus
+  declared padding floors, remainder omitted (M3-L clip @ ≤64 → a
+  60px canvas, no scrap white). Gap clamp and per-side floors apply
+  identically in both modes. `exact` for batch uniformity and
+  fixed-slot placement; `snap` for the tightest artifact (minimal
+  feed; printers whose intrinsic margins make remainder white
+  pointless). Snap is the pre-correction snap-down behavior returned
+  as an explicit opt-in instead of a default misreading.
+- **Combinations are confirmed, not assumed** (2026-06-11): the option
+  set validates AS A WHOLE, three tiers — ERROR for infeasible combos,
+  always carrying the feasible alternatives (m4-q + 14 chars → the
+  feasibility list; 554 + unfittable block; flag + px); WARN for
+  legal-but-risky (clip + align toward the cut edge; modules below the
+  calibrated legibility floor; gap clamped at its quiet-zone minimum);
+  SILENT for confirmed combos, with the resolved parameters echoed in
+  the response as the confirmation receipt. Test-side: pairwise
+  combinatorial sweep over the option space — golden geometry for
+  valid cells (byte-exact under bitmap typography), exact error text
+  for invalid, warning presence for risky (the print contract's
+  `combination` kind in the op×shell×kind test matrix).
 - **Per-side padding, CSS shorthand** (2026-06-11): `--padding`
   accepts `2` | `2,6` | `2,6,4,6` (all / vertical,horizontal /
   top,right,bottom,left — CSS clockwise), parsed by one custom clap

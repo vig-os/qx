@@ -1,0 +1,23 @@
+# Thin shim per ADR-038 §4 — pipeline-as-derivation. The logic lives in
+# flake outputs (`checks.*`); this workflow only invokes them, so the
+# same run happens locally (`nix flake check`) and here, and nothing
+# about CI behavior is host-locked. Rust/FE matrices stay in rust.yml /
+# playwright.yml until those builds move in-flake.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  flake-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: flake checks (obligations gate + future suites)
+        run: nix flake check -L

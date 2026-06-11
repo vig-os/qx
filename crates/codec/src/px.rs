@@ -4,31 +4,37 @@
 //! the print driver decide where module edges fall; on a thermal head a
 //! sub-pixel module edge merges or drops dots and can kill a Micro QR.
 //! This module renders in **device pixels** with the ADR-031 §8 law
-//! (2026-06-11): the caller asks for an **exact output canvas** and a
-//! **padding floor**; padding references the QR's *module part* (the
-//! data modules, quiet zone excluded) and the module size is *deduced*
-//! per [`PaddingMode`]:
+//! (2026-06-11): the caller asks for an **exact output canvas**, a
+//! **per-side padding floor** ([`Padding`], CSS clockwise), and a
+//! [`crate::Symbology`]; padding references the QR's *module part*
+//! (the data modules, quiet zone excluded) and the module size is
+//! *deduced* per [`PaddingMode`], per axis:
 //!
 //! ```text
-//! overlap  (default): max m with data·m + 2·max(padding_min, quiet·m) ≤ size
-//! additive:           max m with (data + 2·quiet)·m + 2·padding_min   ≤ size
-//!          → ERROR if no m ≥ 1 fits (payload/QR cannot fit)
-//! data_px  = data · m                  (the module part)
-//! white    = (size − data_px) / 2      (canvas edge → module part)
+//! floor_side = max(pad_side, quiet·m)   (overlap, default)
+//!              quiet·m + pad_side       (additive)
+//!              pad_side                 (clip)
+//! controlling axis (height for horz, width for vert):
+//!   max m with data·m + floor_a + floor_b ≤ size  → ERROR if no m ≥ 1
+//!   remainder distributes on top of the floors (extra px bottom/right)
+//! non-controlling sides: white_side = floor_side exactly
 //! ```
 //!
 //! In `overlap` mode the quiet zone's whitespace satisfies padding
 //! (printers donate intrinsic outer margins, so the label spends its
-//! pixels on modules); `white ≥ quiet·m` is structural either way, so
-//! padding can never starve decodability. In `additive` mode the quiet
-//! zone is excluded from outside padding (full-bleed/die-cut contexts).
+//! pixels on modules); `white ≥ quiet·m` is structural there. In
+//! `additive` mode the quiet zone is excluded from outside padding
+//! (full-bleed/die-cut contexts). In `clip` mode the artifact reserves
+//! no quiet zone at all — and the text side carries the §8 safe-space
+//! clamp, `gap = max(round(1.5·white_side), quiet·m)`, so typography
+//! can never invade the safe space regardless of mode or padding.
 //!
 //! Geometry, all derived from that one deduction (§8):
 //! - The label's controlling dimension (height for `horz`, width for
-//!   `vert`) is **exactly** `size`; the actual `white` is the SAME on
-//!   all four canvas edges (an odd remainder leaves its extra pixel on
-//!   the bottom/right edge — deterministic).
-//! - QR→text gap = `round(1.5 · white)`.
+//!   `vert`) is **exactly** `size`; an odd remainder leaves its extra
+//!   pixel on the bottom/right edge — deterministic.
+//! - QR→text gap = `max(round(1.5 · white), quiet·m)` over the white
+//!   on the QR's text side (right for `horz`, bottom for `vert`).
 //! - The id-text block is co-sized with the module part (spans exactly
 //!   `data_px`, top-aligned with it in `horz`) and lives on the same
 //!   module grid: font height and inter-row gaps are integer multiples
@@ -50,32 +56,65 @@ use std::fmt::Write as _;
 use serde::{Deserialize, Serialize};
 
 use crate::format::TextFormat;
-use crate::qr::encode;
 use crate::svg::Layout;
+use crate::symbology::Symbology;
 use crate::CodecError;
+
+/// Per-side padding floor in device px, CSS clockwise (ADR-031 §8).
+/// Each side is a *minimum* canvas-edge → module-part margin; the
+/// quiet zone counts toward it per [`PaddingMode`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Padding {
+    pub top: u32,
+    pub right: u32,
+    pub bottom: u32,
+    pub left: u32,
+}
+
+impl Padding {
+    /// `2` — the same floor on all four sides.
+    pub const fn uniform(all: u32) -> Self {
+        Self::sides(all, all, all, all)
+    }
+
+    /// `2,6` — vertical (top/bottom), horizontal (right/left).
+    pub const fn axes(vertical: u32, horizontal: u32) -> Self {
+        Self::sides(vertical, horizontal, vertical, horizontal)
+    }
+
+    /// `2,6,4,6` — top, right, bottom, left (CSS clockwise).
+    pub const fn sides(top: u32, right: u32, bottom: u32, left: u32) -> Self {
+        Self {
+            top,
+            right,
+            bottom,
+            left,
+        }
+    }
+}
 
 /// How the quiet zone counts toward the outside padding floor
 /// (ADR-031 §8).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PaddingMode {
-    /// The quiet zone counts toward outside padding — the deduction
-    /// maximizes `m` subject to `data·m + 2·max(padding_min, quiet·m)
-    /// ≤ size`. Default: printers contribute intrinsic unprintable
-    /// margins, so the device already donates outer white.
+    /// The quiet zone counts toward outside padding — each side's
+    /// white floor is `max(pad_side, quiet·m)`. Default: printers
+    /// contribute intrinsic unprintable margins, so the device already
+    /// donates outer white.
     #[default]
     Overlap,
-    /// The quiet zone is excluded from outside padding —
-    /// `(data + 2·quiet)·m + 2·padding_min ≤ size` — for
-    /// full-bleed/die-cut contexts where the canvas edge is the
-    /// physical edge.
+    /// The quiet zone is excluded from outside padding — each side's
+    /// white floor is `quiet·m + pad_side` — for full-bleed/die-cut
+    /// contexts where the canvas edge is the physical edge.
     Additive,
     /// The maximizer (ADR-031 §8): the artifact reserves NO quiet zone
-    /// at all — `data·m + 2·padding_min ≤ size` — because the printer's
-    /// intrinsic unreducible white (cut-feed margin, unprintable side
-    /// margins) supplies the safe space physically. The decode
-    /// guarantee transfers to the declared physical context (printer
-    /// profiles verify `intrinsic margin ≥ quiet·m` once they land).
+    /// at all — each side's white floor is `pad_side` alone — because
+    /// the printer's intrinsic unreducible white (cut-feed margin,
+    /// unprintable side margins) supplies the safe space physically.
+    /// The decode guarantee transfers to the declared physical context
+    /// (printer profiles verify `intrinsic margin ≥ quiet·m` once they
+    /// land).
     Clip,
 }
 
@@ -88,20 +127,24 @@ impl PaddingMode {
         }
     }
 
-    /// Minimum canvas (controlling dimension) for `m` px/module given
-    /// a `data`-module symbol with a `quiet`-module quiet zone.
-    fn min_size(self, data: u32, quiet: u32, padding_min_px: u32, m: u32) -> u64 {
-        let (data, quiet, pad, m) = (
-            u64::from(data),
-            u64::from(quiet),
-            u64::from(padding_min_px),
-            u64::from(m),
-        );
+    /// One side's white floor in px for `m` px/module under a
+    /// `quiet`-module quiet zone.
+    fn floor_px(self, pad_side: u32, quiet: u32, m: u32) -> u32 {
+        let quiet_px = quiet.saturating_mul(m);
         match self {
-            PaddingMode::Overlap => data * m + 2 * pad.max(quiet * m),
-            PaddingMode::Additive => (data + 2 * quiet) * m + 2 * pad,
-            PaddingMode::Clip => data * m + 2 * pad,
+            PaddingMode::Overlap => pad_side.max(quiet_px),
+            PaddingMode::Additive => quiet_px.saturating_add(pad_side),
+            PaddingMode::Clip => pad_side,
         }
+    }
+
+    /// Minimum canvas (controlling dimension) for `m` px/module given
+    /// a `data`-module symbol, a `quiet`-module quiet zone, and the
+    /// two padding floors of the controlling axis.
+    fn min_size(self, data: u32, quiet: u32, pad_a: u32, pad_b: u32, m: u32) -> u64 {
+        u64::from(data) * u64::from(m)
+            + u64::from(self.floor_px(pad_a, quiet, m))
+            + u64::from(self.floor_px(pad_b, quiet, m))
     }
 }
 
@@ -115,8 +158,8 @@ pub struct PxLabel {
     /// Canvas height in device px.
     pub height_px: u32,
     /// Symbol footprint incl. quiet zone, in device px
-    /// (= `modules * module_px`; the quiet zone itself renders as
-    /// background white inside `white_px`).
+    /// (= `modules * module_px`; under `overlap`/`additive` the quiet
+    /// zone renders as background white inside the actual `white`).
     pub qr_px: u32,
     /// Pixels per QR module (integer by the §8 law).
     pub module_px: u32,
@@ -126,26 +169,30 @@ pub struct PxLabel {
     /// The module part (data modules only) in device px
     /// (= `data modules * module_px`).
     pub data_px: u32,
-    /// Uniform actual padding: canvas edge → module part, same on all
-    /// four edges of the standalone render (an odd remainder adds one
-    /// extra px on the bottom/right of the controlling dimension).
-    pub white_px: u32,
+    /// Actual per-side white, canvas edge → module part: the floors
+    /// plus the controlling axis's remainder (extra px bottom/right).
+    pub white: Padding,
     /// The quiet-zone accounting the deduction ran under.
     pub padding_mode: PaddingMode,
+    /// The RESOLVED symbology this label encodes, canonical compact
+    /// form (e.g. `micro-m4-m`) — version/EC pins or auto-fit results
+    /// are evidence, not guesses (ADR-031 §8).
+    pub symbology: String,
 }
 
-/// Largest `m` (px/module) that fits, or 0 when even 1 px/module
-/// cannot fit.
+/// Largest `m` (px/module) that fits the controlling axis, or 0 when
+/// even 1 px/module cannot fit.
 fn deduce_module_px(
     size_px: u32,
-    padding_min_px: u32,
+    pad_a: u32,
+    pad_b: u32,
     data: u32,
     quiet: u32,
     mode: PaddingMode,
 ) -> u32 {
     let mut module_px = 0;
     let mut m = 1;
-    while mode.min_size(data, quiet, padding_min_px, m) <= u64::from(size_px) {
+    while mode.min_size(data, quiet, pad_a, pad_b, m) <= u64::from(size_px) {
         module_px = m;
         m += 1;
     }
@@ -161,24 +208,33 @@ fn grid_font_px(data: u32, rows: u32, module_px: u32) -> u32 {
     k * module_px
 }
 
-/// QR→text gap = `round(1.5 · white)`, half rounding up (§8).
-fn qr_text_gap(white: u32) -> u32 {
-    white + white.div_ceil(2)
+/// QR→text gap over the white on the QR's text side:
+/// `max(round(1.5 · white), quiet·m)`, half rounding up — the §8
+/// safe-space clamp (typography can never invade the quiet zone, even
+/// under `clip` where the white floor may be 0).
+fn qr_text_gap(white_side: u32, quiet: u32, module_px: u32) -> u32 {
+    (white_side + white_side.div_ceil(2)).max(quiet * module_px)
 }
 
 /// Render one px-true label.
 ///
 /// `size_px` is the **exact output canvas** along the label's
 /// controlling dimension (height for `horz`, width for `vert`);
-/// `padding_min_px` is the **minimum** canvas-edge → module-part
-/// margin (the §4 floor), with the quiet zone counting toward it per
-/// `padding_mode` (§8). The module size is deduced (see module docs)
-/// and the remainder distributes uniformly into the actual `white`, so
-/// the controlling dimension always comes out exactly `size_px`.
+/// `padding` carries the per-side **minimum** canvas-edge →
+/// module-part margins (the §4 floor, CSS clockwise), with the quiet
+/// zone counting toward them per `padding_mode` (§8). The symbology
+/// resolves against the payload first (auto-fit version/EC where
+/// unpinned), then the module size is deduced on the controlling axis
+/// (see module docs); the remainder distributes on top of that axis's
+/// floors while the non-controlling sides sit at their floors exactly,
+/// so the controlling dimension always comes out exactly `size_px`.
 ///
 /// Errors:
-/// - [`CodecError::Render`] when the chosen QR/payload cannot fit one
-///   device pixel per module inside the padding floor; the message
+/// - [`CodecError::Encode`] when the payload does not fit the
+///   requested symbology; the message carries the feasible
+///   version/EC space for the payload (ADR-031 §8).
+/// - [`CodecError::Render`] when the resolved symbol cannot fit one
+///   device pixel per module inside the padding floors; the message
 ///   carries the minimum workable sizes for 1/2/3 px modules under the
 ///   active `padding_mode`.
 /// - [`CodecError::Unsupported`] for [`Layout::Flag`] — the px-true
@@ -189,8 +245,8 @@ pub fn render_label_px(
     layout: Layout,
     size_px: u32,
     text_format: TextFormat,
-    micro: bool,
-    padding_min_px: u32,
+    symbology: &Symbology,
+    padding: Padding,
     padding_mode: PaddingMode,
 ) -> Result<PxLabel, CodecError> {
     if matches!(layout, Layout::Flag { .. }) {
@@ -200,30 +256,67 @@ pub fn render_label_px(
                 .into(),
         ));
     }
-    let matrix = encode(canonical, micro)?;
+    let (resolved, matrix) = symbology.resolve(canonical)?;
     let data = matrix.size as u32;
-    let quiet = matrix.quiet_zone() as u32;
-    let modules = matrix.total_modules() as u32;
-    let module_px = deduce_module_px(size_px, padding_min_px, data, quiet, padding_mode);
+    let quiet = resolved.quiet_modules();
+    let modules = data + 2 * quiet;
+    // The controlling axis: vertical (top/bottom) for horz, horizontal
+    // (left/right) for vert.
+    let (pad_a, pad_b) = match layout {
+        Layout::Horz => (padding.top, padding.bottom),
+        Layout::Vert => (padding.left, padding.right),
+        Layout::Flag { .. } => unreachable!("rejected above"),
+    };
+    let module_px = deduce_module_px(size_px, pad_a, pad_b, data, quiet, padding_mode);
     if module_px < 1 {
+        let pad_desc = if pad_a == pad_b {
+            format!("{pad_a}px")
+        } else {
+            format!("{pad_a}px/{pad_b}px")
+        };
         return Err(CodecError::Render(format!(
-            "size {size_px}px with padding {padding_min_px}px ({mode} mode) cannot fit \
-             1px per module for a {data}-module symbol with a {quiet}-module quiet zone; \
+            "size {size_px}px with padding {pad_desc} ({mode} mode) cannot fit \
+             1px per module for a {data}-module {sym} symbol with a {quiet}-module quiet zone; \
              minimum size is {min1}px (1px modules), {min2}px reaches 2px, {min3}px \
              reaches 3px",
             mode = padding_mode.name(),
-            min1 = padding_mode.min_size(data, quiet, padding_min_px, 1),
-            min2 = padding_mode.min_size(data, quiet, padding_min_px, 2),
-            min3 = padding_mode.min_size(data, quiet, padding_min_px, 3),
+            sym = resolved.compact(),
+            min1 = padding_mode.min_size(data, quiet, pad_a, pad_b, 1),
+            min2 = padding_mode.min_size(data, quiet, pad_a, pad_b, 2),
+            min3 = padding_mode.min_size(data, quiet, pad_a, pad_b, 3),
         )));
     }
     let qr_px = modules * module_px;
     let data_px = data * module_px;
-    // Uniform actual padding, canvas edge → module part; the floor'd
-    // half goes top/left, an odd remainder leaves its extra pixel on
-    // the bottom/right of the controlling dimension.
-    let white = (size_px - data_px) / 2;
-    let gap = qr_text_gap(white);
+    // Controlling axis: floors + remainder, extra px on the
+    // bottom/right edge (deterministic). Non-controlling sides sit at
+    // their floors exactly — that dimension is an output, not a budget.
+    let floor_a = padding_mode.floor_px(pad_a, quiet, module_px);
+    let floor_b = padding_mode.floor_px(pad_b, quiet, module_px);
+    let rem = size_px - data_px - floor_a - floor_b;
+    let (white_a, white_b) = (floor_a + rem / 2, floor_b + rem / 2 + rem % 2);
+    let white = match layout {
+        Layout::Horz => Padding {
+            top: white_a,
+            bottom: white_b,
+            left: padding_mode.floor_px(padding.left, quiet, module_px),
+            right: padding_mode.floor_px(padding.right, quiet, module_px),
+        },
+        Layout::Vert => Padding {
+            left: white_a,
+            right: white_b,
+            top: padding_mode.floor_px(padding.top, quiet, module_px),
+            bottom: padding_mode.floor_px(padding.bottom, quiet, module_px),
+        },
+        Layout::Flag { .. } => unreachable!("rejected above"),
+    };
+    // §8 safe-space clamp on the QR's text side: right of the symbol
+    // in horz, below it in vert.
+    let gap = match layout {
+        Layout::Horz => qr_text_gap(white.right, quiet, module_px),
+        Layout::Vert => qr_text_gap(white.bottom, quiet, module_px),
+        Layout::Flag { .. } => unreachable!("rejected above"),
+    };
 
     // Text on the module grid (§8): block co-sized with the module
     // part, font = k·m, row gap = m.
@@ -237,15 +330,16 @@ pub fn render_label_px(
 
     let (width_px, height_px, text_lines) = match layout {
         Layout::Horz => {
-            // Height is EXACTLY size_px; the module part sits `white`
-            // from the top/left and the text block top-aligns with it.
-            let tx = white + data_px + gap;
-            let w = tx + text_w + white;
+            // Height is EXACTLY size_px; the module part sits white.top
+            // from the top, white.left from the left, and the text
+            // block top-aligns with it.
+            let tx = white.left + data_px + gap;
+            let w = tx + text_w + white.right;
             let lines: Vec<String> = rows
                 .iter()
                 .enumerate()
                 .map(|(i, row)| {
-                    let ty = white + font_px + i as u32 * (font_px + row_gap);
+                    let ty = white.top + font_px + i as u32 * (font_px + row_gap);
                     format!("<text x=\"{tx}\" y=\"{ty}\">{row}</text>")
                 })
                 .collect();
@@ -262,8 +356,8 @@ pub fn render_label_px(
                 font_px
             };
             let text_h = n_rows * font_px + (n_rows - 1) * row_gap;
-            let ty0 = white + data_px + gap;
-            let h = ty0 + text_h + white;
+            let ty0 = white.top + data_px + gap;
+            let h = ty0 + text_h + white.bottom;
             let cx = size_px / 2;
             let lines: Vec<String> = rows
                 .iter()
@@ -280,14 +374,15 @@ pub fn render_label_px(
 
     // Module rects at their canvas offsets — every coordinate an
     // integer device px. The quiet zone is not drawn; the white
-    // background inside `white` supplies it (white ≥ quiet·m is
-    // structural under both modes).
+    // background supplies it (white ≥ quiet·m is structural under
+    // overlap/additive; under clip the printer's intrinsic margins
+    // supply it physically).
     let mut rects = String::with_capacity(matrix.size * matrix.size * 48);
     for r in 0..matrix.size {
         for c in 0..matrix.size {
             if matrix.get(r, c) {
-                let x = white + c as u32 * module_px;
-                let y = white + r as u32 * module_px;
+                let x = white.left + c as u32 * module_px;
+                let y = white.top + r as u32 * module_px;
                 let _ = write!(
                     rects,
                     "<rect x=\"{x}\" y=\"{y}\" width=\"{module_px}\" height=\"{module_px}\"/>"
@@ -314,36 +409,38 @@ viewBox=\"0 0 {width_px} {height_px}\">\
         module_px,
         modules,
         data_px,
-        white_px: white,
+        white,
         padding_mode,
+        symbology: resolved.compact(),
     })
 }
 
 /// Pad every label in a print job to the job's largest footprint
 /// (ADR-031 §4): the uniform canvas is at least the batch's largest
-/// label *and* at least `largest data_px + 2 * padding_px` — padding
-/// keeps its §8 white semantics (canvas edge → module part), so
-/// `padding_px` stays the smallest allowed canvas→module distance
-/// around the biggest module part. Smaller labels are centered
-/// (integer offsets — the px grid is preserved); the extra margin sits
-/// outside each label's own uniform `white_px`.
-pub fn fill_to_max(labels: &mut [PxLabel], padding_px: u32) {
+/// label *and* at least `largest data_px + opposing padding floors`
+/// per dimension — padding keeps its §8 white semantics (canvas edge →
+/// module part), so each side stays the smallest allowed
+/// canvas→module distance around the biggest module part. Smaller
+/// labels are centered (integer offsets — the px grid is preserved);
+/// the extra margin sits outside each label's own white.
+pub fn fill_to_max(labels: &mut [PxLabel], padding: Padding) {
     let Some(max_data) = labels.iter().map(|l| l.data_px).max() else {
         return;
     };
-    let floor = max_data + 2 * padding_px;
+    let floor_w = max_data + padding.left + padding.right;
+    let floor_h = max_data + padding.top + padding.bottom;
     let target_w = labels
         .iter()
         .map(|l| l.width_px)
         .max()
         .unwrap_or(0)
-        .max(floor);
+        .max(floor_w);
     let target_h = labels
         .iter()
         .map(|l| l.height_px)
         .max()
         .unwrap_or(0)
-        .max(floor);
+        .max(floor_h);
     for l in labels.iter_mut() {
         if l.width_px == target_w && l.height_px == target_h {
             continue;
@@ -391,17 +488,32 @@ mod tests {
     const STANDARD_QUIET: u32 = 4;
     const STANDARD_TOTAL: u32 = 29;
 
-    fn render_mode(size: u32, pad_min: u32, micro: bool, mode: PaddingMode) -> PxLabel {
+    fn sym(spec: &str) -> Symbology {
+        spec.parse().expect("symbology parses")
+    }
+
+    fn render_spec(
+        spec: &str,
+        layout: Layout,
+        size: u32,
+        padding: Padding,
+        mode: PaddingMode,
+    ) -> PxLabel {
         render_label_px(
             FIXED_ID,
-            Layout::Horz,
+            layout,
             size,
             TextFormat::FourFour,
-            micro,
-            pad_min,
+            &sym(spec),
+            padding,
             mode,
         )
         .expect("px render succeeds")
+    }
+
+    fn render_mode(size: u32, pad_min: u32, micro: bool, mode: PaddingMode) -> PxLabel {
+        let spec = if micro { "micro" } else { "qr" };
+        render_spec(spec, Layout::Horz, size, Padding::uniform(pad_min), mode)
     }
 
     fn render_pad(size: u32, pad_min: u32, micro: bool) -> PxLabel {
@@ -435,15 +547,21 @@ mod tests {
             assert_eq!(l.data_px, MICRO_DATA * m, "module part");
             assert_eq!(l.qr_px, MICRO_TOTAL * m, "incl-quiet footprint");
             assert_eq!(l.padding_mode, PaddingMode::Overlap);
+            assert_eq!(l.symbology, "micro-m4-m", "auto-fit resolves M4-M");
             // The controlling dimension is EXACTLY the requested size.
             assert_eq!(l.height_px, size, "horz height == size exactly");
-            // Uniform white absorbed the remainder, kept the floor and
-            // the structural quiet-zone minimum.
-            assert_eq!(l.white_px, (size - data_px) / 2, "size {size}");
+            // The controlling axis absorbed the remainder on top of the
+            // floors; the structural quiet-zone minimum held.
+            let floor = pad_min.max(MICRO_QUIET * m);
+            assert_eq!(l.white.top, (size - data_px) / 2, "size {size}");
+            assert_eq!(l.white.top + l.white.bottom, size - data_px, "size {size}");
+            assert!(l.white.bottom >= l.white.top, "extra px goes bottom");
+            // Non-controlling sides sit at their floors exactly.
+            assert_eq!((l.white.left, l.white.right), (floor, floor));
             assert!(
-                l.white_px >= pad_min.max(MICRO_QUIET * m),
+                l.white.top >= floor,
                 "white {} >= max(pad {pad_min}, quiet·m {})",
-                l.white_px,
+                l.white.top,
                 MICRO_QUIET * m,
             );
         }
@@ -464,14 +582,16 @@ mod tests {
             assert_eq!(l.data_px, data_px, "size {size}/pad {pad_min}");
             assert_eq!(l.padding_mode, PaddingMode::Additive);
             assert_eq!(l.height_px, size, "exact canvas");
-            assert_eq!(l.white_px, (size - data_px) / 2);
+            assert_eq!(l.white.top, (size - data_px) / 2);
             // Additive: the quiet zone sits inside white but does NOT
-            // satisfy the padding floor.
+            // satisfy the padding floor — on every side.
+            let floor = MICRO_QUIET * m + pad_min;
             assert!(
-                l.white_px >= MICRO_QUIET * m + pad_min,
+                l.white.top >= floor,
                 "white {} >= quiet·m + pad",
-                l.white_px,
+                l.white.top
             );
+            assert_eq!((l.white.left, l.white.right), (floor, floor));
         }
     }
 
@@ -492,6 +612,8 @@ mod tests {
             assert_eq!(l.data_px, data_px, "size {size}/pad {pad_min}");
             assert_eq!(l.padding_mode, PaddingMode::Clip);
             assert_eq!(l.height_px, size, "exact canvas");
+            // Non-controlling floors are the bare pads under clip.
+            assert_eq!((l.white.left, l.white.right), (pad_min, pad_min));
             // Clip beats or matches overlap at every size.
             let o = render_mode(size, pad_min, true, PaddingMode::Overlap);
             assert!(l.module_px >= o.module_px, "clip >= overlap at {size}");
@@ -509,23 +631,133 @@ mod tests {
             (300, 4, 10, 210), // 210 + 80 = 290; m=11 needs 319
         ];
         for (size, pad_min, m, data_px) in cases {
-            let l = render_label_px(
-                FIXED_ID,
-                Layout::Horz,
-                size,
-                TextFormat::FourFour,
-                false,
-                pad_min,
-                PaddingMode::Overlap,
-            )
-            .expect("renders");
+            let l = render_pad(size, pad_min, false);
             assert_eq!(l.modules, STANDARD_TOTAL);
             assert_eq!(l.module_px, m, "size {size}/pad {pad_min}");
             assert_eq!(l.data_px, data_px);
             assert_eq!(l.data_px, STANDARD_DATA * m);
+            assert_eq!(l.symbology, "qr-v1-m", "auto-fit resolves V1-M");
             assert_eq!(l.height_px, size, "exact canvas");
-            assert!(l.white_px >= pad_min.max(STANDARD_QUIET * m));
+            assert!(l.white.top >= pad_min.max(STANDARD_QUIET * m));
         }
+    }
+
+    // ---------- symbology pins flow into the one deduction ----------
+
+    #[test]
+    fn m3_l_pin_yields_bigger_dots_clip_at_64_is_4px() {
+        // The ADR-031 §8 A/B: M3 contributes 15 data modules to the
+        // SAME deduction engine, so clip@64 yields floor(64/15) = 4px
+        // modules where M4 reaches only 3px.
+        let l = render_spec(
+            "micro-m3-l",
+            Layout::Horz,
+            64,
+            Padding::uniform(0),
+            PaddingMode::Clip,
+        );
+        assert_eq!(l.symbology, "micro-m3-l");
+        assert_eq!(l.module_px, 4, "clip@64 on 15 modules → 4px");
+        assert_eq!(l.data_px, 60);
+        assert_eq!(l.modules, 15 + 2 * MICRO_QUIET);
+        assert_eq!(l.height_px, 64, "exact canvas");
+        // Remainder 4 splits 2/2 on the controlling axis.
+        assert_eq!((l.white.top, l.white.bottom), (2, 2));
+        let m4 = render_mode(64, 0, true, PaddingMode::Clip);
+        assert_eq!(m4.module_px, 3, "M4 (17 modules) reaches only 3px");
+    }
+
+    #[test]
+    fn m3_l_overlap_at_64() {
+        // Overlap: 15·m + 2·max(2, 2m) ≤ 64 → m=3 (45 + 12 = 57).
+        let l = render_spec(
+            "micro-m3-l",
+            Layout::Horz,
+            64,
+            Padding::uniform(2),
+            PaddingMode::Overlap,
+        );
+        assert_eq!((l.module_px, l.data_px), (3, 45));
+        assert_eq!(l.symbology, "micro-m3-l");
+    }
+
+    #[test]
+    fn infeasible_symbology_pin_surfaces_the_feasibility_hint() {
+        // M4-Q caps at 13 alnum chars — the §8 feasibility error rides
+        // through the px renderer untouched.
+        let err = render_label_px(
+            FIXED_ID,
+            Layout::Horz,
+            64,
+            TextFormat::FourFour,
+            &sym("micro-m4-q"),
+            Padding::uniform(2),
+            PaddingMode::Overlap,
+        )
+        .expect_err("M4-Q cannot hold 14 alnum chars");
+        let msg = err.to_string();
+        assert!(matches!(err, CodecError::Encode(_)), "got {err:?}");
+        assert!(msg.contains("M4-Q caps at 13 alnum chars"), "got: {msg}");
+        assert!(msg.contains("micro-m3-l"), "feasible space, got: {msg}");
+    }
+
+    // ---------- per-side padding: floors per axis, CSS clockwise ----------
+
+    #[test]
+    fn per_side_padding_floors_each_side_independently() {
+        // horz, overlap, top 2 / right 10 / bottom 6 / left 4:
+        // controlling (vertical) floors max(2,2m) + max(6,2m):
+        // m=3 → 51 + 6 + 6 = 63 ≤ 64; m=4 → 68 + 8 + 8 = 84. rem 1.
+        let l = render_spec(
+            "micro",
+            Layout::Horz,
+            64,
+            Padding::sides(2, 10, 6, 4),
+            PaddingMode::Overlap,
+        );
+        assert_eq!((l.module_px, l.data_px), (3, 51));
+        assert_eq!((l.white.top, l.white.bottom), (6, 7), "floors + rem→bottom");
+        // Non-controlling: left max(4,6) = 6, right max(10,6) = 10.
+        assert_eq!((l.white.left, l.white.right), (6, 10));
+        assert_eq!(l.height_px, 64, "exact canvas");
+        // Gap follows the RIGHT side's white: max(round(1.5·10), 6) = 15.
+        assert!(l.svg.contains("<text x=\"72\""), "tx = 6+51+15: {}", l.svg);
+    }
+
+    #[test]
+    fn per_side_additive_floors_add_quiet_to_each_pad() {
+        // additive, top 1 / right 2 / bottom 3 / left 4, size 64:
+        // controlling: 17m + (2m+1) + (2m+3) ≤ 64 → 21m + 4 ≤ 64 → m=2.
+        let l = render_spec(
+            "micro",
+            Layout::Horz,
+            64,
+            Padding::sides(1, 2, 3, 4),
+            PaddingMode::Additive,
+        );
+        assert_eq!(l.module_px, 2);
+        // floors: top 4+1=5, bottom 4+3=7; rem = 64−34−12 = 18 → 9/9.
+        assert_eq!((l.white.top, l.white.bottom), (14, 16));
+        assert_eq!((l.white.left, l.white.right), (8, 6));
+    }
+
+    #[test]
+    fn vert_controlling_axis_is_horizontal() {
+        // vert, overlap, left 0 / right 9, size 64: 17m + max(0,2m) +
+        // max(9,2m) ≤ 64 → m=3: 51 + 6 + 9 = 66 > 64 → m=2: 34+4+9=47.
+        let l = render_spec(
+            "micro",
+            Layout::Vert,
+            64,
+            Padding::sides(0, 9, 0, 0),
+            PaddingMode::Overlap,
+        );
+        assert_eq!(l.module_px, 2);
+        assert_eq!(l.width_px, 64, "vert width == size exactly");
+        // rem = 64 − 34 − 4 − 9 = 17 → left 4+8=12, right 9+8+1=18.
+        assert_eq!((l.white.left, l.white.right), (12, 18));
+        // Vertical sides at their floors (quiet·m = 4).
+        assert_eq!((l.white.top, l.white.bottom), (4, 4));
     }
 
     // ---------- uniform white, gap law, module placement ----------
@@ -548,64 +780,80 @@ mod tests {
     }
 
     #[test]
-    fn white_is_uniform_and_quiet_zone_is_not_drawn() {
-        // 64/2 overlap micro: m=3, data 51, white 6 (remainder px on
-        // the bottom edge of the controlling dimension).
+    fn white_floors_hold_and_quiet_zone_is_not_drawn() {
+        // 64/2 overlap micro: m=3, data 51, white top/left 6
+        // (remainder px on the bottom edge of the controlling
+        // dimension).
         let l = render(64, true);
-        assert_eq!((l.module_px, l.data_px, l.white_px), (3, 51, 6));
+        assert_eq!((l.module_px, l.data_px), (3, 51));
+        assert_eq!(l.white, Padding::sides(6, 6, 7, 6));
         let rects = module_rects(&l.svg);
         assert!(!rects.is_empty());
         let min_x = rects.iter().map(|r| r.0).min().expect("rects");
         let min_y = rects.iter().map(|r| r.1).min().expect("rects");
         let max_y = rects.iter().map(|r| r.1 + r.3).max().expect("rects");
-        // Same white on left and top; every module inside the module
-        // part — nothing rendered in the quiet zone.
-        assert_eq!(min_x, l.white_px, "left white == white_px");
-        assert_eq!(min_y, l.white_px, "top white == white_px");
-        assert_eq!(max_y, l.white_px + l.data_px, "module part bottom");
+        // Module part offset by the left/top white; every module inside
+        // the module part — nothing rendered in the quiet zone.
+        assert_eq!(min_x, l.white.left, "left offset == white.left");
+        assert_eq!(min_y, l.white.top, "top offset == white.top");
+        assert_eq!(max_y, l.white.top + l.data_px, "module part bottom");
         for (x, y, w, h) in &rects {
             assert_eq!((*w, *h), (l.module_px, l.module_px));
-            assert!(x + w <= l.white_px + l.data_px, "inside module part");
-            assert!(y + h <= l.white_px + l.data_px, "inside module part");
+            assert!(x + w <= l.white.left + l.data_px, "inside module part");
+            assert!(y + h <= l.white.top + l.data_px, "inside module part");
             // On the module grid.
-            assert_eq!((x - l.white_px) % l.module_px, 0);
-            assert_eq!((y - l.white_px) % l.module_px, 0);
+            assert_eq!((x - l.white.left) % l.module_px, 0);
+            assert_eq!((y - l.white.top) % l.module_px, 0);
         }
         // Bottom edge absorbs the odd remainder: 64 − (6 + 51) = 7.
-        assert_eq!(l.height_px - (l.white_px + l.data_px), 7);
+        assert_eq!(l.height_px - (l.white.top + l.data_px), 7);
     }
 
     #[test]
-    fn horz_gap_is_one_and_a_half_white() {
+    fn horz_gap_is_clamped_one_and_a_half_right_white() {
         for (size, pad) in [(64_u32, 2_u32), (67, 2), (100, 0), (212, 5)] {
             let l = render_pad(size, pad, true);
-            let gap = l.white_px + l.white_px.div_ceil(2);
-            let expected_tx = l.white_px + l.data_px + gap;
+            // gap = max(round(1.5·white.right), quiet·m), half up.
+            let gap = (l.white.right + l.white.right.div_ceil(2)).max(MICRO_QUIET * l.module_px);
+            let expected_tx = l.white.left + l.data_px + gap;
             let doc = roxmltree::Document::parse(&l.svg).expect("well-formed");
             for text in doc.descendants().filter(|n| n.tag_name().name() == "text") {
                 let x: u32 = text.attribute("x").expect("x").parse().expect("integer x");
                 assert_eq!(
                     x, expected_tx,
-                    "size {size}/pad {pad}: text x = white + data + 1.5·white"
+                    "size {size}/pad {pad}: text x = white.left + data + gap"
                 );
             }
         }
     }
 
     #[test]
+    fn clip_gap_clamps_to_the_quiet_zone() {
+        // Clip with pad 0: white.right = 0, so 1.5·white would be 0 —
+        // the §8 safe-space clamp keeps the text quiet·m away.
+        let l = render_mode(64, 0, true, PaddingMode::Clip);
+        assert_eq!((l.module_px, l.white.right), (3, 0));
+        let gap = MICRO_QUIET * l.module_px;
+        let tx = l.white.left + l.data_px + gap;
+        assert!(
+            l.svg.contains(&format!("<text x=\"{tx}\"")),
+            "text clamped {gap}px off the symbol: {}",
+            l.svg
+        );
+    }
+
+    #[test]
     fn vert_layout_width_is_exactly_the_requested_size() {
-        let l = render_label_px(
-            FIXED_ID,
+        let l = render_spec(
+            "micro",
             Layout::Vert,
             64,
-            TextFormat::FourFour,
-            true,
-            0,
+            Padding::uniform(0),
             PaddingMode::Overlap,
-        )
-        .expect("renders");
+        );
         assert_eq!(l.width_px, 64, "vert width == size exactly");
-        assert_eq!((l.module_px, l.data_px, l.white_px), (3, 51, 6));
+        assert_eq!((l.module_px, l.data_px), (3, 51));
+        assert_eq!((l.white.left, l.white.top), (6, 6));
         let rects = module_rects(&l.svg);
         let min_x = rects.iter().map(|r| r.0).min().expect("rects");
         let min_y = rects.iter().map(|r| r.1).min().expect("rects");
@@ -630,15 +878,15 @@ mod tests {
             (TextFormat::FourFourFour, 3),
             (TextFormat::FiveFiveFour, 3),
         ];
-        for (size, micro) in [(64_u32, true), (100, true), (100, false), (300, false)] {
+        for (size, spec) in [(64_u32, "micro"), (100, "micro"), (100, "qr"), (300, "qr")] {
             for (fmt, rows) in formats {
                 let l = render_label_px(
                     FIXED_ID,
                     Layout::Horz,
                     size,
                     fmt,
-                    micro,
-                    2,
+                    &sym(spec),
+                    Padding::uniform(2),
                     PaddingMode::Overlap,
                 )
                 .expect("renders");
@@ -660,7 +908,7 @@ mod tests {
 
     #[test]
     fn horz_text_top_aligns_with_the_module_part() {
-        // 64/2 micro 44: white 6, font 24, row gap 3 → baselines at
+        // 64/2 micro 44: white.top 6, font 24, row gap 3 → baselines at
         // 6+24=30 and 30+27=57; the block spans exactly data_px.
         let l = render(64, true);
         assert!(
@@ -685,8 +933,8 @@ mod tests {
             Layout::Horz,
             20,
             TextFormat::FourFour,
-            true,
-            0,
+            &sym("micro"),
+            Padding::uniform(0),
             PaddingMode::Overlap,
         )
         .expect_err("cannot fit");
@@ -704,8 +952,8 @@ mod tests {
             Layout::Horz,
             24,
             TextFormat::FourFour,
-            true,
-            2,
+            &sym("micro"),
+            Padding::uniform(2),
             PaddingMode::Additive,
         )
         .expect_err("cannot fit");
@@ -722,12 +970,31 @@ mod tests {
             Layout::Vert,
             28,
             TextFormat::FourFour,
-            false,
-            0,
+            &sym("qr"),
+            Padding::uniform(0),
             PaddingMode::Overlap,
         )
         .expect_err("28px cannot fit standard V1");
         assert!(err.to_string().contains("29px"), "got: {}", err);
+    }
+
+    #[test]
+    fn asymmetric_impossible_fit_names_both_pads() {
+        // Overlap micro, size 22, top 0 / bottom 9: m=1 needs
+        // 17 + max(0,2) + max(9,2) = 28.
+        let err = render_label_px(
+            FIXED_ID,
+            Layout::Horz,
+            22,
+            TextFormat::FourFour,
+            &sym("micro"),
+            Padding::sides(0, 0, 9, 0),
+            PaddingMode::Overlap,
+        )
+        .expect_err("cannot fit");
+        let msg = err.to_string();
+        assert!(msg.contains("0px/9px"), "both pads named, got: {msg}");
+        assert!(msg.contains("28px"), "1px-module hint, got: {msg}");
     }
 
     // ---------- flag is a documented Unsupported ----------
@@ -739,8 +1006,8 @@ mod tests {
             Layout::Flag { cable_od_mm: 6.0 },
             64,
             TextFormat::FourFour,
-            true,
-            2,
+            &sym("micro"),
+            Padding::uniform(2),
             PaddingMode::Overlap,
         )
         .expect_err("flag has no px geometry yet");
@@ -751,19 +1018,19 @@ mod tests {
 
     #[test]
     fn every_qr_rect_sits_on_the_integer_px_grid() {
-        for (layout, micro) in [
-            (Layout::Horz, true),
-            (Layout::Horz, false),
-            (Layout::Vert, true),
-            (Layout::Vert, false),
+        for (layout, spec) in [
+            (Layout::Horz, "micro"),
+            (Layout::Horz, "qr"),
+            (Layout::Vert, "micro"),
+            (Layout::Vert, "qr"),
         ] {
             let l = render_label_px(
                 FIXED_ID,
                 layout,
                 100,
                 TextFormat::FiveFiveFour,
-                micro,
-                3,
+                &sym(spec),
+                Padding::uniform(3),
                 PaddingMode::Overlap,
             )
             .expect("renders");
@@ -799,8 +1066,8 @@ mod tests {
                 Layout::Horz,
                 64,
                 fmt,
-                true,
-                2,
+                &sym("micro"),
+                Padding::uniform(2),
                 PaddingMode::Overlap,
             )
             .expect("renders");
@@ -810,26 +1077,23 @@ mod tests {
 
     #[test]
     fn vert_layout_renders_text_rows_below_the_qr() {
-        let l = render_label_px(
-            FIXED_ID,
+        let l = render_spec(
+            "micro",
             Layout::Vert,
             64,
-            TextFormat::FourFour,
-            true,
-            2,
+            Padding::uniform(2),
             PaddingMode::Overlap,
-        )
-        .expect("renders");
+        );
         assert_eq!(text_rows(&l.svg), ["K7M3", "PQ9R"]);
         // Text baselines sit below the module part by at least the
-        // 1.5·white gap; the font stays on the module grid.
-        let gap = l.white_px + l.white_px.div_ceil(2);
+        // clamped gap; the font stays on the module grid.
+        let gap = (l.white.bottom + l.white.bottom.div_ceil(2)).max(MICRO_QUIET * l.module_px);
         assert_eq!(font_size(&l.svg) % l.module_px, 0);
         let doc = roxmltree::Document::parse(&l.svg).expect("well-formed SVG");
         for text in doc.descendants().filter(|n| n.tag_name().name() == "text") {
             let y: u32 = text.attribute("y").expect("y").parse().expect("integer y");
             assert!(
-                y > l.white_px + l.data_px + gap,
+                y > l.white.top + l.data_px + gap,
                 "baseline {y} below QR + gap"
             );
         }
@@ -840,20 +1104,22 @@ mod tests {
     #[test]
     fn horz_67px_worked_example_geometry() {
         // size 67 / pad 2, overlap micro: m=3 (51 + 2·max(2,6) = 63),
-        // data 51, white (67−51)/2 = 8, gap round(1.5·8) = 12, font
-        // 8·3 = 24 → text at x = 8+51+12 = 71, baselines 32 / 59,
-        // width 71 + 69 + 8 = 148.
+        // data 51, controlling floors 6/6, remainder 4 lands as top 8
+        // and bottom 8, non-controlling sides at their floors (6/6).
+        // gap = max(round(1.5·6), 6) = 9, font 8·3 = 24 → text at
+        // x = 6+51+9 = 66, baselines 32 / 59, width 66 + 69 + 6 = 141.
         let l = render_pad(67, 2, true);
-        assert_eq!((l.width_px, l.height_px), (148, 67));
-        assert_eq!((l.data_px, l.module_px, l.white_px), (51, 3, 8));
+        assert_eq!((l.width_px, l.height_px), (141, 67));
+        assert_eq!((l.data_px, l.module_px), (51, 3));
+        assert_eq!(l.white, Padding::sides(8, 6, 8, 6));
         assert_eq!((l.qr_px, l.modules), (63, 21));
         assert!(
-            l.svg.contains("<text x=\"71\" y=\"32\">K7M3</text>"),
+            l.svg.contains("<text x=\"66\" y=\"32\">K7M3</text>"),
             "{}",
             l.svg
         );
         assert!(
-            l.svg.contains("<text x=\"71\" y=\"59\">PQ9R</text>"),
+            l.svg.contains("<text x=\"66\" y=\"59\">PQ9R</text>"),
             "{}",
             l.svg
         );
@@ -875,7 +1141,7 @@ mod tests {
             "fixture must start non-uniform"
         );
 
-        fill_to_max(&mut labels, 2);
+        fill_to_max(&mut labels, Padding::uniform(2));
 
         let (w, h) = (labels[0].width_px, labels[0].height_px);
         for l in &labels {
@@ -902,7 +1168,7 @@ mod tests {
         let big = render(212, true); // 21·10 = 210 <= 212 → 170px module part
         assert_eq!((small.module_px, big.module_px), (1, 10));
         let mut labels = vec![small, big.clone()];
-        fill_to_max(&mut labels, 2);
+        fill_to_max(&mut labels, Padding::uniform(2));
         // The big label already had the max dims; unchanged.
         assert_eq!(labels[1].svg, big.svg);
         // The small one was re-wrapped with an integer translate.
@@ -923,9 +1189,27 @@ mod tests {
     }
 
     #[test]
+    fn fill_to_max_respects_asymmetric_padding_floors() {
+        let mut labels = vec![render(64, true)];
+        // Floors: width ≥ data + left + right = 51 + 30; height ≥
+        // data + top + bottom = 51 + 3.
+        fill_to_max(&mut labels, Padding::sides(1, 10, 2, 20));
+        assert!(
+            labels[0].width_px >= 81,
+            "width floor: {}",
+            labels[0].width_px
+        );
+        assert!(
+            labels[0].height_px >= 54,
+            "height floor: {}",
+            labels[0].height_px
+        );
+    }
+
+    #[test]
     fn fill_to_max_on_empty_slice_is_a_no_op() {
         let mut labels: Vec<PxLabel> = Vec::new();
-        fill_to_max(&mut labels, 2);
+        fill_to_max(&mut labels, Padding::uniform(2));
         assert!(labels.is_empty());
     }
 }

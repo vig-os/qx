@@ -152,6 +152,23 @@ host that enforces.
   always").
 - **`manifest.toml` + `roles.toml`** live in `.part-registry/` (ADR-033).
 
+## Corrections
+
+> **2026-06-11:** four refinements from the audit-identity/anchoring
+> session: (1) §4's `roles.toml` is retired as a separate artifact —
+> role bindings live in the **`personas` collection** (ADR-036 §1),
+> which the CODEOWNERS seed generates from; (2) §5's `file://`
+> local-trust asymmetry is removed from the default product — direct-
+> write local mode is a flagged future feature (ADR-036 §5; Corrections
+> on ADR-030/033); (3) elevation precision: `RequiresElevation` is
+> satisfied by a deliberate act under a **2FA-enrolled,
+> host-authenticated** identity — *not* a fresh-per-act MFA challenge,
+> which GitHub OAuth cannot force or prove for third-party apps
+> (ADR-036 §4; fresh-per-act proof is escalation rung E2); (4) §2's
+> pinned-artifact gate gains a location story (vendored in the data
+> repo, ADR-038 §1) and its run is recorded as evidence in the stream
+> (ADR-037 §2). Original text preserved above for audit.
+
 ## Open questions / supersession triggers
 
 - **Protection drift self-audit** *(approach resolved 2026-06-11 —

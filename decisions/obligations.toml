@@ -488,3 +488,109 @@ statement = "Relations declared per descriptor (components = parts preset instan
 kind = "crate"
 status = "pending"
 tracking = "ADR-035 §1a relations-generalize; relations[]/backlinks/labels in contract not yet built"
+
+# ---- Audit evidence set (ADR-036/037/038) --------------------------------
+
+[[obligation]]
+id = "personas-collection"
+adr = "ADR-036"
+statement = "personas is a code-owned collection preset; audit operator is a typed FK; CODEOWNERS principals + merge approvers must resolve to active personas"
+kind = "crate"
+status = "pending"
+tracking = "ADR-036 §1/§2; personas descriptor + FK validator + CODEOWNERS cross-check not yet built"
+
+[[obligation]]
+id = "pr-is-truth-write-path"
+adr = "ADR-036"
+statement = "Writes reconcile with origin/main and emit a proposal, else error; file:// direct-write is a flagged future feature (Corrections on ADR-030/033/034)"
+kind = "crate"
+status = "pending"
+tracking = "ADR-036 §5; enforce in app-layer write path when proposal sink wiring lands (ADR-030 build order)"
+
+[[obligation]]
+id = "esign-escalation-rungs"
+adr = "ADR-036"
+statement = "Deferred signing rungs E1-E4 (in-record Sigstore, WebAuthn-UV presence, PAdES, QES) carry explicit triggers; no operator key infrastructure by default"
+kind = "doc"
+status = "satisfied"
+satisfied_by = "decisions/ADR-036-audit-identity-personas.md"
+
+[[obligation]]
+id = "audit-append-only-gate-rule"
+adr = "ADR-037"
+statement = "pr check rejects any PR whose diff to audit_log.jsonl is not pure trailing addition; chain links retired for content_hash + checkpoints"
+kind = "gate"
+status = "pending"
+tracking = "ADR-037 §1; diff rule in pr check + checkpoint writer in anchor job not yet built"
+
+[[obligation]]
+id = "merge-sync-witness"
+adr = "ADR-037"
+statement = "Approver/review/merge evidence + gate provenance (artifact sha, env digest, run ref) synced into the audit stream as durable records"
+kind = "ci"
+status = "pending"
+tracking = "ADR-037 §2; sync step lands with the data-repo check workflow evolution"
+
+[[obligation]]
+id = "anchor-ledger"
+adr = "ADR-037"
+statement = "Immutable-release anchor ledger: per-push anchor + nightly heartbeat + monthly bundle-if-changed; anchors only after pr verify green; ancestry rule verified by pr verify --anchors"
+kind = "ci"
+status = "satisfied"
+satisfied_by = ["tools/data-repo-templates/anchor.yml.tmpl", "tools/data-repo-templates/bundle.yml.tmpl"]
+
+[[obligation]]
+id = "pr-verify-offline"
+adr = "ADR-037"
+statement = "pr verify checks a clone offline (contract, FK, append-only, checkpoints, personas); --anchors adds ledger ancestry + immutability-enabled checks"
+kind = "crate"
+status = "pending"
+tracking = "ADR-037 §5; verify subcommand on the pr binary not yet built"
+
+[[obligation]]
+id = "gate-vendored"
+adr = "ADR-038"
+statement = "Regulated default: gate binary + sha256 + attestation + source + Nix recipe vendored under .part-registry/gate/ (no LFS); pin-verify-before-exec unchanged; knob vendored|fetched"
+kind = "ci"
+status = "pending"
+tracking = "ADR-038 §1; bootstrap seeding of the vendored gate awaits the musl static build"
+
+[[obligation]]
+id = "upgrade-succession"
+adr = "ADR-038"
+statement = "Upgrade PRs validated by the incumbent gate (pin from main), successor shadow-runs, version monotonicity, CODEOWNERS elevation; boundary visible in the stream"
+kind = "ci"
+status = "pending"
+tracking = "ADR-038 §2; pr upgrade + shadow-run step not yet built"
+
+[[obligation]]
+id = "per-op-floors"
+adr = "ADR-038"
+statement = "Compat = metamodel parse floor (hard) + per-op floors derived from consumed surfaces; enforcement is content-vs-contract; floors are preflight UX + posture knob"
+kind = "crate"
+status = "pending"
+tracking = "ADR-038 §3; floor derivation in Describe/preflight not yet built"
+
+[[obligation]]
+id = "ci-as-derivations"
+adr = "ADR-038"
+statement = "Tool-repo CI logic lives in flake outputs (checks/packages/apps); host workflows are thin shims; blocking data-repo gate stays the vendored zero-network binary"
+kind = "ci"
+status = "satisfied"
+satisfied_by = ["flake.nix", ".github/workflows/ci.yml"]
+
+[[obligation]]
+id = "runner-image-ghcr"
+adr = "ADR-038"
+statement = "Reproducible runner image published to ghcr on release alongside binary + sha256; data repos may run the deep suite in the pinned image"
+kind = "ci"
+status = "satisfied"
+satisfied_by = ".github/workflows/release.yml"
+
+[[obligation]]
+id = "curl-bootstrap"
+adr = "ADR-038"
+statement = "curl-able install.sh fetches the release-pinned bootstrap (sha256-verified) and seeds a registry incl. anchor workflows + immutable-releases setting + qualification checklist"
+kind = "artifact"
+status = "satisfied"
+satisfied_by = "install.sh"

@@ -22,7 +22,8 @@ pub use engine::{dispatch, mint_part_id, AppContext, HUMAN_PREFIX_LEN};
 pub use entity::{part_to_entity, Entity};
 pub use preset::{parts_descriptor, registry_descriptor, CollectionDescriptor, RegistryDescriptor};
 pub use protocol::{
-    ErrorBody, ErrorKind, Filter, Page, PrintOptions, Request, Response, Selection, Sort, SortDir,
+    ErrorBody, ErrorKind, Filter, PaddingSpec, Page, PrintOptions, Request, Response, Selection,
+    Sort, SortDir,
 };
 
 #[cfg(test)]

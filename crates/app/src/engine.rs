@@ -14,7 +14,7 @@ use time::OffsetDateTime;
 
 use part_registry_codec::{
     check_format_warning, fill_to_max, recommend_format, render_label, render_label_px, CodecError,
-    Layout, PaddingMode, PxLabel, TextFormat,
+    Family, Layout, Padding, PaddingMode, PxLabel, Symbology, TextFormat,
 };
 use part_registry_domain::{
     Diff, DiffEdit, DiffRow, Operator, OperatorRef, Part, PartId, PartStatus, PrintEvent, Proposal,
@@ -30,7 +30,7 @@ use part_registry_transport::ProposalSink;
 use crate::entity::{field_value, part_to_entity, Entity};
 use crate::preset::{parts_descriptor, registry_descriptor};
 use crate::protocol::{
-    ErrorKind, Filter, Page, PrintOptions, Request, Response, Selection, Sort, SortDir,
+    ErrorKind, Filter, PaddingSpec, Page, PrintOptions, Request, Response, Selection, Sort, SortDir,
 };
 
 /// Human-prefix length accepted by `Resolve` (ADR-012; mirrors the
@@ -823,6 +823,23 @@ fn chars_name(fmt: TextFormat) -> &'static str {
     }
 }
 
+/// The requested symbology (ADR-031 §8): the canonical compact string
+/// when given, else the deprecated `micro` flag mapped to its family
+/// (`micro: true` == symbology "micro") — `symbology` wins when both
+/// are present.
+fn requested_symbology(options: &PrintOptions) -> Result<Symbology, Response> {
+    match options.symbology.as_deref() {
+        Some(s) => s
+            .parse()
+            .map_err(|e: String| Response::error(ErrorKind::Validation, e)),
+        None => Ok(Symbology::family(if options.micro {
+            Family::Micro
+        } else {
+            Family::Qr
+        })),
+    }
+}
+
 /// Selection → parts (shared by the mm and px render paths).
 fn select_targets(ctx: &AppContext, selection: &Selection) -> Result<Vec<Part>, Response> {
     let targets = match selection {
@@ -853,8 +870,29 @@ fn select_targets(ctx: &AppContext, selection: &Selection) -> Result<Vec<Part>, 
 }
 
 /// The original mm-native render path — behavior unchanged from
-/// pre-ADR-031-§2 (`unit: "mm"`, the default).
+/// pre-ADR-031-§2 (`unit: "mm"`, the default). Version/EC pins are
+/// print-contract parameters the px renderer consumes; here only the
+/// symbology *family* selects between the fixed mm pins (micro →
+/// M4/EC-M, qr → V1/EC-M).
 fn print_mm(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> Response {
+    let symbology = match requested_symbology(options) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    if symbology.version.is_some() || symbology.ec.is_some() {
+        return Response::error(
+            ErrorKind::Validation,
+            format!(
+                "symbology {symbology:?} pins version/EC — print-contract parameters \
+                 the px-true renderer consumes (ADR-031 §8); unit \"mm\" renders the \
+                 family default only. Drop the pin or switch to unit \"px\"",
+                symbology = symbology.to_string(),
+            ),
+        );
+    }
+    let micro = symbology.family == Family::Micro;
+    // The mm renderer's fixed pins, reported as resolved evidence.
+    let resolved = if micro { "micro-m4-m" } else { "qr-v1-m" };
     let layout = match options.layout.as_str() {
         "vert" => Layout::Vert,
         "horz" => Layout::Horz,
@@ -885,14 +923,12 @@ fn print_mm(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
 
     let mut labels = Vec::with_capacity(targets.len());
     for p in &targets {
-        match render_label(
-            p.id.as_str(),
-            layout,
-            options.size_mm,
-            text_format,
-            options.micro,
-        ) {
-            Ok(svg) => labels.push(json!({ "id": p.id.as_str(), "svg": svg })),
+        match render_label(p.id.as_str(), layout, options.size_mm, text_format, micro) {
+            Ok(svg) => labels.push(json!({
+                "id": p.id.as_str(),
+                "svg": svg,
+                "symbology": resolved,
+            })),
             Err(e) => return Response::error(ErrorKind::Backend, e.to_string()),
         }
     }
@@ -910,7 +946,7 @@ fn print_mm(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
                 printed_by: printed_by.clone(),
                 layout: options.layout.clone(),
                 size_mm: options.size_mm,
-                extra: json!({ "chars": options.chars, "micro": options.micro }),
+                extra: json!({ "chars": options.chars, "micro": micro, "symbology": resolved }),
                 copies: options.copies,
                 output_mode: "app-dispatch-svg".into(),
                 batch_label: None,
@@ -949,7 +985,18 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
         Some(px) => px,
         None => (options.size_mm / MM_PER_INCH * dpi).round() as u32,
     };
-    let padding_px = options.padding_px.unwrap_or(0);
+    // §8: per-side padding floors (CSS shorthand on the wire; the
+    // pre-shorthand plain integer still deserializes as uniform).
+    let padding: Padding = options
+        .padding_px
+        .map(PaddingSpec::expand)
+        .unwrap_or_default();
+    // §8: symbology — family[-version][-ec], auto-fit where unpinned.
+    // the deprecated `micro` flag maps to its family when absent.
+    let symbology = match requested_symbology(options) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
     // §8: how the quiet zone counts toward the padding floor.
     let padding_mode = match options.padding_mode.as_deref() {
         None | Some("overlap") => PaddingMode::Overlap,
@@ -999,8 +1046,8 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
             layout,
             size_px,
             text_format,
-            options.micro,
-            padding_px,
+            &symbology,
+            padding,
             padding_mode,
         ) {
             Ok(l) => rendered.push(l),
@@ -1009,7 +1056,7 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
     }
     // §4: padding is a floor; the job fills to the largest footprint
     // so a mixed batch comes out physically uniform.
-    fill_to_max(&mut rendered, padding_px);
+    fill_to_max(&mut rendered, padding);
 
     let labels: Vec<serde_json::Value> = targets
         .iter()
@@ -1023,8 +1070,9 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
                 "qr_px": l.qr_px,
                 "module_px": l.module_px,
                 "data_px": l.data_px,
-                "white_px": l.white_px,
+                "white": l.white,
                 "padding_mode": l.padding_mode,
+                "symbology": l.symbology,
             })
         })
         .collect();
@@ -1046,13 +1094,13 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
                 size_mm: f64::from(l.qr_px) * MM_PER_INCH / dpi,
                 extra: json!({
                     "chars": options.chars,
-                    "micro": options.micro,
+                    "symbology": l.symbology,
                     "unit": "px",
                     "qr_px": l.qr_px,
                     "module_px": l.module_px,
                     "data_px": l.data_px,
-                    "white_px": l.white_px,
-                    "padding_px": padding_px,
+                    "white": l.white,
+                    "padding": padding,
                     "padding_mode": l.padding_mode,
                     "dpi": dpi,
                 }),
@@ -1070,7 +1118,7 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
         "labels": labels,
         "unit": "px",
         "size_px": size_px,
-        "padding_px": padding_px,
+        "padding": padding,
         "padding_mode": padding_mode,
         "dpi": dpi,
         "chars": chars_name(text_format),
@@ -1080,11 +1128,14 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
 
 /// Map a px-render codec failure into the protocol taxonomy: an
 /// undersized target is caller-fixable (`Validation`, carries the
-/// minimum-size hint); a not-yet-implemented mode is `Unsupported`.
+/// minimum-size hint), as is an infeasible symbology/payload pairing
+/// (`Encode`, carries the §8 feasibility hint); a not-yet-implemented
+/// mode is `Unsupported`.
 fn px_codec_error(e: CodecError) -> Response {
     match e {
         CodecError::Unsupported(m) => Response::error(ErrorKind::Unsupported, m),
         CodecError::Render(m) => Response::error(ErrorKind::Validation, m),
+        CodecError::Encode(m) => Response::error(ErrorKind::Validation, m),
         other => Response::error(ErrorKind::Backend, other.to_string()),
     }
 }

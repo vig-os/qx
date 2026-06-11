@@ -489,9 +489,16 @@ fn print_px_true_deduces_module_from_exact_canvas() {
     let label = &d["labels"][0];
     assert_eq!(label["module_px"], json!(3));
     assert_eq!(label["data_px"], json!(51));
-    assert_eq!(label["white_px"], json!(6));
+    // Per-side actual white (§8): controlling-axis remainder px lands
+    // on the bottom; non-controlling sides sit at their floors.
+    assert_eq!(
+        label["white"],
+        json!({"top": 6, "right": 6, "bottom": 7, "left": 6})
+    );
     assert_eq!(label["qr_px"], json!(63));
     assert_eq!(label["padding_mode"], json!("overlap"));
+    // The deprecated micro flag resolved through the symbology grammar.
+    assert_eq!(label["symbology"], json!("micro-m4-m"));
     assert_eq!(label["height_px"], json!(64), "exact canvas");
     assert_eq!(label["id"], json!("23456789ABCDEF"));
     let svg = label["svg"].as_str().expect("svg");
@@ -507,8 +514,9 @@ fn print_px_true_deduces_module_from_exact_canvas() {
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].extra["module_px"], json!(3));
     assert_eq!(events[0].extra["data_px"], json!(51));
-    assert_eq!(events[0].extra["white_px"], json!(6));
+    assert_eq!(events[0].extra["white"]["top"], json!(6));
     assert_eq!(events[0].extra["padding_mode"], json!("overlap"));
+    assert_eq!(events[0].extra["symbology"], json!("micro-m4-m"));
 
     // additive excludes the quiet zone from the padding floor:
     // (17 + 2·2)·m + 2·2 ≤ 64 → m=2, module part 34px.
@@ -606,6 +614,212 @@ fn print_px_below_minimum_is_validation_with_hint() {
     let e = r.err().expect("err");
     assert_eq!(e.kind, ErrorKind::Validation);
     assert!(e.message.contains("25px"), "hint missing: {}", e.message);
+}
+
+// ADR-031 §8: symbology version + EC are contract parameters. The
+// wire speaks the canonical compact string; labels carry the RESOLVED
+// form. M3-L pinned at clip@64: 15 data modules → floor(64/15) = 4px
+// modules (vs M4's 3px — the §8 bigger-dots A/B).
+#[test]
+fn print_px_symbology_pin_resolves_and_flows_into_the_deduction() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"symbology":"micro-m3-l",
+                          "padding_mode":"clip","chars":"44","log":false}}),
+    );
+    let label = &r.data().expect("ok")["labels"][0];
+    assert_eq!(label["symbology"], json!("micro-m3-l"));
+    assert_eq!(label["module_px"], json!(4), "clip@64 on 15 modules");
+    assert_eq!(label["data_px"], json!(60));
+    assert_eq!(label["height_px"], json!(64), "exact canvas");
+
+    // Version-only pin: EC auto-falls to the strongest feasible (L at
+    // M3 for 14 alnum chars) and the response says so.
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"symbology":"micro-m3",
+                          "chars":"44","log":false}}),
+    );
+    let label = &r.data().expect("ok")["labels"][0];
+    assert_eq!(label["symbology"], json!("micro-m3-l"));
+}
+
+#[test]
+fn print_px_symbology_wins_over_deprecated_micro_flag() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "symbology":"qr","chars":"44","log":false}}),
+    );
+    let label = &r.data().expect("ok")["labels"][0];
+    assert_eq!(label["symbology"], json!("qr-v1-m"), "symbology wins");
+    assert_eq!(label["data_px"], json!(42), "V1 = 21 modules at m=2");
+}
+
+#[test]
+fn print_px_unknown_symbology_family_is_validation_with_roster() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"symbology":"aztec","log":false}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(e.message.contains("micro, qr"), "roster: {}", e.message);
+    assert!(e.message.contains("dm"), "future hint: {}", e.message);
+}
+
+#[test]
+fn print_px_infeasible_pin_is_validation_with_feasible_space() {
+    // NB the fixture id matters: feasibility is the encoder's verdict
+    // on the actual payload, and qrcode's optimal segmentation packs
+    // long numeric runs (e.g. "23456789…") into M4-Q despite the
+    // 13-alnum cap. A mixed id has no such run.
+    let (ctx, _) = ctx_with(vec![part(
+        "K7M3PQ9RT5VAXY",
+        PartStatus::Unbound,
+        None,
+        None,
+    )]);
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["K7M3PQ9RT5VAXY"]},
+               "options":{"unit":"px","size_px":64,"symbology":"micro-m4-q","log":false}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(
+        e.message.contains("M4-Q caps at 13 alnum chars"),
+        "cap: {}",
+        e.message
+    );
+    assert!(
+        e.message
+            .contains("feasible for this payload: micro-m4-l, micro-m4-m, micro-m3-l"),
+        "feasible space: {}",
+        e.message
+    );
+}
+
+// §8 per-side padding: the wire mirrors the CSS shorthand as
+// serde-untagged `2 | [2,6] | [2,6,4,6]`; the plain integer (asserted
+// in print_px_true_deduces_module_from_exact_canvas above) is also
+// the pre-shorthand wire shape — old payloads keep deserializing.
+#[test]
+fn print_px_padding_css_shorthand_on_the_wire() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    // [2,6]: vertical 2, horizontal 6 — controlling axis (horz =
+    // vertical) still reaches m=3; left/right floors are max(6, 6).
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","padding_px":[2,6],"log":false}}),
+    );
+    let label = &r.data().expect("ok")["labels"][0];
+    assert_eq!(label["module_px"], json!(3));
+    assert_eq!(
+        label["white"],
+        json!({"top": 6, "right": 6, "bottom": 7, "left": 6})
+    );
+
+    // Padding 2,10,6,4 — top/bottom floors 6/6 keep m=3 since
+    // 51+12 = 63 fits 64, right floor max(10,6) = 10, left max(4,6) = 6.
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","padding_px":[2,10,6,4],"log":false}}),
+    );
+    let d = r.data().expect("ok");
+    let label = &d["labels"][0];
+    assert_eq!(label["module_px"], json!(3));
+    assert_eq!(
+        label["white"],
+        json!({"top": 6, "right": 10, "bottom": 7, "left": 6})
+    );
+    // The resolved per-side floors ride the response as evidence.
+    assert_eq!(
+        d["padding"],
+        json!({"top": 2, "right": 10, "bottom": 6, "left": 4})
+    );
+}
+
+#[test]
+fn print_px_malformed_padding_is_a_request_parse_error() {
+    // Three values match no PaddingSpec arm — the request fails to
+    // deserialize (1, 2, or 4 values only).
+    let req = serde_json::from_value::<Request>(json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"padding_px":[2,6,4]}}));
+    assert!(req.is_err(), "3-value padding must not parse");
+}
+
+#[test]
+fn print_mm_takes_symbology_family_but_rejects_pins() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    // Family-only symbology selects the micro mm renderer.
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"symbology":"micro","chars":"44","log":false}}),
+    );
+    let label = &r.data().expect("ok")["labels"][0];
+    assert_eq!(label["symbology"], json!("micro-m4-m"), "mm fixed pin");
+    // Version/EC pins are px-contract parameters.
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"symbology":"micro-m3-l","chars":"44","log":false}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(e.message.contains("px"), "points at px: {}", e.message);
+}
+
+// The one CSS-shorthand expansion rule, text form (the CLI value
+// parser) and wire form (serde-untagged) — plus old-wire compat.
+#[test]
+fn padding_spec_parses_and_expands_the_css_shorthand() {
+    use part_registry_codec::Padding;
+
+    use crate::protocol::PaddingSpec;
+
+    let cases = [
+        ("2", Padding::uniform(2)),
+        ("2,6", Padding::axes(2, 6)),
+        ("2,6,4,6", Padding::sides(2, 6, 4, 6)),
+        (" 2 , 6 ", Padding::axes(2, 6)),
+    ];
+    for (input, expected) in cases {
+        let spec: PaddingSpec = input.parse().expect(input);
+        assert_eq!(spec.expand(), expected, "input {input:?}");
+    }
+    for bad in ["", "2,6,4", "2,6,4,6,8", "a", "2,-6", "2.5"] {
+        assert!(bad.parse::<PaddingSpec>().is_err(), "must reject {bad:?}");
+    }
+    // Old wire shape: a plain integer is Uniform.
+    let spec: PaddingSpec = serde_json::from_value(json!(2)).expect("integer parses");
+    assert_eq!(spec.expand(), Padding::uniform(2));
+    let spec: PaddingSpec = serde_json::from_value(json!([2, 6])).expect("pair parses");
+    assert_eq!(spec.expand(), Padding::axes(2, 6));
+    let spec: PaddingSpec = serde_json::from_value(json!([2, 6, 4, 6])).expect("quad parses");
+    assert_eq!(spec.expand(), Padding::sides(2, 6, 4, 6));
 }
 
 #[test]

@@ -305,6 +305,20 @@ distribute, with cargo features keeping the minimal build lean.
   obliges either surfacing it in every spoke or filing an expiring
   exemption in `coverage.toml`.
 
+## Corrections
+
+> **2026-06-11:** §4 presented `file://` as a co-equal locator wired to
+> a local-branch transport. Per ADR-036 §5 (audit-identity session),
+> direct-write local mode is **demoted to a flagged future feature**:
+> every shell is a client of canonical remote state — reads serve a
+> synced snapshot of `origin/main`; writes require reconciling with
+> `origin/main` and emit a proposal, else error. `file://` remains
+> valid for read/verify against a clone. Rationale: accountability
+> resolves host-side at merge (ADR-036); the local-trust asymmetry
+> ADR-034 §5 documented is thereby removed from the default product
+> rather than carried. This entry preserves the original framing for
+> audit.
+
 ## Open questions / supersession triggers
 
 - **Registry manifest / capabilities descriptor.** This ADR assumes a
