@@ -36,11 +36,13 @@ mode: <button class="mode sel" id="m-px">pixels</button><button class="mode" id=
 <div id="strip"></div>
 <textarea id="out" placeholder="exported JSON appears here"></textarea>
 <script>
-const F = __FDATA__;
+const FONT = __FONTDATA__;
+const F = Object.fromEntries(Object.entries(FONT).map(([ch, g]) => [ch, g.px.map(r => r.join(""))]));
 const ALPHA = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 let state = {};
 for (const ch of ALPHA) {
-  state[ch] = { px: F[ch].map(row => [...row].map(Number)), conn: {}, kern: {} };
+  const g = FONT[ch];
+  state[ch] = { px: g.px.map(row => [...row]), conn: {...g.conn}, kern: Object.fromEntries(Object.entries(g.kern).map(([k2, v]) => [k2, [...v]])) };
 }
 let cur = "K", mode = "px";
 
@@ -412,7 +414,7 @@ document.getElementById("reset").onclick = ()=>{
 sync();
 </script></body></html>
 """
-html = html.replace("__FDATA__", json.dumps(F))
+html = html.replace("__FONTDATA__", json.dumps(font))
 out = Path("labels/typography-bench/font-editor.html")
 out.write_text(html)
 print(f"-> {out}")
