@@ -480,6 +480,12 @@
             nativeBuildInputs = [ pkgs.nodejs_22 pkgs.playwright-driver.browsers ];
             PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
             PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
+            # The sandbox ships no fonts: chromium renders all text at
+            # zero size, so every text-sized element reads as "hidden"
+            # to playwright's toBeVisible (assembly badge, print tab…).
+            FONTCONFIG_FILE = pkgs.makeFontsConf {
+              fontDirectories = [ pkgs.dejavu_fonts ];
+            };
             # The bundle is built right here (with the wasm dropped in
             # from wasmArtifact) — playwright must SERVE it, not re-run
             # `npm run build`, whose build:wasm step needs cargo +
