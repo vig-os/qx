@@ -144,7 +144,12 @@
           # fixture we missed in a prior pass). Build vendored deps with
           # every feature on so the cargoArtifacts cache stays warm for
           # every downstream check.
-          cargoExtraArgs = "--workspace --all-features";
+          # --exclude part-registry-desktop: the Tauri shell drags the
+          # gtk/webkit native closure into every Linux check (glib-sys
+          # build scripts fail without it) for a ~100-line dispatch
+          # wrapper. It is checked by its own lighter `desktop-check`
+          # below instead of taxing the shared deps artifact.
+          cargoExtraArgs = "--workspace --exclude part-registry-desktop --all-features";
           # Native deps a few transitive crates need to LINK during the
           # vendor build (openssl-sys via reqwest, pkg-config consumers).
           nativeBuildInputs = [ pkgs.pkg-config ];
@@ -316,7 +321,7 @@
           # warnings are errors (matches the old rust.yml).
           clippy = craneLib.cargoClippy (commonArgs // {
             inherit cargoArtifacts;
-            cargoClippyExtraArgs = "--workspace --all-targets --all-features -- -D warnings";
+            cargoClippyExtraArgs = "--workspace --exclude part-registry-desktop --all-targets --all-features -- -D warnings";
           });
 
           # cargo test — every feature ON so feature-gated corners
@@ -324,7 +329,7 @@
           # run in CI.
           test = craneLib.cargoTest (commonArgs // {
             inherit cargoArtifacts;
-            cargoTestExtraArgs = "--workspace --all-features";
+            cargoTestExtraArgs = "--workspace --exclude part-registry-desktop --all-features";
           });
 
           # cargo-deny — licenses + RustSec advisories. The advisory-db
@@ -332,6 +337,10 @@
           # the Nix sandbox (no GitHub clone at gate time).
           deny = craneLib.cargoDeny (commonArgs // {
             inherit advisory-db;
+            # cargo-deny takes its own flags; crane must not forward the
+            # workspace/feature args (deny errors on `--workspace`).
+            cargoExtraArgs = "";
+            cargoDenyExtraArgs = "check bans licenses sources advisories";
           });
 
           # ADR obligations gate — the Rust devtools binary against
