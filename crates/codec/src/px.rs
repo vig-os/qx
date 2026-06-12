@@ -37,20 +37,16 @@
 //!   on the QR's text side (right for `horz`, bottom for `vert`).
 //! - The id-text is **bitmap typography rendered as rects**: no
 //!   `<text>`, no fonts, no rasterizer variance. The glyphs are the
-//!   first-party **nx75 anchor font** ([`crate::glyph_font`], baked
-//!   from `design/glyph-font.v1.json`), rasterised here at integer
-//!   scale `k = glyph_px` by the sweep law (see [`raster_glyph`]):
-//!   every anchor's kernel is pulled along each of its active edges
-//!   to the edge midpoint — orthogonal sweeps cover a round width-k
-//!   envelope; diagonal RUNS sweep an anti-diagonal band of exactly
-//!   k px per band row, one-sided away from foreign ink flush to a
-//!   bridge cell or split inner/outer otherwise (k=3 gains one extra
-//!   outside row), while corner-connector diagonals keep the slim
-//!   corridor-exact diamond pull — plus a rest-stamp of the kernel
-//!   at every non-band-owned anchor, all clipped to the anchor cells
-//!   and the bridge cells of active diagonal edges. Ink emits as
-//!   horizontal-run `<rect>`s in the same crispEdges group as the QR
-//!   modules.
+//!   first-party **nx75 v2 anchor font** ([`crate::glyph_font`],
+//!   baked from `design/glyph-font.v2.json`), rasterised here at
+//!   integer scale `k = glyph_px` by the connection-kernel law (see
+//!   [`raster_glyph`]): the union of straight-connection rectangles
+//!   (k wide, node center to node center inclusive), diagonal corner
+//!   diamonds (L1 radius k at the shared cell corner, clipped to the
+//!   k-row anti-diagonal band) and node quadrants (each anchor-cell
+//!   pixel not already painted is painted iff its quadrant bit is
+//!   set in the anchor's kernel). Ink emits as horizontal-run
+//!   `<rect>`s in the same crispEdges group as the QR modules.
 //! - Text-block placement is the g-law: the glyph scale `g` is the
 //!   largest integer with the block `rows·7g + (rows−1)·g` inside
 //!   `data_px`, capped at `module_px` (text dots never coarser than
@@ -234,161 +230,82 @@ fn qr_text_gap(white_side: u32, quiet: u32, module_px: u32) -> u32 {
     (white_side + white_side.div_ceil(2)).max(quiet * module_px)
 }
 
-/// One half-edge sweep of the nx75 raster law: an anchor's kernel
-/// pulled from its center `(ax, ay)` along `(vx, vy)` to the edge
-/// midpoint (the far half belongs to the far anchor's kernel).
-/// Diagonal sweeps carry the edge's CANONICAL a->b frame — `(nx,
-/// ny)` is the normal of the stored a->b orientation and `out` the
-/// baked outward sign (local foreign-side override, else the ink
-/// balance), shared by BOTH half-sweeps so the band can never flip
-/// sides at the midpoint — plus the baked run/corner-connector
-/// split: only `is_run` diagonals take the anti-diagonal band.
-struct Sweep {
-    ax: f64,
-    ay: f64,
-    vx: f64,
-    vy: f64,
-    diag: bool,
-    is_run: bool,
-    nx: f64,
-    ny: f64,
-    out: f64,
-    one_sided: bool,
-}
-
-/// `true` when the rest-stamp kernel covers offset `(dx, dy)` from
-/// the anchor center: the L1 diamond unconditionally, the square
-/// quadrants per `mask` corner bit (bit order per
-/// [`crate::glyph_font::Anchor::corner_mask`]).
-fn kern_covers(mask: u8, dx: f64, dy: f64, half: f64) -> bool {
-    if dx.abs() + dy.abs() <= half {
-        return true;
-    }
-    if dx.abs() > half || dy.abs() > half {
-        return false;
-    }
-    let ci = if dy < 0.0 { 0 } else { 2 } + if dx < 0.0 { 0 } else { 1 };
-    mask >> ci & 1 == 1
+/// One render stamp of the nx75 v2 connection-kernel law: the ink a
+/// single active connection owns, independent of every other stamp
+/// (the render is a pure union).
+enum Stamp {
+    /// Straight connection: a k-wide rectangle between the two node
+    /// centers inclusive — `horiz` picks the longitudinal axis (it
+    /// is `a.r == b.r`, baked from integers, no float compare).
+    Rect {
+        x1: f64,
+        x2: f64,
+        y1: f64,
+        y2: f64,
+        horiz: bool,
+    },
+    /// Diagonal connection: an L1 diamond of radius k at the shared
+    /// cell corner, clipped to the k-row anti-diagonal band —
+    /// `same_sign` is true when the edge direction has dr == dc, so
+    /// the band index is |dx-dy| there and |dx+dy| otherwise.
+    Diam { cx: f64, cy: f64, same_sign: bool },
 }
 
 /// Rasterise one nx75 glyph at integer scale `k` into a row-major
 /// `5k × 7k` ink bitmap — THE renderer for the anchor font, matching
-/// the reference implementation and the bake-time checksums bit for
-/// bit ([`crate::glyph_font`]).
+/// the reference implementation (the editor JS) and the bake-time
+/// checksums bit for bit ([`crate::glyph_font`]).
 ///
-/// The law: every anchor's kernel is pulled along each of its active
-/// edges to the edge midpoint. The pulled body of an ORTHOGONAL
-/// sweep is round (L2 ≤ k/2 of the segment — a uniform width-k
-/// envelope at every angle). A DIAGONAL sweep splits on the baked
-/// run/corner-connector bit: a non-run diagonal (corner connector)
-/// covers the slim corridor-exact diamond pull — L1 ≤ k/2 of the
-/// half-segment, the authored look; a RUN covers an anti-diagonal
-/// band of exactly k px per band row, measured as the signed
-/// perpendicular distance `dsig` in the edge's CANONICAL a->b frame
-/// times the baked outward sign (outside = negative dsig): at k ≤ 2
-/// the full perpendicular width `|dsig| ≤ k/2`; one-sided edges
-/// (baked LOCAL trigger — a bridge cell orthogonally flush to
-/// foreign ink) hug the OUTSIDE of the anchor line, away from the
-/// foreign side — the inner boundary IS the line; edges with no
-/// foreign bridges split the rows inner/outer by parity — and k=3
-/// gains one extra outside row either way. At rest, every
-/// non-band-owned anchor stamps its
-/// kernel ([`kern_covers`]) — except pure diagonal tips, whose stamp
-/// is corners-only (no L1 diamond term); pass-through diagonal
-/// anchors are band-owned and stamp nothing (the
-/// constant-derivative law). Everything clips to the anchor cells
-/// plus the two bridge cells of each active diagonal edge.
+/// The CONNECTION-KERNEL law, a union of three stamp types:
+/// 1. STRAIGHT connection: pixels whose center lies between the two
+///    node centers inclusive longitudinally and within k/2 of the
+///    line transversely — a k-wide rectangle.
+/// 2. DIAGONAL connection: at the shared cell corner
+///    (`cx = max(c1,c2)·k`, `cy = max(r1,r2)·k`), pixels with
+///    `L1(p − corner) ≤ k + eps` and anti-diagonal index `|dx−dy|`
+///    (when the edge direction has dr == dc) or `|dx+dy|` otherwise
+///    `≤ k−1 + eps` — chains render constant-width, single corners
+///    become k-wide chamfers.
+/// 3. NODE quadrants: each anchor-cell pixel not already painted is
+///    painted iff its quadrant bit is set in the anchor's baked
+///    kernel (quadrant = `(dy<0?0:2)+(dx<0?0:1)` relative to the
+///    cell center).
+///
+/// That is the entire law — the stamps are bounded by construction,
+/// so no clip mask exists.
 fn raster_glyph(g: &Glyph, k: u32) -> Vec<bool> {
     let kf = f64::from(k);
     let half = kf / 2.0;
-    let sq2 = std::f64::consts::SQRT_2;
-    // Diagonal band windows for RUN edges: k anti-diagonal rows
-    // total, with k=3 gaining one bonus row on the outside. A
-    // one-sided band hugs the outside of the anchor line; a centered
-    // band splits the rows inner/outer by parity. Corner connectors
-    // never use these windows — they sweep the slim corridor-exact
-    // diamond pull instead.
-    let odd = k % 2 == 1;
-    let rows_one = kf + if k == 3 { 1.0 } else { 0.0 };
-    let lo_one = -((rows_one - if odd { 1.0 } else { 0.5 }) / sq2 + 1e-6);
-    let inner = if odd {
-        (kf - 1.0) / 2.0
-    } else {
-        kf / 2.0 - 1.0
-    };
-    let outer = if odd { (kf - 1.0) / 2.0 } else { kf / 2.0 } + if k == 3 { 1.0 } else { 0.0 };
-    let lo_cen = -(outer / sq2 + 1e-6);
-    let hi_cen = inner / sq2 + 1e-6;
 
-    let cell_at = |r: u8, c: u8| (r as usize) * glyph_font::GRID_COLS as usize + c as usize;
-    let mut allowed = [false; (glyph_font::GRID_ROWS * glyph_font::GRID_COLS) as usize];
+    let mut cell: [Option<u8>; (glyph_font::GRID_ROWS * glyph_font::GRID_COLS) as usize] =
+        [None; (glyph_font::GRID_ROWS * glyph_font::GRID_COLS) as usize];
     for a in g.anchors {
-        allowed[cell_at(a.r, a.c)] = true;
-    }
-    for e in g.edges {
-        if e.diag {
-            let (a, b) = (&g.anchors[e.a as usize], &g.anchors[e.b as usize]);
-            allowed[cell_at(a.r, b.c)] = true;
-            allowed[cell_at(b.r, a.c)] = true;
-        }
+        cell[(a.r as usize) * glyph_font::GRID_COLS as usize + a.c as usize] = Some(a.quad_mask);
     }
 
-    let mut sweeps = Vec::with_capacity(g.edges.len() * 2);
+    let mut stamps = Vec::with_capacity(g.edges.len());
     for e in g.edges {
-        let ea = &g.anchors[e.a as usize];
-        let eb = &g.anchors[e.b as usize];
-        let mut nx = 0.0;
-        let mut ny = 0.0;
-        let mut out = 1.0;
-        let mut one_sided = false;
-        if e.diag {
-            // Canonical a->b frame: one normal and one outward sign
-            // for BOTH half-sweeps — outside is the negative-dsig
-            // side. The baked out_sign already resolves the LOCAL
-            // foreign-side override over the ink-balance default,
-            // and the baked one_sided bit carries the trigger.
-            let ax0 = (f64::from(ea.c) + 0.5) * kf;
-            let ay0 = (f64::from(ea.r) + 0.5) * kf;
-            let bx0 = (f64::from(eb.c) + 0.5) * kf;
-            let by0 = (f64::from(eb.r) + 0.5) * kf;
-            let len = ((bx0 - ax0) * (bx0 - ax0) + (by0 - ay0) * (by0 - ay0)).sqrt();
-            nx = -(by0 - ay0) / len;
-            ny = (bx0 - ax0) / len;
-            out = if e.out_sign > 0 { 1.0 } else { -1.0 };
-            one_sided = e.one_sided;
-        }
-        for (me, ot) in [(ea, eb), (eb, ea)] {
-            let ax = (f64::from(me.c) + 0.5) * kf;
-            let ay = (f64::from(me.r) + 0.5) * kf;
-            let mx = ((f64::from(me.c) + f64::from(ot.c)) / 2.0 + 0.5) * kf;
-            let my = ((f64::from(me.r) + f64::from(ot.r)) / 2.0 + 0.5) * kf;
-            sweeps.push(Sweep {
-                ax,
-                ay,
-                vx: mx - ax,
-                vy: my - ay,
-                diag: e.diag,
-                is_run: e.is_run,
-                nx,
-                ny,
-                out,
-                one_sided,
+        let a = &g.anchors[e.a as usize];
+        let b = &g.anchors[e.b as usize];
+        if !e.diag {
+            stamps.push(Stamp::Rect {
+                x1: (f64::from(a.c.min(b.c)) + 0.5) * kf,
+                x2: (f64::from(a.c.max(b.c)) + 0.5) * kf,
+                y1: (f64::from(a.r.min(b.r)) + 0.5) * kf,
+                y2: (f64::from(a.r.max(b.r)) + 0.5) * kf,
+                horiz: a.r == b.r,
+            });
+        } else {
+            // Anti-diagonal index sign: direction (1,1) -> dx-dy,
+            // else dx+dy
+            let same_sign = i16::from(b.r) - i16::from(a.r) == i16::from(b.c) - i16::from(a.c);
+            stamps.push(Stamp::Diam {
+                cx: f64::from(a.c.max(b.c)) * kf,
+                cy: f64::from(a.r.max(b.r)) * kf,
+                same_sign,
             });
         }
     }
-    let stamps: Vec<(f64, f64, u8, bool)> = g
-        .anchors
-        .iter()
-        .filter(|a| a.has_stamp)
-        .map(|a| {
-            (
-                (f64::from(a.c) + 0.5) * kf,
-                (f64::from(a.r) + 0.5) * kf,
-                a.corner_mask,
-                a.diag_tip,
-            )
-        })
-        .collect();
 
     let w = (glyph_font::GRID_COLS * k) as usize;
     let h = (glyph_font::GRID_ROWS * k) as usize;
@@ -397,67 +314,55 @@ fn raster_glyph(g: &Glyph, k: u32) -> Vec<bool> {
         let cr = j as u32 / k;
         let y = j as f64 + 0.5;
         for i in 0..w {
-            let cc = i as u32 / k;
-            if !allowed[(cr * glyph_font::GRID_COLS + cc) as usize] {
-                continue;
-            }
             let x = i as f64 + 0.5;
             let mut on = false;
-            for s in &sweeps {
-                let l2 = s.vx * s.vx + s.vy * s.vy;
-                let t = (((x - s.ax) * s.vx + (y - s.ay) * s.vy) / l2).clamp(0.0, 1.0);
-                if t <= 0.0 {
-                    continue;
-                }
-                if s.diag {
-                    let hit = if !s.is_run {
-                        // Corner connector: slim corridor-exact
-                        // diamond pull (L1 to the half-segment) —
-                        // the authored look
-                        let dx = x - (s.ax + t * s.vx);
-                        let dy = y - (s.ay + t * s.vy);
-                        dx.abs() + dy.abs() <= half + 1e-6
-                    } else {
-                        let dsig = ((x - s.ax) * s.nx + (y - s.ay) * s.ny) * s.out;
-                        if k <= 2 {
-                            dsig.abs() <= half + 1e-6
-                        } else if s.one_sided {
-                            dsig >= lo_one && dsig <= 1e-6
-                        } else {
-                            dsig >= lo_cen && dsig <= hi_cen
+            for s in &stamps {
+                match *s {
+                    Stamp::Rect {
+                        x1,
+                        x2,
+                        y1,
+                        y2,
+                        horiz,
+                    } => {
+                        // Px centers between the node centers
+                        // inclusive, k-wide perpendicular
+                        if horiz {
+                            if x >= x1 - 1e-9 && x <= x2 + 1e-9 && (y - y1).abs() <= half {
+                                on = true;
+                                break;
+                            }
+                        } else if y >= y1 - 1e-9 && y <= y2 + 1e-9 && (x - x1).abs() <= half {
+                            on = true;
+                            break;
                         }
-                    };
-                    if hit {
-                        on = true;
-                        break;
                     }
-                } else {
-                    let dx = x - (s.ax + t * s.vx);
-                    let dy = y - (s.ay + t * s.vy);
-                    if (dx * dx + dy * dy).sqrt() <= half {
-                        on = true;
-                        break;
+                    Stamp::Diam { cx, cy, same_sign } => {
+                        // Corner diamond (radius k, reaches both
+                        // node centers) clipped to the k-row
+                        // anti-diagonal band
+                        let dx = x - cx;
+                        let dy = y - cy;
+                        let anti = if same_sign {
+                            (dx - dy).abs()
+                        } else {
+                            (dx + dy).abs()
+                        };
+                        if dx.abs() + dy.abs() <= kf + 1e-9 && anti <= kf - 1.0 + 1e-9 {
+                            on = true;
+                            break;
+                        }
                     }
                 }
             }
             if !on {
-                for &(sx, sy, mask, tip) in &stamps {
-                    let dx = x - sx;
-                    let dy = y - sy;
-                    if tip {
-                        // Pure diagonal tip: corners-only endplate —
-                        // the band end is the cap, the chip is the
-                        // outward block, no L1 diamond term
-                        if dx.abs() <= half && dy.abs() <= half {
-                            let ci = if dy < 0.0 { 0 } else { 2 } + if dx < 0.0 { 0 } else { 1 };
-                            if mask >> ci & 1 == 1 {
-                                on = true;
-                                break;
-                            }
-                        }
-                    } else if kern_covers(mask, dx, dy, half) {
+                let cc = i as u32 / k;
+                if let Some(mask) = cell[(cr * glyph_font::GRID_COLS + cc) as usize] {
+                    let dx = x - (f64::from(cc) + 0.5) * kf;
+                    let dy = y - (f64::from(cr) + 0.5) * kf;
+                    let ci = if dy < 0.0 { 0 } else { 2 } + if dx < 0.0 { 0 } else { 1 };
+                    if mask >> ci & 1 == 1 {
                         on = true;
-                        break;
                     }
                 }
             }
@@ -1350,7 +1255,7 @@ mod tests {
     fn nx75_checksums_lock_the_renderer_to_the_bake() {
         // 31 glyphs × k ∈ {2, 3, 4, 6}: the Rust raster must
         // reproduce the bake-time ink counts exactly — any drift in
-        // the sweep law (or the baked data) trips here.
+        // the stamp law (or the baked data) trips here.
         for g in &glyph_font::GLYPHS {
             for (i, &k) in glyph_font::CHECKSUM_KS.iter().enumerate() {
                 let got = raster_glyph(g, k).iter().filter(|&&p| p).count() as u32;

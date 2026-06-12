@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-font = json.loads(Path("design/glyph-font.v1.json").read_text())
+font = json.loads(Path("design/glyph-font.v2.json").read_text())
 F = {ch: ["".join(str(v) for v in row) for row in g["px"]] for ch, g in font.items()}
 
 html = """<!DOCTYPE html>
@@ -99,181 +99,60 @@ function kernCovers(corners, dx, dy, half){
   return !!corners[ci];
 }
 function raster(g, k, useMask){
+  // CONNECTION-KERNEL model: connections own center-to-center ink
+  // with fixed shapes; nodes are pure edge-px config (quadrants).
+  // straight = k-wide rect between node centers (inclusive);
+  // diagonal = L1 diamond radius k at the shared corner — it
+  // inscribes the 2x2 cell block exactly, overflow is impossible.
   const px = g.px, edges = activeEdges(g).filter(e=>e.on);
-  const allowed = new Set();
-  for (let r=0;r<7;r++) for (let c=0;c<5;c++) if (px[r][c]) allowed.add(r+","+c);
-  for (const e of edges) if (e.diag){
-    allowed.add(e.a[0]+","+e.b[1]);
-    allowed.add(e.b[0]+","+e.a[1]);
-  }
   const img = [];
   for (let j=0;j<7*k;j++){ img.push(new Array(5*k).fill(0)); }
   const half = k/2;
-  // THE model: every anchor's kernel is pulled along each of its
-  // active vectors to the edge MIDPOINT (the far half belongs to the
-  // far anchor's kernel; midpoints sit on cell boundaries, so kernels
-  // own their cells). Tips cap with their kernel at rest; junctions
-  // are hole-free by construction (their kernel centers every sweep).
-  const sweeps = [];
-  const inked = new Set();
-  // constant-derivative law: pass-through DIAGONAL anchors (exactly
-  // two collinear diagonal edges) get NO rest-stamp — their cells are
-  // band-owned; stamps poke 0.35px past the band and jitter the edge
-  const adeg = {};
+  const stamps = [];
   for (const e of edges){
-    for (const q of [e.a, e.b]){
-      const key = q[0]+","+q[1];
-      (adeg[key] = adeg[key] || []).push(e);
-    }
-  }
-  const bandOwned = new Set();
-  const diagTip = new Set();
-  for (const key in adeg){
-    const es2 = adeg[key];
-    if (es2.length === 2 && es2[0].diag && es2[1].diag){
-      const d0 = [es2[0].b[0]-es2[0].a[0], es2[0].b[1]-es2[0].a[1]];
-      const d1 = [es2[1].b[0]-es2[1].a[0], es2[1].b[1]-es2[1].a[1]];
-      if (Math.abs(d0[0]*d1[1] - d0[1]*d1[0]) < 1e-9) bandOwned.add(key);
-    }
-    if (es2.length === 1 && es2[0].diag) diagTip.add(key);
-  }
-  for (const e of edges){
-    // canonical edge frame: the normal and the ink balance are
-    // computed ONCE from the stored a->b orientation, and BOTH
-    // half-sweeps reuse the same nx/ny/outSign — a centered band
-    // can never flip its outer side at the edge midpoint
-    let outSign = 1, oneSided = false, cnx = 0, cny = 0;
-    // run vs corner-connector: a diagonal edge with NO collinear
-    // diagonal continuation at either end is a corner treatment and
-    // keeps the slim corridor-exact sweep the glyphs were authored
-    // under; only true runs take the k-row band
-    let isRun = false;
-    if (e.diag){
-      const dr0 = e.b[0]-e.a[0], dc0 = e.b[1]-e.a[1];
-      const beyondB = (e.b[0]+dr0)+","+(e.b[1]+dc0);
-      const beforeA = (e.a[0]-dr0)+","+(e.a[1]-dc0);
-      for (const e2 of edges){
-        if (!e2.diag || e2 === e) continue;
-        for (const q of [e2.a, e2.b]){
-          const qk = q[0]+","+q[1];
-          if (qk === beyondB || qk === beforeA){ isRun = true; break; }
-        }
-        if (isRun) break;
-      }
-    }
-    if (e.diag){
-      const ax0=(e.a[1]+0.5)*k, ay0=(e.a[0]+0.5)*k;
-      const bx0=(e.b[1]+0.5)*k, by0=(e.b[0]+0.5)*k;
-      const len0 = Math.hypot(bx0-ax0, by0-ay0);
-      cnx = -(by0-ay0)/len0; cny = (bx0-ax0)/len0;
-      let bal = 0;
-      for (let rr=0;rr<7;rr++) for (let cc2=0;cc2<5;cc2++){
-        if (!px[rr][cc2]) continue;
-        const d = ((cc2+0.5)*k-ax0)*cnx + ((rr+0.5)*k-ay0)*cny;
-        if (Math.abs(d) > 1e-9) bal += Math.sign(d);
-      }
-      // outside = the side with less ink mass = negative dsig; at
-      // k=3 the diagonal gains its extra row there, corridor-exact
-      outSign = bal > 0 ? 1 : -1;
-      // LOCAL one-sided trigger: only when a bridge cell of this
-      // edge is orthogonally flush to FOREIGN ink (phantom risk),
-      // and the band shifts AWAY from that ink. Bowl corners with
-      // no neighbors stay centered (stamps stay under the band).
-      let foreignSide = 0;
-      for (const [br2, bc2] of [[e.a[0], e.b[1]], [e.b[0], e.a[1]]]){
-        let foreign = false;
-        for (const [dr2, dc2] of [[-1,0],[1,0],[0,-1],[0,1]]){
-          const nr2 = br2+dr2, nc2 = bc2+dc2;
-          if (nr2<0||nr2>=7||nc2<0||nc2>=5 || !px[nr2][nc2]) continue;
-          const isEnd2 = (nr2===e.a[0]&&nc2===e.a[1])||(nr2===e.b[0]&&nc2===e.b[1]);
-          if (!isEnd2){ foreign = true; break; }
-        }
-        if (foreign){
-          const db = ((bc2+0.5)*k-ax0)*cnx + ((br2+0.5)*k-ay0)*cny;
-          foreignSide += Math.sign(db);
-        }
-      }
-      if (foreignSide !== 0){
-        outSign = foreignSide > 0 ? 1 : -1;
-        oneSided = true;
-      }
-    }
-    for (const [me, other] of [[e.a, e.b], [e.b, e.a]]){
-      const ax=(me[1]+0.5)*k, ay=(me[0]+0.5)*k;
-      const mx=((me[1]+other[1])/2+0.5)*k, my=((me[0]+other[0])/2+0.5)*k;
-      sweeps.push({ax, ay, vx: mx-ax, vy: my-ay, diag: e.diag, isRun, nx: cnx, ny: cny, outSign, oneSided, bandOwned: bandOwned.has(me[0]+","+me[1]), diagTip: diagTip.has(me[0]+","+me[1]), kern: kernel(g, me[0], me[1])});
-      inked.add(me[0]+","+me[1]);
-    }
-  }
-  for (let r=0;r<7;r++) for (let c=0;c<5;c++){
-    if (px[r][c] && !inked.has(r+","+c)){
-      sweeps.push({ax:(c+0.5)*k, ay:(r+0.5)*k, vx:0, vy:0, kern: kernel(g,r,c)});
+    if (!e.diag){
+      const x1=(Math.min(e.a[1],e.b[1])+0.5)*k, x2=(Math.max(e.a[1],e.b[1])+0.5)*k;
+      const y1=(Math.min(e.a[0],e.b[0])+0.5)*k, y2=(Math.max(e.a[0],e.b[0])+0.5)*k;
+      stamps.push({t:"rect", x1, x2, y1, y2});
+    } else {
+      const cx = Math.max(e.a[1], e.b[1])*k;
+      const cy = Math.max(e.a[0], e.b[0])*k;
+      // anti-diagonal index sign: direction (1,1) -> dx-dy, else dx+dy
+      const sameSign = (e.b[0]-e.a[0]) === (e.b[1]-e.a[1]);
+      stamps.push({t:"diam", cx, cy, sameSign});
     }
   }
   for (let j=0;j<7*k;j++) for (let i=0;i<5*k;i++){
-    const cr = Math.floor(j/k), cc = Math.floor(i/k);
-    if (useMask && !allowed.has(cr+","+cc)) continue;
     const x=i+0.5, y=j+0.5;
     let on = false;
-    for (const s of sweeps){
-      // pulled BODY is round (L2 <= k/2): uniform width-k envelope at
-      // every angle (diamond pulled = thin, square pulled = greedy) —
-      // the KERNEL shape applies at rest: cell ownership, endplates,
-      // corner chips
-      const L2 = s.vx*s.vx + s.vy*s.vy;
-      const t = L2 === 0 ? 0 : Math.max(0, Math.min(1, ((x-s.ax)*s.vx + (y-s.ay)*s.vy)/L2));
-      if (t > 0 && L2 > 0){
-        if (s.diag){
-          // pixel-font diagonal law: exactly k px per anti-diagonal
-          // row — x/y extent k (stem-equal), band windows measured
-          // against the CANONICAL a->b normal stored on the sweep
-          const dsig = ((x-s.ax)*s.nx + (y-s.ay)*s.ny) * s.outSign;
-          // k anti-diagonal rows total; parity remainder and the k=3
-          // bonus row always land on the OUTSIDE
-          if (!s.isRun){
-            // corner connector: slim diamond-pull (L1 to the
-            // half-segment), corridor-exact — the authored look
-            const t2 = Math.max(0, Math.min(1, (((x-s.ax)*s.vx)+((y-s.ay)*s.vy))/L2));
-            const qx2 = s.ax + t2*s.vx, qy2 = s.ay + t2*s.vy;
-            if (Math.abs(x-qx2) + Math.abs(y-qy2) <= k/2 + 1e-6){ on=true; break; }
-          } else if (k <= 2){
-            // n=2 floor: perpendicular thickness = kernel size
-            // (full-width pulled body; the mask absorbs the spill)
-            if (Math.abs(dsig) <= k/2 + 1e-6){ on=true; break; }
-          } else if (s.oneSided){
-            // ink nearby: the band hugs the OUTSIDE of the anchor
-            // line — inner boundary IS the line, so it can never
-            // overshoot toward a neighboring stroke (no guard needed)
-            const rows = k + (k === 3 ? 1 : 0);
-            const odd = (k % 2) === 1;
-            const lo = -((rows - (odd ? 1 : 0.5))/Math.SQRT2 + 1e-6);
-            if (dsig >= lo && dsig <= 1e-6){ on=true; break; }
-          } else {
-            const odd = (k % 2) === 1;
-            const innerRows = odd ? (k-1)/2 : (k/2 - 1);
-            const outerRows = (odd ? (k-1)/2 : k/2) + (k === 3 ? 1 : 0);
-            const hw = innerRows/Math.SQRT2 + 1e-6;
-            const lo = -(outerRows/Math.SQRT2 + 1e-6);
-            if (dsig >= lo && dsig <= hw){ on=true; break; }
-          }
+    for (const s of stamps){
+      if (s.t === "rect"){
+        if (s.y1 === s.y2){
+          // horizontal: px centers between the node centers
+          // inclusive, k-wide perpendicular
+          if (x >= s.x1-1e-9 && x <= s.x2+1e-9 && Math.abs(y - s.y1) <= half){ on=true; break; }
         } else {
-          const dx = x-(s.ax+t*s.vx), dy = y-(s.ay+t*s.vy);
-          if (Math.hypot(dx, dy) <= half){ on=true; break; }
+          if (y >= s.y1-1e-9 && y <= s.y2+1e-9 && Math.abs(x - s.x1) <= half){ on=true; break; }
         }
-      }
-      if (!s.bandOwned){
-        const dx2 = x-s.ax, dy2 = y-s.ay;
-        if (s.diagTip){
-          // pure diagonal tip: corners-only endplate (no diamond —
-          // the band end is the cap; the chip is the outward block)
-          if (Math.abs(dx2)<=half && Math.abs(dy2)<=half){
-            const ci = (dy2<0?0:2)+(dx2<0?0:1);
-            if (s.kern[ci]){ on=true; break; }
-          }
-        } else if (kernCovers(s.kern, dx2, dy2, half)){ on=true; break; }
+      } else {
+        // corner diamond (radius k, reaches both node centers)
+        // clipped to the k-row perpendicular band: chains render
+        // constant-width, single corners become k-wide chamfers
+        const dx = x-s.cx, dy = y-s.cy;
+        const anti = s.sameSign ? Math.abs(dx-dy) : Math.abs(dx+dy);
+        if (Math.abs(dx)+Math.abs(dy) <= k + 1e-9 && anti <= k-1 + 1e-9){ on=true; break; }
       }
     }
-    if (on) img[j][i]=1;
+    if (!on){
+      const cr = Math.floor(j/k), cc = Math.floor(i/k);
+      if (cr<7 && cc<5 && px[cr][cc]){
+        const kc = kernel(g, cr, cc);
+        const dx = x-(cc+0.5)*k, dy = y-(cr+0.5)*k;
+        const ci = (dy<0?0:2)+(dx<0?0:1);
+        if (kc[ci]) on = true;
+      }
+    }
+    if (img[j] && on) img[j][i]=1;
   }
   return img;
 }

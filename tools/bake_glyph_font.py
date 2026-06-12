@@ -3,17 +3,16 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Bake crates/codec/src/glyph_font.rs from design/glyph-font.v1.json.
+"""Bake crates/codec/src/glyph_font.rs from design/glyph-font.v2.json.
 
-nx75 — the part-registry anchor font. The design file carries, per
-glyph, a 7x5 anchor bitmap ("px"), edge overrides ("conn",
-"r1,c1-r2,c2" -> bool) and kernel overrides ("kern", "r,c" ->
-[tl,tr,bl,br]). This baker RESOLVES everything the renderer would
-otherwise re-derive — active edges, per-anchor kernels, band-owned
-pass-through anchors, per-edge ink-balance signs — and emits a pure
-const-data Rust module plus per-glyph ink-pixel checksums for
-k = 2, 3, 4, 6 computed by the same raster law the Rust renderer
-implements (crates/codec/src/px.rs).
+nx75 v2 — the part-registry anchor font, CONNECTION-KERNEL model.
+The design file carries, per glyph, a 7x5 anchor bitmap ("px"), edge
+overrides ("conn", "r1,c1-r2,c2" -> bool) and kernel overrides
+("kern", "r,c" -> [tl,tr,bl,br]). This baker resolves the active
+edges and per-anchor kernels and emits a pure const-data Rust module
+plus per-glyph ink-pixel checksums for k = 2, 3, 4, 6 computed by
+the same raster law the Rust renderer implements
+(crates/codec/src/px.rs).
 
 Semantics match the reference implementation (the JS inside
 tools/font_editor_gen.py) bit for bit:
@@ -24,30 +23,24 @@ tools/font_editor_gen.py) bit for bit:
   overrides win either way
 - kernels: a "kern" override wins; else any active orthogonal edge
   OR an isolated anchor yields the full square [1,1,1,1]; else the
-  bare diamond [0,0,0,0]
-- band-owned anchors: exactly two collinear DIAGONAL edges — no
-  rest-stamp (the constant-derivative law)
-- diagonal tips: an anchor with exactly ONE active edge and that
-  edge diagonal gets a corners-only rest-stamp (no L1 diamond term)
-- is_run per diagonal edge: true iff some OTHER active diagonal
-  edge has an endpoint at the collinear continuation beyond either
-  end (b + (b-a) or a - (b-a)); runs sweep the k-row anti-diagonal
-  band, non-runs (corner connectors, e.g. the bowl corners of
-  8/6/B/D) sweep the slim corridor-exact diamond pull instead
-- one_sided per diagonal edge: the LOCAL foreign-flush trigger —
-  true iff a bridge cell of the edge is orthogonally flush to
-  FOREIGN ink (an anchor that is not an endpoint of the edge); the
-  band then hugs the outside of the anchor line, away from the
-  foreign side; no foreign bridges means a centered band
-- out_sign per diagonal edge, in the edge's CANONICAL a->b frame
-  (as stored), computed once at bake time: when one_sided it is the
-  foreign-side sign (the sum of the foreign bridges' signed
-  perpendicular distances against the edge line's normal), else the
-  sign of the glyph's global ink balance (balance > 0 -> +1, else
-  -1). Outside = the negative-dsig side, and BOTH half-sweeps
-  measure dsig with the same canonical normal and out_sign — never
-  recomputed from the half-sweep direction, so a centered band
-  cannot flip its outer side at the edge midpoint
+  bare quadrant-less node [0,0,0,0]
+
+The render is the union of three stamp types — no masks, no sweeps,
+no windows, no outward signs:
+
+1. STRAIGHT connection: a k-wide rectangle between the two node
+   centers inclusive (px center within [c1_center, c2_center]
+   longitudinally, within k/2 of the line transversely)
+2. DIAGONAL connection: at the shared cell corner
+   (cx = max(c1,c2)*k, cy = max(r1,r2)*k), pixels with
+   L1(p - corner) <= k + eps AND anti-diagonal index |dx-dy| (when
+   the edge direction has dr == dc) or |dx+dy| (otherwise)
+   <= k-1 + eps
+3. NODE quadrants: each anchor-cell pixel not already painted is
+   painted iff its quadrant bit is set in the resolved kernel
+   (quadrant = (dy<0?0:2)+(dx<0?0:1) relative to the cell center)
+
+The stamps are bounded by construction, so no clip mask exists.
 
 The output is deterministic (alphabet order, no timestamps):
 re-running on the same design file yields a byte-identical module.
@@ -59,7 +52,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 from pathlib import Path
 
@@ -68,10 +60,8 @@ ROWS, COLS = 7, 5
 CHECKSUM_KS = (2, 3, 4, 6)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DESIGN = REPO_ROOT / "design" / "glyph-font.v1.json"
+DESIGN = REPO_ROOT / "design" / "glyph-font.v2.json"
 DEFAULT_OUT = REPO_ROOT / "crates" / "codec" / "src" / "glyph_font.rs"
-
-SQRT2 = math.sqrt(2.0)
 
 
 def at(px: list[list[int]], r: int, c: int) -> int:
@@ -81,9 +71,8 @@ def at(px: list[list[int]], r: int, c: int) -> int:
 def resolve_glyph(g: dict) -> tuple[list[dict], list[dict]]:
     """Resolve one design-file glyph into baked anchors + edges.
 
-    Returns (anchors, edges); anchors are dicts with r, c,
-    corner_mask, band_owned, has_stamp, diag_tip; edges are dicts
-    with a, b (anchor indices), diag, is_run, out_sign, one_sided.
+    Returns (anchors, edges); anchors are dicts with r, c, quad_mask;
+    edges are dicts with a, b (anchor indices) and diag.
     """
     px = g["px"]
     conn = g.get("conn", {})
@@ -110,26 +99,13 @@ def resolve_glyph(g: dict) -> tuple[list[dict], list[dict]]:
                 if on:
                     edges.append(((r, c), (r + dr, c + dc), diag))
 
-    # Band-owned anchors: exactly two collinear diagonal edges.
     incident: dict[tuple[int, int], list] = {}
     for a, b, diag in edges:
         incident.setdefault(a, []).append((a, b, diag))
         incident.setdefault(b, []).append((a, b, diag))
-    band_owned = set()
-    diag_tip = set()
-    for rc, es in incident.items():
-        if len(es) == 2 and es[0][2] and es[1][2]:
-            d0 = (es[0][1][0] - es[0][0][0], es[0][1][1] - es[0][0][1])
-            d1 = (es[1][1][0] - es[1][0][0], es[1][1][1] - es[1][0][1])
-            if abs(d0[0] * d1[1] - d0[1] * d1[0]) < 1e-9:
-                band_owned.add(rc)
-        # Pure diagonal tip: exactly one active edge, diagonal — its
-        # rest-stamp is corners-only (no L1 diamond term)
-        if len(es) == 1 and es[0][2]:
-            diag_tip.add(rc)
 
-    # Kernels: override wins; else orth-touching or isolated anchors
-    # are the full square, pure-diagonal anchors the bare diamond.
+    # Kernels: override wins; else any active orthogonal edge or an
+    # isolated anchor yields the full square, else all quadrants off.
     def kernel(rc: tuple[int, int]) -> int:
         k = kern.get(f"{rc[0]},{rc[1]}")
         if k is not None:
@@ -141,88 +117,12 @@ def resolve_glyph(g: dict) -> tuple[list[dict], list[dict]]:
         return corners[0] | corners[1] << 1 | corners[2] << 2 | corners[3] << 3
 
     baked_anchors = [
-        {
-            "r": r,
-            "c": c,
-            "corner_mask": kernel((r, c)),
-            "band_owned": (r, c) in band_owned,
-            "has_stamp": (r, c) not in band_owned,
-            "diag_tip": (r, c) in diag_tip,
-        }
-        for r, c in anchors
+        {"r": r, "c": c, "quad_mask": kernel((r, c))} for r, c in anchors
     ]
-
-    # Per-edge band law for DIAGONALS in the edge's CANONICAL a->b
-    # frame — both half-sweeps reuse it. Everything here is
-    # scale-invariant, so it bakes once: anchors on the edge line are
-    # within the 1e-9 threshold and never vote in the balance.
-    baked_edges = []
-    for ei, (a, b, diag) in enumerate(edges):
-        is_run = False
-        out_sign = 0
-        one_sided = False
-        if diag:
-            # RUN iff some OTHER active diagonal edge has an endpoint
-            # at the collinear continuation beyond either end; corner
-            # connectors keep the slim corridor-exact sweep.
-            dr0, dc0 = b[0] - a[0], b[1] - a[1]
-            beyond_b = (b[0] + dr0, b[1] + dc0)
-            before_a = (a[0] - dr0, a[1] - dc0)
-            for ej, (a2, b2, diag2) in enumerate(edges):
-                if not diag2 or ej == ei:
-                    continue
-                if a2 in (beyond_b, before_a) or b2 in (beyond_b, before_a):
-                    is_run = True
-                    break
-            ax, ay = a[1] + 0.5, a[0] + 0.5
-            bx, by = b[1] + 0.5, b[0] + 0.5
-            ln = math.sqrt((bx - ax) ** 2 + (by - ay) ** 2)
-            nx, ny = -(by - ay) / ln, (bx - ax) / ln
-            bal = 0
-            for rr, cc in anchors:
-                d = (cc + 0.5 - ax) * nx + (rr + 0.5 - ay) * ny
-                if abs(d) > 1e-9:
-                    bal += 1 if d > 0 else -1
-            out_sign = 1 if bal > 0 else -1
-            # LOCAL one-sided trigger: a bridge cell of this edge is
-            # orthogonally flush to FOREIGN ink (an anchor that is
-            # not an endpoint of the edge) — the band shifts AWAY
-            # from the foreign side. No foreign bridges -> centered,
-            # with the ink-balance sign deciding the outer side.
-            foreign_side = 0
-            for br, bc in ((a[0], b[1]), (b[0], a[1])):
-                foreign = False
-                for dr2, dc2 in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                    nr, nc = br + dr2, bc + dc2
-                    if at(px, nr, nc) and (nr, nc) not in (a, b):
-                        foreign = True
-                        break
-                if foreign:
-                    db = (bc + 0.5 - ax) * nx + (br + 0.5 - ay) * ny
-                    foreign_side += 1 if db > 0 else -1
-            if foreign_side != 0:
-                out_sign = 1 if foreign_side > 0 else -1
-                one_sided = True
-        baked_edges.append(
-            {
-                "a": index[a],
-                "b": index[b],
-                "diag": diag,
-                "is_run": is_run,
-                "out_sign": out_sign,
-                "one_sided": one_sided,
-            }
-        )
+    baked_edges = [
+        {"a": index[a], "b": index[b], "diag": diag} for a, b, diag in edges
+    ]
     return baked_anchors, baked_edges
-
-
-def kern_covers(mask: int, dx: float, dy: float, half: float) -> bool:
-    if abs(dx) + abs(dy) <= half:
-        return True
-    if abs(dx) > half or abs(dy) > half:
-        return False
-    ci = (0 if dy < 0 else 2) + (0 if dx < 0 else 1)
-    return bool(mask >> ci & 1)
 
 
 def raster(anchors: list[dict], edges: list[dict], k: int) -> int:
@@ -233,143 +133,94 @@ def raster(anchors: list[dict], edges: list[dict], k: int) -> int:
 def raster_image(anchors: list[dict], edges: list[dict], k: int) -> list[list[int]]:
     """The full 5k x 7k ink bitmap, row-major — the renderer's law.
 
-    This mirrors crates/codec/src/px.rs raster_glyph operation for
-    operation (same expressions, same order) so the baked checksums
-    lock the Rust renderer bit for bit.
+    This mirrors the reference JS raster() in tools/font_editor_gen.py
+    and crates/codec/src/px.rs raster_glyph expression for expression,
+    so the baked checksums lock all three implementations bit for bit.
     """
     half = k / 2.0
-    # Diagonal band windows for RUN edges: k anti-diagonal rows
-    # total, with k=3 gaining one bonus row on the outside. A
-    # one-sided band hugs the outside of the anchor line — its inner
-    # boundary IS the line; a centered band splits the rows
-    # inner/outer by parity. Non-run diagonals (corner connectors)
-    # never use these windows — they sweep the slim corridor-exact
-    # diamond pull instead.
-    odd = k % 2 == 1
-    rows_one = k + (1 if k == 3 else 0)
-    lo_one = -((rows_one - (1.0 if odd else 0.5)) / SQRT2 + 1e-6)
-    inner = (k - 1) / 2.0 if odd else k / 2.0 - 1.0
-    outer = ((k - 1) / 2.0 if odd else k / 2.0) + (1.0 if k == 3 else 0.0)
-    lo_cen = -(outer / SQRT2 + 1e-6)
-    hi_cen = inner / SQRT2 + 1e-6
+    cell = {(a["r"], a["c"]): a["quad_mask"] for a in anchors}
 
-    allowed = {(a["r"], a["c"]) for a in anchors}
-    for e in edges:
-        if e["diag"]:
-            a, b = anchors[e["a"]], anchors[e["b"]]
-            allowed.add((a["r"], b["c"]))
-            allowed.add((b["r"], a["c"]))
-
-    sweeps = []
+    stamps = []
     for e in edges:
         a, b = anchors[e["a"]], anchors[e["b"]]
-        nx = ny = 0.0
-        out = 1.0
-        one_sided = False
-        if e["diag"]:
-            # Canonical a->b frame: one normal and one outSign for
-            # BOTH half-sweeps — outside is the negative-dsig side.
-            # The baked out_sign already resolves the local
-            # foreign-side override over the ink-balance default.
-            ax0, ay0 = (a["c"] + 0.5) * k, (a["r"] + 0.5) * k
-            bx0, by0 = (b["c"] + 0.5) * k, (b["r"] + 0.5) * k
-            ln = math.sqrt((bx0 - ax0) ** 2 + (by0 - ay0) ** 2)
-            nx, ny = -(by0 - ay0) / ln, (bx0 - ax0) / ln
-            out = 1.0 if e["out_sign"] > 0 else -1.0
-            one_sided = e["one_sided"]
-        for me, ot in ((a, b), (b, a)):
-            ax, ay = (me["c"] + 0.5) * k, (me["r"] + 0.5) * k
-            mx = ((me["c"] + ot["c"]) / 2 + 0.5) * k
-            my = ((me["r"] + ot["r"]) / 2 + 0.5) * k
-            sweeps.append(
-                (ax, ay, mx - ax, my - ay, e["diag"], e["is_run"], nx, ny, out, one_sided)
-            )
-    stamps = [
-        ((a["c"] + 0.5) * k, (a["r"] + 0.5) * k, a["corner_mask"], a["diag_tip"])
-        for a in anchors
-        if a["has_stamp"]
-    ]
+        if not e["diag"]:
+            x1 = (min(a["c"], b["c"]) + 0.5) * k
+            x2 = (max(a["c"], b["c"]) + 0.5) * k
+            y1 = (min(a["r"], b["r"]) + 0.5) * k
+            y2 = (max(a["r"], b["r"]) + 0.5) * k
+            stamps.append(("rect", x1, x2, y1, y2))
+        else:
+            cx = max(a["c"], b["c"]) * k
+            cy = max(a["r"], b["r"]) * k
+            # Anti-diagonal index sign: direction (1,1) -> dx-dy,
+            # else dx+dy
+            same_sign = (b["r"] - a["r"]) == (b["c"] - a["c"])
+            stamps.append(("diam", cx, cy, same_sign))
 
     img = [[0] * (COLS * k) for _ in range(ROWS * k)]
     for j in range(ROWS * k):
-        cr = j // k
         y = j + 0.5
         for i in range(COLS * k):
-            if (cr, i // k) not in allowed:
-                continue
             x = i + 0.5
             on = False
-            for ax, ay, vx, vy, diag, is_run, nx, ny, out, one_sided in sweeps:
-                l2 = vx * vx + vy * vy
-                t = max(0.0, min(1.0, ((x - ax) * vx + (y - ay) * vy) / l2))
-                if t <= 0.0:
-                    continue
-                if diag:
-                    if not is_run:
-                        # Corner connector: slim corridor-exact
-                        # diamond pull (L1 to the half-segment) —
-                        # the authored look
-                        dx = x - (ax + t * vx)
-                        dy = y - (ay + t * vy)
-                        hit = abs(dx) + abs(dy) <= half + 1e-6
+            for s in stamps:
+                if s[0] == "rect":
+                    _, x1, x2, y1, y2 = s
+                    if y1 == y2:
+                        # Horizontal: px centers between the node
+                        # centers inclusive, k-wide perpendicular
+                        if x >= x1 - 1e-9 and x <= x2 + 1e-9 and abs(y - y1) <= half:
+                            on = True
+                            break
                     else:
-                        dsig = ((x - ax) * nx + (y - ay) * ny) * out
-                        if k <= 2:
-                            hit = abs(dsig) <= half + 1e-6
-                        elif one_sided:
-                            hit = lo_one <= dsig <= 1e-6
-                        else:
-                            hit = lo_cen <= dsig <= hi_cen
-                    if hit:
-                        on = True
-                        break
+                        if y >= y1 - 1e-9 and y <= y2 + 1e-9 and abs(x - x1) <= half:
+                            on = True
+                            break
                 else:
-                    dx = x - (ax + t * vx)
-                    dy = y - (ay + t * vy)
-                    if math.sqrt(dx * dx + dy * dy) <= half:
+                    # Corner diamond (radius k, reaches both node
+                    # centers) clipped to the k-row perpendicular
+                    # band: chains render constant-width, single
+                    # corners become k-wide chamfers
+                    _, cx, cy, same_sign = s
+                    dx, dy = x - cx, y - cy
+                    anti = abs(dx - dy) if same_sign else abs(dx + dy)
+                    if abs(dx) + abs(dy) <= k + 1e-9 and anti <= k - 1 + 1e-9:
                         on = True
                         break
             if not on:
-                for sx, sy, mask, tip in stamps:
-                    dx, dy = x - sx, y - sy
-                    if tip:
-                        # Pure diagonal tip: corners-only endplate —
-                        # the band end is the cap, the chip is the
-                        # outward block, no L1 diamond term
-                        if abs(dx) <= half and abs(dy) <= half:
-                            ci = (0 if dy < 0 else 2) + (0 if dx < 0 else 1)
-                            if mask >> ci & 1:
-                                on = True
-                                break
-                    elif kern_covers(mask, dx, dy, half):
+                mask = cell.get((j // k, i // k))
+                if mask is not None:
+                    cc, cr = i // k, j // k
+                    dx = x - (cc + 0.5) * k
+                    dy = y - (cr + 0.5) * k
+                    ci = (0 if dy < 0 else 2) + (0 if dx < 0 else 1)
+                    if mask >> ci & 1:
                         on = True
-                        break
             if on:
                 img[j][i] = 1
     return img
 
 
 HEADER = '''\
-//! nx75 — the part-registry anchor font.
+//! nx75 v2 — the part-registry anchor font.
 //!
-//! A first-party 7x5 ANCHOR font for the nano14 id alphabet: each
-//! glyph is a set of anchors on a 7-row x 5-column cell grid joined
-//! by orthogonal and diagonal edges, rasterised at any integer scale
-//! k by the [`crate::px`] sweep law (anchor kernels pulled along
-//! half-edges to the edge midpoints, rest-stamps at the anchors,
-//! cell-clipped to the anchor cells plus diagonal bridge cells).
-//!
-//! Design rules:
-//! 1. Diagonal-touching anchors are diamond.
-//! 2. Orth-only anchors are square.
-//! 3. Diagonal tips keep the outward corner.
-//! 4. Diagonals carry into their corner anchor, orth stubs yield.
+//! A first-party 7x5 ANCHOR font for the nano14 id alphabet, baked
+//! under the CONNECTION-KERNEL model: each glyph is a set of anchor
+//! nodes on a 7-row x 5-column cell grid joined by orthogonal and
+//! diagonal connections, rasterised at any integer scale k by
+//! [`crate::px`] as the union of three stamp types — straight
+//! connections (a k-wide rectangle between the two node centers
+//! inclusive), diagonal connections (an L1 diamond of radius k at
+//! the shared cell corner, clipped to the k-row anti-diagonal band)
+//! and node quadrants (each anchor-cell pixel not already painted is
+//! painted iff its quadrant bit is set in the anchor's kernel). The
+//! stamps are bounded by construction — no clip mask exists.
 //!
 //! GENERATED FILE — DO NOT EDIT BY HAND.
-//! Generated from `design/glyph-font.v1.json` (the source of truth,
+//! Generated from `design/glyph-font.v2.json` (the source of truth,
 //! authored in the labels/typography-bench font editor) by
-//! `tools/bake_glyph_font.py`, which resolves edges, kernels,
-//! band-owned anchors and outward signs at bake time.
+//! `tools/bake_glyph_font.py`, which resolves active edges and
+//! per-anchor quadrant kernels at bake time.
 //! Drift gate: `uv run tools/bake_glyph_font.py --check`
 
 /// Glyph cell height in anchor cells.
@@ -381,34 +232,21 @@ pub const ALPHABET: &str = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 /// Scales with baked ink checksums, in `Glyph::ink_bits` order.
 pub const CHECKSUM_KS: [u32; 4] = [2, 3, 4, 6];
 
-/// One anchor of a glyph on the 7x5 grid.
+/// One anchor node of a glyph on the 7x5 grid.
 #[derive(Clone, Copy, Debug)]
 pub struct Anchor {
     /// Grid row, 0 at the top.
     pub r: u8,
     /// Grid column, 0 at the left.
     pub c: u8,
-    /// Rest-stamp kernel corners: bit 0 top-left, bit 1 top-right,
-    /// bit 2 bottom-left, bit 3 bottom-right — 0b1111 is the full
-    /// square kernel, 0b0000 the bare diamond.
-    pub corner_mask: u8,
-    /// Pass-through diagonal anchor (exactly two collinear diagonal
-    /// edges): its cells are band-owned and it gets NO rest-stamp
-    /// (the constant-derivative law).
-    pub band_owned: bool,
-    /// Whether the rest-stamp applies at this anchor — every anchor
-    /// that is not band-owned, isolated anchors included.
-    pub has_stamp: bool,
-    /// Pure diagonal tip (exactly one active edge, diagonal): its
-    /// rest-stamp is corners-only — covered iff |dx| <= k/2 and
-    /// |dy| <= k/2 and the quadrant's corner bit is set, with NO L1
-    /// diamond term (the band end is the cap, the chip the outward
-    /// block).
-    pub diag_tip: bool,
+    /// Resolved kernel quadrants: bit 0 top-left, bit 1 top-right,
+    /// bit 2 bottom-left, bit 3 bottom-right — 0b1111 paints the
+    /// full cell, 0b0000 leaves the node to its connections.
+    pub quad_mask: u8,
 }
 
-/// One ACTIVE edge between two anchors (inactive candidates are
-/// resolved away at bake time).
+/// One ACTIVE connection between two anchors (inactive candidates
+/// are resolved away at bake time).
 #[derive(Clone, Copy, Debug)]
 pub struct Edge {
     /// First endpoint, as an index into the glyph's anchor list (the
@@ -416,32 +254,8 @@ pub struct Edge {
     pub a: u8,
     /// Second endpoint index (the 8-neighbour).
     pub b: u8,
-    /// Diagonal edge (both row and column step).
+    /// Diagonal connection (both row and column step).
     pub diag: bool,
-    /// Diagonal RUN: some OTHER active diagonal edge has an
-    /// endpoint at the collinear continuation beyond either end
-    /// (`b + (b-a)` or `a - (b-a)`). Runs sweep the k-row
-    /// anti-diagonal band; non-run diagonals (corner connectors)
-    /// sweep the slim corridor-exact diamond pull instead. Always
-    /// false for orthogonal edges.
-    pub is_run: bool,
-    /// Outward sign of the band in the edge's CANONICAL a->b frame,
-    /// in -1/+1 for diagonal edges, computed once at bake time:
-    /// the foreign-side sign (the sum of the foreign bridges'
-    /// signed perpendicular distances against the edge normal) when
-    /// `one_sided`, else the sign of the glyph's global ink balance
-    /// (balance > 0 keeps the frame, anything else flips it).
-    /// Outside = the negative-dsig side, and BOTH half-sweeps
-    /// measure dsig with the same canonical normal and sign (never
-    /// recomputed from the half-sweep direction). Always 0 for
-    /// orthogonal edges (unused there).
-    pub out_sign: i8,
-    /// LOCAL one-sided trigger: a bridge cell of this edge is
-    /// orthogonally flush to FOREIGN ink (an anchor that is not an
-    /// endpoint of the edge) — the band hugs the outside of the
-    /// anchor line, away from the foreign side. False means a
-    /// centered band. Always false for orthogonal edges.
-    pub one_sided: bool,
 }
 
 /// One nx75 glyph: anchors, active edges and baked ink checksums.
@@ -451,7 +265,7 @@ pub struct Glyph {
     pub ch: char,
     /// Anchors in grid-scan order (row-major).
     pub anchors: &'static [Anchor],
-    /// Active edges, endpoints as indices into `anchors`.
+    /// Active connections, endpoints as indices into `anchors`.
     pub edges: &'static [Edge],
     /// Ink-pixel counts of the rasterised glyph at the scales in
     /// [`CHECKSUM_KS`], in order — the bake-time checksums the codec
@@ -483,10 +297,7 @@ def emit(data: dict) -> str:
             out.append("            Anchor {\n")
             out.append(f"                r: {a['r']},\n")
             out.append(f"                c: {a['c']},\n")
-            out.append(f"                corner_mask: 0b{a['corner_mask']:04b},\n")
-            out.append(f"                band_owned: {str(a['band_owned']).lower()},\n")
-            out.append(f"                has_stamp: {str(a['has_stamp']).lower()},\n")
-            out.append(f"                diag_tip: {str(a['diag_tip']).lower()},\n")
+            out.append(f"                quad_mask: 0b{a['quad_mask']:04b},\n")
             out.append("            },\n")
         out.append("        ],\n")
         out.append("        edges: &[\n")
@@ -495,9 +306,6 @@ def emit(data: dict) -> str:
             out.append(f"                a: {e['a']},\n")
             out.append(f"                b: {e['b']},\n")
             out.append(f"                diag: {str(e['diag']).lower()},\n")
-            out.append(f"                is_run: {str(e['is_run']).lower()},\n")
-            out.append(f"                out_sign: {e['out_sign']},\n")
-            out.append(f"                one_sided: {str(e['one_sided']).lower()},\n")
             out.append("            },\n")
         out.append("        ],\n")
         out.append(f"        ink_bits: [{', '.join(str(s) for s in sums)}],\n")
