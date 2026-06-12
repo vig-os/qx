@@ -247,5 +247,5 @@ VITE_DATA_BRANCH=main
 
 - **Rust workspace**: 17 crates, ports/adapters architecture (ADR-017), 260+ tests
 - **Web app**: 4 tabs, 4 scanner modes, PWA, Pico CSS, deployed to GitHub Pages
-- **CI**: 4 workflows (rust, playwright, release, pages), SSoT enforcement tests
+- **CI = `nix flake check`**: every gate (fmt, clippy, `test --all-features`, cargo-deny against a pinned advisory-db, obligations, nx75-drift, guardrails-gates, wasm, web-unit, +linux-only web-e2e + release-binary) is a flake check. `nix flake check` on a laptop runs the same set as CI; `.github/workflows/ci.yml` is a thin x86_64-linux + aarch64-darwin matrix shim. Release + Pages stay as their own workflows (they publish, not check) — see ADR-038 §4.
 - **Releases**: Tagged bundles with SHA-256 checksums, consumed by data repos
