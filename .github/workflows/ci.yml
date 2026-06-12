@@ -1,9 +1,17 @@
-# Thin shim per ADR-038 §4 — pipeline-as-derivation. The logic lives in
-# flake outputs (`checks.*`); this workflow only invokes them, so the
-# same run happens locally (`nix flake check`) and here, and nothing
-# about CI behavior is host-locked. Rust/FE matrices stay in rust.yml /
-# playwright.yml until those builds move in-flake.
+# Pipeline-as-derivation (ADR-038 §4): every CI gate lives in
+# `flake.nix` under `checks.<system>`. This workflow is the matrix
+# shim — Nix on the runner, `nix flake check`, done. The same set of
+# checks runs locally on a laptop (`nix flake check`) and on CI, so
+# "green on my machine" is the same shape as "green in CI".
+#
+# Architecture matrix:
+#   ubuntu-latest = x86_64-linux  (full set incl. web-e2e, release-binary)
+#   macos-14      = aarch64-darwin (everything except the Linux-only checks)
+#
+# Branch trigger parity matches the old rust.yml / playwright.yml /
+# flake-check.yml: PRs + pushes to main.
 name: ci
+
 on:
   push:
     branches: [main]
@@ -14,10 +22,21 @@ permissions:
 
 jobs:
   flake-check:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            system: x86_64-linux
+          - os: macos-14
+            system: aarch64-darwin
+    runs-on: ${{ matrix.os }}
+    name: flake-check (${{ matrix.system }})
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
-      - name: flake checks (obligations gate + future suites)
-        run: nix flake check -L
+      - name: nix flake check
+        env:
+          PARTREG_TEST_PAT: ${{ secrets.PARTREG_TEST_PAT }}
+        run: nix flake check -L --keep-going

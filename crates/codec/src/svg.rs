@@ -45,7 +45,10 @@ pub enum Layout {
 // ---------- low-level primitives ----------
 
 /// Wrap an SVG body in an mm-native `<svg>` root. Mirrors
-/// `label.py:svg_wrap` (lines 97-103).
+/// `label.py:svg_wrap` (lines 97-103). LEGACY — kept byte-identical
+/// for the committed-examples regression. The ADR-031 §10 fix (mm
+/// path emits a bg rect, default white) runs through
+/// [`svg_wrap_colored`] from the new `*_with` entries.
 fn svg_wrap(w_mm: f64, h_mm: f64, body: &str) -> String {
     format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" \
@@ -57,9 +60,38 @@ viewBox=\"0 0 {w:.3} {h:.3}\">\n{body}\n</svg>\n",
     )
 }
 
+/// `svg_wrap` with explicit colors + optional metadata (ADR-031 §10).
+/// `bg = "none"` omits the background rect; otherwise the bg rect is
+/// ALWAYS emitted (fixing the legacy mm-path's accidental
+/// transparency). `metadata` inscribes the receipt before the rect.
+fn svg_wrap_colored(w_mm: f64, h_mm: f64, body: &str, bg: &str, metadata: Option<&str>) -> String {
+    let bg_rect = if bg == "none" {
+        String::new()
+    } else {
+        format!(
+            "<rect width=\"{w:.3}\" height=\"{h:.3}\" fill=\"{bg}\"/>\n",
+            w = w_mm,
+            h = h_mm,
+        )
+    };
+    let metadata_block = metadata.unwrap_or("");
+    format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" \
+width=\"{w:.3}mm\" height=\"{h:.3}mm\" \
+viewBox=\"0 0 {w:.3} {h:.3}\">\n{metadata_block}{bg_rect}{body}\n</svg>\n",
+        w = w_mm,
+        h = h_mm,
+        body = body,
+    )
+}
+
 /// Render a QR matrix as a `size × size` square of `<rect>` modules
 /// starting at `(x, y)`. Mirrors `label.py:qr_block` (lines 106-132).
 fn qr_block(matrix: &QrMatrix, x: f64, y: f64, size: f64) -> String {
+    qr_block_colored(matrix, x, y, size, "#000")
+}
+
+fn qr_block_colored(matrix: &QrMatrix, x: f64, y: f64, size: f64, fg: &str) -> String {
     let border = matrix.quiet_zone();
     let n_modules = matrix.total_modules();
     let module = size / n_modules as f64;
@@ -72,7 +104,7 @@ fn qr_block(matrix: &QrMatrix, x: f64, y: f64, size: f64) -> String {
                 let _ = writeln!(
                     out,
                     "<rect x=\"{rx:.3}\" y=\"{ry:.3}\" \
-width=\"{module:.3}\" height=\"{module:.3}\" fill=\"#000\"/>"
+width=\"{module:.3}\" height=\"{module:.3}\" fill=\"{fg}\"/>"
                 );
             }
         }
@@ -93,6 +125,17 @@ width=\"{module:.3}\" height=\"{module:.3}\" fill=\"#000\"/>"
 /// gap     = font * 0.2
 /// ```
 fn text_block(canonical: &str, x: f64, y: f64, size: f64, fmt: TextFormat) -> String {
+    text_block_colored(canonical, x, y, size, fmt, "#000")
+}
+
+fn text_block_colored(
+    canonical: &str,
+    x: f64,
+    y: f64,
+    size: f64,
+    fmt: TextFormat,
+    fg: &str,
+) -> String {
     let rows = fmt.split(canonical);
     let n_rows = rows.len() as f64;
     let inner_h = size * 0.92;
@@ -111,7 +154,7 @@ fn text_block(canonical: &str, x: f64, y: f64, size: f64, fmt: TextFormat) -> St
             "<text x=\"{cx:.3}\" y=\"{ty:.3}\" \
 font-family=\"{FONT_FAMILY}\" \
 font-weight=\"bold\" font-size=\"{font:.3}\" \
-text-anchor=\"middle\" fill=\"#000\">{row}</text>"
+text-anchor=\"middle\" fill=\"{fg}\">{row}</text>"
         ));
     }
     parts.join("\n")
@@ -208,6 +251,94 @@ pub fn render(
     match layout {
         Layout::Vert => render_vert(canonical, size_mm, fmt, micro),
         Layout::Horz => render_horz(canonical, size_mm, fmt, micro),
+        Layout::Flag {
+            cable_od_mm,
+            no_markers,
+            alignment_line,
+        } => render_flag(
+            canonical,
+            size_mm,
+            cable_od_mm,
+            fmt,
+            micro,
+            no_markers,
+            alignment_line,
+        ),
+    }
+}
+
+/// mm-render options (ADR-031 §10): colors + optional metadata
+/// receipt inscribed into the SVG `<metadata>` element. Defaults
+/// preserve the pre-§10 mm output bit-for-bit *except* the bg rect
+/// (now ALWAYS emitted by [`svg_wrap`], default white — the §10 fix
+/// to the prior accidental-transparency bug).
+#[derive(Clone, Debug)]
+pub struct MmRenderOpts<'a> {
+    /// Foreground color (modules + text). Default `"#000"`.
+    pub fg: &'a str,
+    /// Background color, or `"none"` to omit the bg rect. Default
+    /// `"white"`.
+    pub bg: &'a str,
+    /// `<metadata>` body to inscribe before the bg rect, or `None`.
+    pub metadata: Option<&'a str>,
+}
+
+impl<'a> Default for MmRenderOpts<'a> {
+    fn default() -> Self {
+        Self {
+            fg: "#000",
+            bg: "white",
+            metadata: None,
+        }
+    }
+}
+
+/// Render a vertical mm label with colors + optional metadata.
+pub fn render_vert_with(
+    canonical: &str,
+    size_mm: f64,
+    fmt: TextFormat,
+    micro: bool,
+    opts: &MmRenderOpts<'_>,
+) -> String {
+    let matrix = encode(canonical, micro).expect("QR encode of canonical ID never fails");
+    let qr = qr_block_colored(&matrix, 0.0, 0.0, size_mm, opts.fg);
+    let text = text_block_colored(canonical, 0.0, size_mm, size_mm, fmt, opts.fg);
+    let body = format!("{qr}\n{text}");
+    svg_wrap_colored(size_mm, 2.0 * size_mm, &body, opts.bg, opts.metadata)
+}
+
+/// Render a horizontal mm label with colors + optional metadata.
+pub fn render_horz_with(
+    canonical: &str,
+    size_mm: f64,
+    fmt: TextFormat,
+    micro: bool,
+    opts: &MmRenderOpts<'_>,
+) -> String {
+    let matrix = encode(canonical, micro).expect("QR encode of canonical ID never fails");
+    let qr = qr_block_colored(&matrix, 0.0, 0.0, size_mm, opts.fg);
+    let text = text_block_colored(canonical, size_mm, 0.0, size_mm, fmt, opts.fg);
+    let body = format!("{qr}\n{text}");
+    svg_wrap_colored(2.0 * size_mm, size_mm, &body, opts.bg, opts.metadata)
+}
+
+/// `render` with colors + metadata.
+pub fn render_with(
+    canonical: &str,
+    layout: Layout,
+    size_mm: f64,
+    fmt: TextFormat,
+    micro: bool,
+    opts: &MmRenderOpts<'_>,
+) -> String {
+    match layout {
+        Layout::Vert => render_vert_with(canonical, size_mm, fmt, micro, opts),
+        Layout::Horz => render_horz_with(canonical, size_mm, fmt, micro, opts),
+        // The flag layout doesn't currently take colors — falls back
+        // to the legacy entry. (Stage 1 scope: --align/repeat/colors
+        // are wired to horz/vert first; flag inherits the historical
+        // path.)
         Layout::Flag {
             cable_od_mm,
             no_markers,

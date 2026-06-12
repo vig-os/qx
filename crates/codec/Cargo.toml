@@ -12,6 +12,8 @@ path = "src/lib.rs"
 [dependencies]
 thiserror = { workspace = true }
 serde = { workspace = true }
+# Receipt JSON inscribed into the SVG <metadata> element (ADR-031 §10).
+serde_json = { workspace = true }
 # `qrcode` 0.14 is the dormant-but-functional placeholder per the
 # workspace comment in the root Cargo.toml. Swap to `qrcode-rust2`
 # once published / vendored (ADR-017 §References).

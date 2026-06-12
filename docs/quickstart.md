@@ -302,3 +302,20 @@ The on-site help is being built incrementally. Tracked in
 If anything in this document is wrong, unclear, or missing — file an
 issue. The docs are part of the registry, and they get the same
 treatment: every change is a PR, every fix is a commit.
+
+## For contributors — local CI parity
+
+Every CI gate lives in `flake.nix` under `checks.<system>`. On a laptop:
+
+```
+nix flake check -L --keep-going
+```
+
+runs the same set GitHub Actions will run — fmt, clippy, the full
+workspace test suite, cargo-deny (offline, against a pinned
+RustSec advisory-db), ADR obligations, nx75 anchor-font drift, the
+tree-wide guardrails gates, the wasm build, vitest, and (on Linux)
+Playwright e2e + the release-binary smoke build. `.github/workflows/
+ci.yml` is just a matrix shim that invokes the same `nix flake
+check` on `aarch64-darwin` (macos-14) and `x86_64-linux`
+(ubuntu-latest). See ADR-038 §4 for the rationale.

@@ -49,6 +49,7 @@ struct Cli {
     cmd: Cmd,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand)]
 enum Cmd {
     /// Mint N fresh part ids (live PR unless --dry-run).
@@ -73,13 +74,27 @@ enum Cmd {
         limit: u32,
         #[arg(long, default_value_t = 0)]
         offset: u32,
+        /// Write the pretty JSON data payload to a file instead of
+        /// stdout (ADR-031 §10).
+        #[arg(long, short = 'o')]
+        output: Option<PathBuf>,
     },
     /// Resolve one id (full, prefix, or scheme:value).
-    Resolve { id: String },
+    Resolve {
+        id: String,
+        /// Write the pretty JSON data payload to a file instead of
+        /// stdout (ADR-031 §10).
+        #[arg(long, short = 'o')]
+        output: Option<PathBuf>,
+    },
     /// Render the registry descriptors (what exists + how it's minted).
     Describe {
         #[arg(long)]
         collection: Option<String>,
+        /// Write the pretty JSON data payload to a file instead of
+        /// stdout (ADR-031 §10).
+        #[arg(long, short = 'o')]
+        output: Option<PathBuf>,
     },
     /// Group-by count over a collection field.
     Count {
@@ -89,6 +104,10 @@ enum Cmd {
         by: String,
         #[arg(long)]
         status: Option<String>,
+        /// Write the pretty JSON data payload to a file instead of
+        /// stdout (ADR-031 §10).
+        #[arg(long, short = 'o')]
+        output: Option<PathBuf>,
     },
     /// Flat export (generated artifact — never commit it).
     Export {
@@ -165,9 +184,50 @@ enum Cmd {
         /// = Brother QL class).
         #[arg(long)]
         dpi: Option<f64>,
+        /// ADR-031 §10 — flat-list payload DSL (stage 1):
+        /// whitespace-separated `qr[:TYPE] | id[:GROUPING|chars-N]
+        /// | space[:SIZE]` along the layout axis. Overrides
+        /// --content; element params win over --chars/--type.
+        #[arg(long)]
+        payload: Option<String>,
+        /// ADR-031 §10 sugar over --payload: qr+id (default),
+        /// id+qr, qr, id.
+        #[arg(long)]
+        content: Option<String>,
+        /// Foreground color (ADR-031 §10). Accepts #RGB / #RRGGBB
+        /// / #RRGGBBAA, rgb(r,g,b), lowercase ascii names.
+        #[arg(long)]
+        fg: Option<String>,
+        /// Background color (ADR-031 §10). Same forms as --fg,
+        /// plus "none" (omits the background rect).
+        #[arg(long)]
+        bg: Option<String>,
+        /// ADR-031 §8 size-mode: exact (default, the §2/§8 law)
+        /// or snap (size_px is an UPPER BOUND; canvas snaps DOWN
+        /// to the content lattice).
+        #[arg(long, default_value = "exact")]
+        size_mode: String,
+        /// ADR-031 §10 id-text solver: how many id characters
+        /// render (e.g. 8 or 14 for nano14). Combine with --rows
+        /// or --id-size to derive the third.
+        #[arg(long)]
+        id_chars: Option<u32>,
+        /// ADR-031 §10 id-text solver: how many rows the chars
+        /// split across (balanced — 14/3 → 5,5,4).
+        #[arg(long)]
+        rows: Option<u32>,
+        /// ADR-031 §10 id-text solver: glyph height in device px.
+        /// Suffix grammar like --size: 28px / 8mm / bare 28 = px.
+        #[arg(long, value_parser = parse_id_size_spec)]
+        id_size_px: Option<u32>,
     },
     /// Current operator identity.
-    Whoami,
+    Whoami {
+        /// Write the pretty JSON data payload to a file instead of
+        /// stdout (ADR-031 §10).
+        #[arg(long, short = 'o')]
+        output: Option<PathBuf>,
+    },
     /// Serve the command protocol over HTTP (+ the webapp bundle).
     #[cfg(feature = "serve")]
     Serve {
@@ -241,6 +301,47 @@ fn parse_size_spec(s: &str) -> Result<SizeSpec, String> {
 /// expansion rule, exposed as a clap value parser.
 fn parse_padding_spec(s: &str) -> Result<part_registry_app::PaddingSpec, String> {
     s.parse()
+}
+
+/// `--id-size <N>[px|mm]` — same suffix grammar as `--size`. The
+/// protocol field is integer device px; mm rides as the bare-value
+/// alternative for ergonomics (stage 1 keeps mm rounded to whole px).
+/// ADR-031 §10 sugar mapping: `--content qr+id` → `--payload "qr id"`,
+/// `id+qr` → `"id qr"`, `qr` → `"qr"`, `id` → `"id"`. Anything else
+/// is left to the engine, which validates the payload form.
+fn content_to_payload(content: Option<&str>) -> Option<String> {
+    content.map(|c| match c {
+        "qr+id" => "qr id".into(),
+        "id+qr" => "id qr".into(),
+        "qr" => "qr".into(),
+        "id" => "id".into(),
+        // Pass-through so the engine surfaces the actual grammar
+        // error (the staged `[` rejection rides through).
+        other => other.into(),
+    })
+}
+
+fn parse_id_size_spec(s: &str) -> Result<u32, String> {
+    let t = s.trim();
+    if let Some(px) = t.strip_suffix("px") {
+        return px
+            .trim()
+            .parse::<u32>()
+            .ok()
+            .filter(|n| *n > 0)
+            .ok_or_else(|| format!("--id-size {t:?}: px sizes are whole positive device pixels"));
+    }
+    // mm is accepted but resolved here; the dpi/mm round-trip is
+    // documented stage 2 (printer profiles); stage 1 reads bare and
+    // `mm` as the same px count via the default 300dpi assumption.
+    let stripped = t.strip_suffix("mm").unwrap_or(t);
+    stripped
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .map(|mm| (mm / 25.4 * 300.0).round() as u32)
+        .ok_or_else(|| format!("--id-size {t:?}: expected <N>[px|mm]"))
 }
 
 fn main() -> ExitCode {
@@ -532,8 +633,20 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
         padding,
         padding_mode,
         dpi,
+        payload,
+        content,
+        fg,
+        bg,
+        size_mode,
+        id_chars,
+        rows,
+        id_size_px,
     } = cmd
     {
+        // ADR-031 §10 sugar: --content qr+id|id+qr|qr|id expands
+        // into --payload "qr id" etc. --payload wins if both set
+        // (the explicit form).
+        let payload = payload.or_else(|| content_to_payload(content.as_deref()));
         // --size wins over the hidden --unit/--size-mm/--size-px
         // aliases; the suffix expands into the explicit wire fields.
         let (unit, size_mm, size_px) = match size {
@@ -555,11 +668,18 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
             padding_px: padding,
             padding_mode: Some(padding_mode),
             dpi,
+            payload,
+            fg,
+            bg,
+            size_mode: Some(size_mode),
+            id_chars,
+            rows,
+            id_size_px,
         };
         return protocol_print(&ctx, ids, options, &out_dir);
     }
 
-    let req = match cmd {
+    let (req, output) = match cmd {
         Cmd::List {
             collection,
             status,
@@ -567,31 +687,39 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
             fields,
             limit,
             offset,
-        } => Request::List {
-            collection,
-            filter: part_registry_app::Filter {
-                status,
-                kind: None,
-                text,
-                fields: fields.into_iter().collect(),
+            output,
+        } => (
+            Request::List {
+                collection,
+                filter: part_registry_app::Filter {
+                    status,
+                    kind: None,
+                    text,
+                    fields: fields.into_iter().collect(),
+                },
+                sort: Vec::new(),
+                page: part_registry_app::Page { offset, limit },
             },
-            sort: Vec::new(),
-            page: part_registry_app::Page { offset, limit },
-        },
-        Cmd::Resolve { id } => Request::Resolve { id },
-        Cmd::Describe { collection } => Request::Describe { collection },
+            output,
+        ),
+        Cmd::Resolve { id, output } => (Request::Resolve { id }, output),
+        Cmd::Describe { collection, output } => (Request::Describe { collection }, output),
         Cmd::Count {
             collection,
             by,
             status,
-        } => Request::Count {
-            collection,
-            filter: part_registry_app::Filter {
-                status,
-                ..Default::default()
+            output,
+        } => (
+            Request::Count {
+                collection,
+                filter: part_registry_app::Filter {
+                    status,
+                    ..Default::default()
+                },
+                by,
             },
-            by,
-        },
+            output,
+        ),
         Cmd::Export {
             collection,
             format,
@@ -599,23 +727,31 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
         } => {
             return protocol_export(&ctx, collection, format, output);
         }
-        Cmd::Whoami => Request::Whoami,
+        Cmd::Whoami { output } => (Request::Whoami, output),
         // Parity + Check arms are handled in main; Print above.
         _ => {
             eprintln!("internal: non-protocol command reached protocol_cmd");
             return ExitCode::from(2);
         }
     };
-    emit(dispatch(&ctx, req))
+    emit(dispatch(&ctx, req), output.as_deref())
 }
 
-fn emit(resp: Response) -> ExitCode {
+fn emit(resp: Response, output: Option<&Path>) -> ExitCode {
     match resp {
         Response::Ok { data, .. } => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&data).unwrap_or_else(|_| data.to_string())
-            );
+            let s = serde_json::to_string_pretty(&data).unwrap_or_else(|_| data.to_string());
+            match output {
+                Some(path) => {
+                    if let Err(e) = std::fs::write(path, format!("{s}\n")) {
+                        eprintln!("write {}: {e}", path.display());
+                        return ExitCode::FAILURE;
+                    }
+                }
+                None => {
+                    println!("{s}");
+                }
+            }
             ExitCode::SUCCESS
         }
         Response::Err { error, .. } => {
@@ -1034,5 +1170,36 @@ mod tests {
     fn cli_definition_is_internally_consistent() {
         use clap::CommandFactory as _;
         Cli::command().debug_assert();
+    }
+
+    // ---------- ADR-031 §10 content sugar + id-size parser ----------
+
+    #[test]
+    fn content_sugar_expands_into_payload_strings() {
+        assert_eq!(content_to_payload(Some("qr+id")).as_deref(), Some("qr id"));
+        assert_eq!(content_to_payload(Some("id+qr")).as_deref(), Some("id qr"));
+        assert_eq!(content_to_payload(Some("qr")).as_deref(), Some("qr"));
+        assert_eq!(content_to_payload(Some("id")).as_deref(), Some("id"));
+        assert_eq!(content_to_payload(None), None);
+        // Unknown content passes through so the engine surfaces the
+        // payload grammar error.
+        assert_eq!(content_to_payload(Some("xx")).as_deref(), Some("xx"));
+    }
+
+    #[test]
+    fn id_size_spec_parses_px_and_mm() {
+        // Suffix grammar like --size: bare = mm, explicit px is px.
+        assert_eq!(parse_id_size_spec("28px"), Ok(28));
+        // 8mm at 300dpi rounds to 94.
+        assert_eq!(parse_id_size_spec("8mm"), Ok(94));
+        // Bare reads as mm (consistent with --size).
+        assert_eq!(parse_id_size_spec("8"), Ok(94));
+    }
+
+    #[test]
+    fn id_size_spec_rejects_nonsense() {
+        for bad in ["", "0px", "-3", "abc", "NaN"] {
+            assert!(parse_id_size_spec(bad).is_err(), "must reject {bad:?}");
+        }
     }
 }
