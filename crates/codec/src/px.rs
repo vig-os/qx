@@ -37,16 +37,15 @@
 //!   on the QR's text side (right for `horz`, bottom for `vert`).
 //! - The id-text is **bitmap typography rendered as rects**: no
 //!   `<text>`, no fonts, no rasterizer variance. The glyphs are the
-//!   first-party **nx75 v2 anchor font** ([`crate::glyph_font`],
-//!   baked from `design/glyph-font.v2.json`), rasterised here at
-//!   integer scale `k = glyph_px` by the connection-kernel law (see
-//!   [`raster_glyph`]): the union of straight-connection rectangles
-//!   (k wide, node center to node center inclusive), diagonal corner
-//!   diamonds (L1 radius k at the shared cell corner, clipped to the
-//!   k-row anti-diagonal band) and node quadrants (each anchor-cell
-//!   pixel not already painted is painted iff its quadrant bit is
-//!   set in the anchor's kernel). Ink emits as horizontal-run
-//!   `<rect>`s in the same crispEdges group as the QR modules.
+//!   first-party **nx75 anchor font** ([`crate::glyph_font`]) in its
+//!   PARITY-DISPATCHED OPTICAL MASTERS form, rasterised here at
+//!   integer scale `k = glyph_px` (see [`raster_glyph`]): EVEN k
+//!   renders the v1 master (`design/glyph-font.v1.json`) under the
+//!   KERNEL-PULL law ([`raster_v1`]) and ODD k renders the v2 master
+//!   (`design/glyph-font.v2.json`) under the CONNECTION-KERNEL law
+//!   ([`raster_v2`]) — the master each parity was judged best at.
+//!   Ink emits as horizontal-run `<rect>`s in the same crispEdges
+//!   group as the QR modules.
 //! - Text-block placement is the g-law: the glyph scale `g` is the
 //!   largest integer with the block `rows·7g + (rows−1)·g` inside
 //!   `data_px`, capped at `module_px` (text dots never coarser than
@@ -251,10 +250,128 @@ enum Stamp {
     Diam { cx: f64, cy: f64, same_sign: bool },
 }
 
-/// Rasterise one nx75 glyph at integer scale `k` into a row-major
-/// `5k × 7k` ink bitmap — THE renderer for the anchor font, matching
-/// the reference implementation (the editor JS) and the bake-time
-/// checksums bit for bit ([`crate::glyph_font`]).
+/// One sweep of the nx75 v1 KERNEL-PULL law: a quadrant kernel
+/// dragged along the segment anchor center → edge midpoint (or held
+/// at rest, `vx = vy = 0`, for an isolated anchor).
+struct Sweep {
+    ax: f64,
+    ay: f64,
+    vx: f64,
+    vy: f64,
+    kern: u8,
+}
+
+/// V1 kernel coverage at offset `(dx, dy)` from the swept center:
+/// inside the L1 diamond of radius `half` always; inside the square
+/// `|dx|, |dy| ≤ half` only where the quadrant's corner bit is set.
+fn kern_covers(mask: u8, dx: f64, dy: f64, half: f64) -> bool {
+    if dx.abs() + dy.abs() <= half {
+        return true;
+    }
+    if dx.abs() > half || dy.abs() > half {
+        return false;
+    }
+    let ci = if dy < 0.0 { 0 } else { 2 } + if dx < 0.0 { 0 } else { 1 };
+    mask >> ci & 1 == 1
+}
+
+/// Rasterise one nx75 V1 glyph at integer scale `k` into a row-major
+/// `5k × 7k` ink bitmap — the EVEN-k optical master, matching the
+/// TRUE v1 reference renderer (`/tmp/true_v1.cjs`, mirrored into
+/// `tools/bake_glyph_font.py`) and the bake-time checksums bit for
+/// bit ([`crate::glyph_font::GLYPHS_V1`]).
+///
+/// The KERNEL-PULL law:
+/// 1. Every active edge contributes TWO sweeps: each endpoint's
+///    quadrant kernel swept from that anchor's center to the edge
+///    MIDPOINT.
+/// 2. Every anchor touched by no active edge contributes one
+///    stationary sweep at rest.
+/// 3. A pixel center `p` is ink iff some sweep covers it:
+///    `t = clamp(proj(p onto the sweep segment), 0, 1)` and
+///    [`kern_covers`]`(kern, p − lerp(t), k/2)` holds.
+/// 4. A cell mask clips everything: only anchor cells plus the two
+///    bridge cells of each active diagonal edge may carry ink.
+fn raster_v1(g: &Glyph, k: u32) -> Vec<bool> {
+    let kf = f64::from(k);
+    let half = kf / 2.0;
+
+    const CELLS: usize = (glyph_font::GRID_ROWS * glyph_font::GRID_COLS) as usize;
+    let mut allowed = [false; CELLS];
+    for a in g.anchors {
+        allowed[(a.r as usize) * glyph_font::GRID_COLS as usize + a.c as usize] = true;
+    }
+
+    let mut sweeps = Vec::with_capacity(2 * g.edges.len() + g.anchors.len());
+    let mut inked = vec![false; g.anchors.len()];
+    for e in g.edges {
+        let a = &g.anchors[e.a as usize];
+        let b = &g.anchors[e.b as usize];
+        if e.diag {
+            allowed[(a.r as usize) * glyph_font::GRID_COLS as usize + b.c as usize] = true;
+            allowed[(b.r as usize) * glyph_font::GRID_COLS as usize + a.c as usize] = true;
+        }
+        for (me, other) in [(a, b), (b, a)] {
+            let ax = (f64::from(me.c) + 0.5) * kf;
+            let ay = (f64::from(me.r) + 0.5) * kf;
+            let mx = ((f64::from(me.c) + f64::from(other.c)) / 2.0 + 0.5) * kf;
+            let my = ((f64::from(me.r) + f64::from(other.r)) / 2.0 + 0.5) * kf;
+            sweeps.push(Sweep {
+                ax,
+                ay,
+                vx: mx - ax,
+                vy: my - ay,
+                kern: me.quad_mask,
+            });
+        }
+        inked[e.a as usize] = true;
+        inked[e.b as usize] = true;
+    }
+    for (i, a) in g.anchors.iter().enumerate() {
+        if !inked[i] {
+            sweeps.push(Sweep {
+                ax: (f64::from(a.c) + 0.5) * kf,
+                ay: (f64::from(a.r) + 0.5) * kf,
+                vx: 0.0,
+                vy: 0.0,
+                kern: a.quad_mask,
+            });
+        }
+    }
+
+    let w = (glyph_font::GRID_COLS * k) as usize;
+    let h = (glyph_font::GRID_ROWS * k) as usize;
+    let mut img = vec![false; w * h];
+    for j in 0..h {
+        let cr = j as u32 / k;
+        let y = j as f64 + 0.5;
+        for i in 0..w {
+            let cc = i as u32 / k;
+            if !allowed[(cr * glyph_font::GRID_COLS + cc) as usize] {
+                continue;
+            }
+            let x = i as f64 + 0.5;
+            for s in &sweeps {
+                let l2 = s.vx * s.vx + s.vy * s.vy;
+                let t = if l2 == 0.0 {
+                    0.0
+                } else {
+                    (((x - s.ax) * s.vx + (y - s.ay) * s.vy) / l2).clamp(0.0, 1.0)
+                };
+                if kern_covers(s.kern, x - (s.ax + t * s.vx), y - (s.ay + t * s.vy), half) {
+                    img[j * w + i] = true;
+                    break;
+                }
+            }
+        }
+    }
+    img
+}
+
+/// Rasterise one nx75 V2 glyph at integer scale `k` into a row-major
+/// `5k × 7k` ink bitmap — the ODD-k optical master, matching the
+/// reference implementation (the editor JS) and the bake-time
+/// checksums bit for bit ([`crate::glyph_font::GLYPHS_V2`]).
 ///
 /// The CONNECTION-KERNEL law, a union of three stamp types:
 /// 1. STRAIGHT connection: pixels whose center lies between the two
@@ -273,7 +390,7 @@ enum Stamp {
 ///
 /// That is the entire law — the stamps are bounded by construction,
 /// so no clip mask exists.
-fn raster_glyph(g: &Glyph, k: u32) -> Vec<bool> {
+fn raster_v2(g: &Glyph, k: u32) -> Vec<bool> {
     let kf = f64::from(k);
     let half = kf / 2.0;
 
@@ -374,6 +491,25 @@ fn raster_glyph(g: &Glyph, k: u32) -> Vec<bool> {
     img
 }
 
+/// Rasterise the nx75 glyph for `c` at integer scale `k` — THE
+/// parity dispatch of the optical-masters design (`None` outside the
+/// nano14 alphabet):
+///
+/// - `k % 2 == 0` → the v1 master under the KERNEL-PULL law
+///   ([`raster_v1`] on [`glyph_font::glyph_v1`])
+/// - `k % 2 == 1` → the v2 master under the CONNECTION-KERNEL law
+///   ([`raster_v2`] on [`glyph_font::glyph_v2`])
+///
+/// The user judged v1 best at even scales and v2 best at odd ones,
+/// so each scale renders the master tuned for it.
+fn raster_glyph(c: char, k: u32) -> Option<Vec<bool>> {
+    if k.is_multiple_of(2) {
+        glyph_font::glyph_v1(c).map(|g| raster_v1(g, k))
+    } else {
+        glyph_font::glyph_v2(c).map(|g| raster_v2(g, k))
+    }
+}
+
 /// Append `c`'s nx75 ink to `out`, glyph box top-left at `(x0, y0)`,
 /// rasterised at scale `k` ([`raster_glyph`]) and emitted as
 /// horizontal-run `<rect>`s (height 1 device px) — the same emitter
@@ -389,14 +525,13 @@ fn write_glyph_rects(
     y0: u32,
     k: u32,
 ) -> Result<(), CodecError> {
-    let g = glyph_font::glyph(c).ok_or_else(|| {
+    let img = raster_glyph(c, k).ok_or_else(|| {
         CodecError::Render(format!(
             "no nx75 glyph for {c:?}: the baked anchor font covers \
              the nano14 alphabet {alphabet}",
             alphabet = glyph_font::ALPHABET,
         ))
     })?;
-    let img = raster_glyph(g, k);
     let w = (glyph_font::GRID_COLS * k) as usize;
     let h = (glyph_font::GRID_ROWS * k) as usize;
     for j in 0..h {
@@ -1095,10 +1230,11 @@ mod tests {
     }
 
     /// Ink-pixel count of `c`'s nx75 raster at scale `k` — recomputed
-    /// through [`raster_glyph`], not read from the baked checksums.
+    /// through the parity dispatch ([`raster_glyph`]), not read from
+    /// the baked checksums.
     fn glyph_ink(c: char, k: u32) -> usize {
-        let g = glyph_font::glyph(c).expect("nano14 alphabet");
-        raster_glyph(g, k).iter().filter(|&&p| p).count()
+        let img = raster_glyph(c, k).expect("nano14 alphabet");
+        img.iter().filter(|&&p| p).count()
     }
 
     /// Total ink pixels of FIXED_ID's text rows under `fmt` at scale
@@ -1126,8 +1262,7 @@ mod tests {
             .iter()
             .filter_map(|r| r.chars().next())
             .map(|c| {
-                let g = glyph_font::glyph(c).expect("nano14 alphabet");
-                let img = raster_glyph(g, k);
+                let img = raster_glyph(c, k).expect("nano14 alphabet");
                 (0..w)
                     .find(|&i| img.iter().skip(i).step_by(w).any(|&p| p))
                     .expect("glyph has ink") as u32
@@ -1252,29 +1387,190 @@ mod tests {
     }
 
     #[test]
-    fn nx75_checksums_lock_the_renderer_to_the_bake() {
-        // 31 glyphs × k ∈ {2, 3, 4, 6}: the Rust raster must
-        // reproduce the bake-time ink counts exactly — any drift in
-        // the stamp law (or the baked data) trips here.
-        for g in &glyph_font::GLYPHS {
-            for (i, &k) in glyph_font::CHECKSUM_KS.iter().enumerate() {
-                let got = raster_glyph(g, k).iter().filter(|&&p| p).count() as u32;
-                assert_eq!(got, g.ink_bits[i], "glyph {} at k={k}", g.ch);
+    fn nx75_v1_checksums_lock_the_even_k_renderer_to_the_bake() {
+        // 31 glyphs × k ∈ {2, 4, 6}: the Rust kernel-pull raster
+        // must reproduce the bake-time ink counts exactly — any
+        // drift in the sweep law (or the baked v1 data) trips here.
+        for g in &glyph_font::GLYPHS_V1 {
+            assert_eq!(g.ink_bits.len(), glyph_font::CHECKSUM_KS_V1.len());
+            for (i, &k) in glyph_font::CHECKSUM_KS_V1.iter().enumerate() {
+                assert_eq!(k % 2, 0, "v1 checksums sit on the EVEN parity");
+                let got = raster_v1(g, k).iter().filter(|&&p| p).count() as u32;
+                assert_eq!(got, g.ink_bits[i], "v1 glyph {} at k={k}", g.ch);
             }
         }
     }
 
     #[test]
+    fn nx75_v2_checksums_lock_the_odd_k_renderer_to_the_bake() {
+        // 31 glyphs × k ∈ {3, 5}: the Rust connection-kernel raster
+        // must reproduce the bake-time ink counts exactly — any
+        // drift in the stamp law (or the baked v2 data) trips here.
+        for g in &glyph_font::GLYPHS_V2 {
+            assert_eq!(g.ink_bits.len(), glyph_font::CHECKSUM_KS_V2.len());
+            for (i, &k) in glyph_font::CHECKSUM_KS_V2.iter().enumerate() {
+                assert_eq!(k % 2, 1, "v2 checksums sit on the ODD parity");
+                let got = raster_v2(g, k).iter().filter(|&&p| p).count() as u32;
+                assert_eq!(got, g.ink_bits[i], "v2 glyph {} at k={k}", g.ch);
+            }
+        }
+    }
+
+    /// Render `c` through the parity dispatch and format it as rows
+    /// of `#`/`.` for the bitmap sanity fixtures.
+    fn raster_rows(c: char, k: u32) -> Vec<String> {
+        let img = raster_glyph(c, k).expect("nano14 alphabet");
+        let w = (glyph_font::GRID_COLS * k) as usize;
+        img.chunks(w)
+            .map(|row| row.iter().map(|&p| if p { '#' } else { '.' }).collect())
+            .collect()
+    }
+
+    #[test]
+    fn parity_dispatch_even_k_matches_the_true_v1_kernel_pull_images() {
+        // K and 8 at k=4 pinned to the TRUE v1 reference renderer's
+        // output (/tmp/true_v1.cjs law, cross-checked against the
+        // Python baker over all 93 v1 images) — NOT the band-law of
+        // older commits. Locks the dispatch (even k → v1 master) AND
+        // the full bitmap, beyond what ink counts can.
+        let expected_k4 = [
+            "####.............###",
+            "####............####",
+            "####...........#####",
+            "####..........#####.",
+            "####.........#####..",
+            "####........#####...",
+            "####.......#####....",
+            "####......#####.....",
+            "####.....#####......",
+            "####....#####.......",
+            "####...#####........",
+            "####..#####.........",
+            "##########..........",
+            "#########...........",
+            "#########...........",
+            "##########..........",
+            "####..#####.........",
+            "####...#####........",
+            "####....#####.......",
+            "####.....#####......",
+            "####......#####.....",
+            "####.......#####....",
+            "####........#####...",
+            "####.........#####..",
+            "####..........#####.",
+            "####...........#####",
+            "####............####",
+            "####.............###",
+        ];
+        assert_eq!(raster_rows('K', 4), expected_k4, "K at k=4 is v1");
+        let expected_84 = [
+            ".....##########.....",
+            "....############....",
+            "...##############...",
+            "..################..",
+            ".#####........#####.",
+            "#####..........#####",
+            "####............####",
+            "####............####",
+            "####............####",
+            "####............####",
+            "#####..........#####",
+            ".#####........#####.",
+            "..################..",
+            "...##############...",
+            "...##############...",
+            "..################..",
+            ".#####........#####.",
+            "#####..........#####",
+            "####............####",
+            "####............####",
+            "####............####",
+            "####............####",
+            "#####..........#####",
+            ".#####........#####.",
+            "..################..",
+            "...##############...",
+            "....############....",
+            ".....##########.....",
+        ];
+        assert_eq!(raster_rows('8', 4), expected_84, "8 at k=4 is v1");
+    }
+
+    #[test]
+    fn parity_dispatch_odd_k_matches_the_v2_connection_kernel_images() {
+        // K and 8 at k=3 pinned to the v2 connection-kernel
+        // reference (the editor JS law, cross-checked against the
+        // Python baker over all 62 v2 images). Locks the dispatch
+        // (odd k → v2 master) AND the full bitmap.
+        let expected_k3 = [
+            "###.........###",
+            "###........####",
+            "###.......#####",
+            "###......#####.",
+            "###.....#####..",
+            "###....#####...",
+            "###...#####....",
+            "###..#####.....",
+            "###.#####......",
+            "########.......",
+            "#######........",
+            "########.......",
+            "###.#####......",
+            "###..#####.....",
+            "###...#####....",
+            "###....#####...",
+            "###.....#####..",
+            "###......#####.",
+            "###.......#####",
+            "###........####",
+            "###.........###",
+        ];
+        assert_eq!(raster_rows('K', 3), expected_k3, "K at k=3 is v2");
+        let expected_83 = [
+            "...#########...",
+            "..###########..",
+            ".#############.",
+            "#####.....#####",
+            "####.......####",
+            "###.........###",
+            "###.........###",
+            "####.......####",
+            "#####.....#####",
+            ".#############.",
+            "..###########..",
+            ".#############.",
+            "#####.....#####",
+            "####.......####",
+            "###.........###",
+            "###.........###",
+            "####.......####",
+            "#####.....#####",
+            ".#############.",
+            "..###########..",
+            "...#########...",
+        ];
+        assert_eq!(raster_rows('8', 3), expected_83, "8 at k=3 is v2");
+    }
+
+    #[test]
     fn nx75_covers_exactly_the_nano14_alphabet() {
         assert_eq!(glyph_font::ALPHABET.chars().count(), 31);
-        assert_eq!(glyph_font::GLYPHS.len(), 31);
+        assert_eq!(glyph_font::GLYPHS_V1.len(), 31);
+        assert_eq!(glyph_font::GLYPHS_V2.len(), 31);
         for c in glyph_font::ALPHABET.chars() {
-            let g = glyph_font::glyph(c).expect("glyph in alphabet");
-            assert_eq!(g.ch, c);
-            assert!(!g.anchors.is_empty(), "{c} has anchors");
+            for (g, master) in [
+                (glyph_font::glyph_v1(c), "v1"),
+                (glyph_font::glyph_v2(c), "v2"),
+            ] {
+                let g = g.unwrap_or_else(|| panic!("{c} in the {master} master"));
+                assert_eq!(g.ch, c);
+                assert!(!g.anchors.is_empty(), "{c} has anchors in {master}");
+            }
         }
         for c in ['0', 'O', '1', 'I', 'L', ' ', '-', 'a'] {
-            assert!(glyph_font::glyph(c).is_none(), "{c} outside the alphabet");
+            assert!(glyph_font::glyph_v1(c).is_none(), "{c} outside v1");
+            assert!(glyph_font::glyph_v2(c).is_none(), "{c} outside v2");
         }
     }
 

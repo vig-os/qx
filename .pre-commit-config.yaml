@@ -22,7 +22,7 @@ repos:
         pass_filenames: true
       - id: adr-obligations
         name: ADR obligations benched (nothing falls out of the ADRs)
-        entry: python3 tools/obligations_check.py
+        entry: cargo run -q -p part-registry-devtools --bin obligations-check
         language: system
         files: ^decisions/(obligations\.toml|ADR-.*\.md)$
         pass_filenames: false

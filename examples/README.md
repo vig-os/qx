@@ -1,6 +1,8 @@
 # Label examples
 
-Reference renderings at common sizes, generated with `mint.py` + `label.py`.
+Reference renderings at common sizes, generated with the legacy Python
+`mint.py` + `label.py` (retired per ADR-017 step 9; the Rust `mint` /
+`label` binaries in `crates/cli` are parity-tested against their output).
 Both SVG (engraver/printer-ready, mm-native) and PNG (quick inspection)
 are included.
 

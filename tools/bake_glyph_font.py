@@ -3,19 +3,21 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Bake crates/codec/src/glyph_font.rs from design/glyph-font.v2.json.
+"""Bake crates/codec/src/glyph_font.rs from BOTH nx75 design files.
 
-nx75 v2 — the part-registry anchor font, CONNECTION-KERNEL model.
-The design file carries, per glyph, a 7x5 anchor bitmap ("px"), edge
+nx75 — the part-registry anchor font, PARITY-DISPATCHED OPTICAL
+MASTERS. Two masters of the same 7x5 anchor design ship side by side
+and the renderer picks per glyph scale k:
+
+- EVEN k  -> v1 master (design/glyph-font.v1.json) under the
+  KERNEL-PULL law — the user judged v1 best at even scales
+- ODD k   -> v2 master (design/glyph-font.v2.json) under the
+  CONNECTION-KERNEL law — judged best at odd scales
+
+Both design files carry, per glyph, a 7x5 anchor bitmap ("px"), edge
 overrides ("conn", "r1,c1-r2,c2" -> bool) and kernel overrides
-("kern", "r,c" -> [tl,tr,bl,br]). This baker resolves the active
-edges and per-anchor kernels and emits a pure const-data Rust module
-plus per-glyph ink-pixel checksums for k = 2, 3, 4, 6 computed by
-the same raster law the Rust renderer implements
-(crates/codec/src/px.rs).
-
-Semantics match the reference implementation (the JS inside
-tools/font_editor_gen.py) bit for bit:
+("kern", "r,c" -> [tl,tr,bl,br]). Resolution is the SAME for both
+masters:
 
 - candidate edges: 8-adjacent anchor pairs scanned row-major over
   dirs (0,1) (1,0) (1,1) (1,-1); orthogonal edges default ON, a
@@ -25,25 +27,32 @@ tools/font_editor_gen.py) bit for bit:
   OR an isolated anchor yields the full square [1,1,1,1]; else the
   bare quadrant-less node [0,0,0,0]
 
-The render is the union of three stamp types — no masks, no sweeps,
-no windows, no outward signs:
+The two RASTER laws differ:
 
-1. STRAIGHT connection: a k-wide rectangle between the two node
-   centers inclusive (px center within [c1_center, c2_center]
-   longitudinally, within k/2 of the line transversely)
-2. DIAGONAL connection: at the shared cell corner
-   (cx = max(c1,c2)*k, cy = max(r1,r2)*k), pixels with
-   L1(p - corner) <= k + eps AND anti-diagonal index |dx-dy| (when
-   the edge direction has dr == dc) or |dx+dy| (otherwise)
-   <= k-1 + eps
-3. NODE quadrants: each anchor-cell pixel not already painted is
-   painted iff its quadrant bit is set in the resolved kernel
-   (quadrant = (dy<0?0:2)+(dx<0?0:1) relative to the cell center)
+V1 — KERNEL-PULL (the TRUE v1 renderer, /tmp/true_v1.cjs verbatim):
+each active edge contributes TWO sweeps — each endpoint's kernel
+swept from that anchor's center to the edge MIDPOINT; isolated
+anchors contribute one stationary sweep at rest. A pixel center p is
+ink iff some sweep covers it: t = clamp(proj(p onto sweep), 0, 1),
+d = p - lerp(t), covered iff L1(d) <= k/2 OR (|dx| <= k/2 AND
+|dy| <= k/2 AND the quadrant's corner bit is set). A cell mask
+clips everything: only anchor cells plus the two bridge cells of
+each active diagonal edge may carry ink.
 
-The stamps are bounded by construction, so no clip mask exists.
+V2 — CONNECTION-KERNEL (crates/codec/src/px.rs raster_v2, the
+editor JS): the union of three bounded stamps — straight
+connections (a k-wide rectangle between the two node centers
+inclusive), diagonal connections (an L1 diamond of radius k at the
+shared cell corner, clipped to the k-row anti-diagonal band via
+|dx-dy| when dr == dc else |dx+dy| <= k-1 + eps) and node quadrants
+(each anchor-cell pixel not already painted is painted iff its
+quadrant bit is set in the resolved kernel). No mask exists.
+
+Checksums lock each master at its OWN parity: v1 at k = 2, 4, 6;
+v2 at k = 3, 5 — the scales each master actually renders at.
 
 The output is deterministic (alphabet order, no timestamps):
-re-running on the same design file yields a byte-identical module.
+re-running on the same design files yields a byte-identical module.
 `--check` regenerates to memory and diffs against the checked-in
 file — the CI drift gate for the baked font.
 """
@@ -57,10 +66,12 @@ from pathlib import Path
 
 ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
 ROWS, COLS = 7, 5
-CHECKSUM_KS = (2, 3, 4, 6)
+CHECKSUM_KS_V1 = (2, 4, 6)
+CHECKSUM_KS_V2 = (3, 5)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DESIGN = REPO_ROOT / "design" / "glyph-font.v2.json"
+DESIGN_V1 = REPO_ROOT / "design" / "glyph-font.v1.json"
+DESIGN_V2 = REPO_ROOT / "design" / "glyph-font.v2.json"
 DEFAULT_OUT = REPO_ROOT / "crates" / "codec" / "src" / "glyph_font.rs"
 
 
@@ -72,7 +83,8 @@ def resolve_glyph(g: dict) -> tuple[list[dict], list[dict]]:
     """Resolve one design-file glyph into baked anchors + edges.
 
     Returns (anchors, edges); anchors are dicts with r, c, quad_mask;
-    edges are dicts with a, b (anchor indices) and diag.
+    edges are dicts with a, b (anchor indices) and diag. The
+    resolution law is shared by both masters (see module docstring).
     """
     px = g["px"]
     conn = g.get("conn", {})
@@ -125,17 +137,68 @@ def resolve_glyph(g: dict) -> tuple[list[dict], list[dict]]:
     return baked_anchors, baked_edges
 
 
-def raster(anchors: list[dict], edges: list[dict], k: int) -> int:
-    """Ink-pixel count of the 5k x 7k raster — the renderer's law."""
-    return sum(v for row in raster_image(anchors, edges, k) for v in row)
+def kern_covers(mask: int, dx: float, dy: float, half: float) -> bool:
+    """V1 kernel coverage at offset (dx, dy) from the swept center."""
+    if abs(dx) + abs(dy) <= half:
+        return True
+    if abs(dx) > half or abs(dy) > half:
+        return False
+    ci = (0 if dy < 0 else 2) + (0 if dx < 0 else 1)
+    return bool(mask >> ci & 1)
 
 
-def raster_image(anchors: list[dict], edges: list[dict], k: int) -> list[list[int]]:
-    """The full 5k x 7k ink bitmap, row-major — the renderer's law.
+def raster_image_v1(anchors: list[dict], edges: list[dict], k: int) -> list[list[int]]:
+    """The v1 KERNEL-PULL law — /tmp/true_v1.cjs mirrored op for op.
+
+    Each active edge contributes a sweep per endpoint (that anchor's
+    kernel, anchor center -> edge midpoint); isolated anchors rest in
+    place. The cell mask (anchor cells + bridge cells of active
+    diagonal edges) clips everything.
+    """
+    half = k / 2.0
+    allowed = {(a["r"], a["c"]) for a in anchors}
+    sweeps = []
+    inked = set()
+    for e in edges:
+        a, b = anchors[e["a"]], anchors[e["b"]]
+        if e["diag"]:
+            allowed.add((a["r"], b["c"]))
+            allowed.add((b["r"], a["c"]))
+        for me, other in ((a, b), (b, a)):
+            ax = (me["c"] + 0.5) * k
+            ay = (me["r"] + 0.5) * k
+            mx = ((me["c"] + other["c"]) / 2 + 0.5) * k
+            my = ((me["r"] + other["r"]) / 2 + 0.5) * k
+            sweeps.append((ax, ay, mx - ax, my - ay, me["quad_mask"]))
+            inked.add((me["r"], me["c"]))
+    for a in anchors:
+        if (a["r"], a["c"]) not in inked:
+            sweeps.append(
+                ((a["c"] + 0.5) * k, (a["r"] + 0.5) * k, 0.0, 0.0, a["quad_mask"])
+            )
+
+    img = [[0] * (COLS * k) for _ in range(ROWS * k)]
+    for j in range(ROWS * k):
+        y = j + 0.5
+        for i in range(COLS * k):
+            if (j // k, i // k) not in allowed:
+                continue
+            x = i + 0.5
+            for ax, ay, vx, vy, mask in sweeps:
+                l2 = vx * vx + vy * vy
+                t = 0.0 if l2 == 0 else max(0.0, min(1.0, ((x - ax) * vx + (y - ay) * vy) / l2))
+                if kern_covers(mask, x - (ax + t * vx), y - (ay + t * vy), half):
+                    img[j][i] = 1
+                    break
+    return img
+
+
+def raster_image_v2(anchors: list[dict], edges: list[dict], k: int) -> list[list[int]]:
+    """The v2 CONNECTION-KERNEL law, the full 5k x 7k ink bitmap.
 
     This mirrors the reference JS raster() in tools/font_editor_gen.py
-    and crates/codec/src/px.rs raster_glyph expression for expression,
-    so the baked checksums lock all three implementations bit for bit.
+    and crates/codec/src/px.rs raster_v2 expression for expression, so
+    the baked checksums lock all three implementations bit for bit.
     """
     half = k / 2.0
     cell = {(a["r"], a["c"]): a["quad_mask"] for a in anchors}
@@ -201,24 +264,38 @@ def raster_image(anchors: list[dict], edges: list[dict], k: int) -> list[list[in
     return img
 
 
+def ink_count(img: list[list[int]]) -> int:
+    return sum(v for row in img for v in row)
+
+
 HEADER = '''\
-//! nx75 v2 — the part-registry anchor font.
+//! nx75 — the part-registry anchor font, PARITY-DISPATCHED OPTICAL
+//! MASTERS.
 //!
-//! A first-party 7x5 ANCHOR font for the nano14 id alphabet, baked
-//! under the CONNECTION-KERNEL model: each glyph is a set of anchor
-//! nodes on a 7-row x 5-column cell grid joined by orthogonal and
-//! diagonal connections, rasterised at any integer scale k by
-//! [`crate::px`] as the union of three stamp types — straight
-//! connections (a k-wide rectangle between the two node centers
-//! inclusive), diagonal connections (an L1 diamond of radius k at
-//! the shared cell corner, clipped to the k-row anti-diagonal band)
-//! and node quadrants (each anchor-cell pixel not already painted is
-//! painted iff its quadrant bit is set in the anchor's kernel). The
-//! stamps are bounded by construction — no clip mask exists.
+//! A first-party 7x5 ANCHOR font for the nano14 id alphabet shipping
+//! TWO masters of the same design, dispatched per glyph scale k by
+//! [`crate::px`]:
+//!
+//! - EVEN k renders [`GLYPHS_V1`] under the KERNEL-PULL law (each
+//!   active edge sweeps each endpoint's quadrant kernel from the
+//!   anchor center to the edge midpoint; isolated anchors rest in
+//!   place; a cell mask of anchor cells plus diagonal bridge cells
+//!   clips all ink) — the master judged best at even scales.
+//! - ODD k renders [`GLYPHS_V2`] under the CONNECTION-KERNEL law
+//!   (the union of three bounded stamps: straight-connection
+//!   rectangles, corner L1 diamonds clipped to the anti-diagonal
+//!   band, and node quadrants; no mask) — the master judged best at
+//!   odd scales.
+//!
+//! Both masters resolve edges and kernels identically at bake time —
+//! only the design data and the raster law differ. Checksums lock
+//! each master at its own parity: v1 at [`CHECKSUM_KS_V1`], v2 at
+//! [`CHECKSUM_KS_V2`].
 //!
 //! GENERATED FILE — DO NOT EDIT BY HAND.
-//! Generated from `design/glyph-font.v2.json` (the source of truth,
-//! authored in the labels/typography-bench font editor) by
+//! Generated from `design/glyph-font.v1.json` and
+//! `design/glyph-font.v2.json` (the sources of truth, authored in
+//! the labels/typography-bench font editor) by
 //! `tools/bake_glyph_font.py`, which resolves active edges and
 //! per-anchor quadrant kernels at bake time.
 //! Drift gate: `uv run tools/bake_glyph_font.py --check`
@@ -229,8 +306,12 @@ pub const GRID_ROWS: u32 = 7;
 pub const GRID_COLS: u32 = 5;
 /// The nano14 id alphabet the font covers (ADR-012: no `0/O/1/I/L`).
 pub const ALPHABET: &str = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
-/// Scales with baked ink checksums, in `Glyph::ink_bits` order.
-pub const CHECKSUM_KS: [u32; 4] = [2, 3, 4, 6];
+/// Scales with baked v1 ink checksums (even — the parity v1 renders
+/// at), in `Glyph::ink_bits` order.
+pub const CHECKSUM_KS_V1: [u32; 3] = [2, 4, 6];
+/// Scales with baked v2 ink checksums (odd — the parity v2 renders
+/// at), in `Glyph::ink_bits` order.
+pub const CHECKSUM_KS_V2: [u32; 2] = [3, 5];
 
 /// One anchor node of a glyph on the 7x5 grid.
 #[derive(Clone, Copy, Debug)]
@@ -267,29 +348,32 @@ pub struct Glyph {
     pub anchors: &'static [Anchor],
     /// Active connections, endpoints as indices into `anchors`.
     pub edges: &'static [Edge],
-    /// Ink-pixel counts of the rasterised glyph at the scales in
-    /// [`CHECKSUM_KS`], in order — the bake-time checksums the codec
-    /// test suite locks the Rust renderer against.
-    pub ink_bits: [u32; 4],
+    /// Ink-pixel counts of the rasterised glyph at this master's
+    /// checksum scales ([`CHECKSUM_KS_V1`] for v1, [`CHECKSUM_KS_V2`]
+    /// for v2), in order — the bake-time checksums the codec test
+    /// suite locks the Rust renderer against.
+    pub ink_bits: &'static [u32],
 }
 
-/// The glyph record for `c`, or `None` outside [`ALPHABET`].
-pub fn glyph(c: char) -> Option<&'static Glyph> {
-    GLYPHS.iter().find(|g| g.ch == c)
+/// The v1 (even-k, kernel-pull) glyph record for `c`, or `None`
+/// outside [`ALPHABET`].
+pub fn glyph_v1(c: char) -> Option<&'static Glyph> {
+    GLYPHS_V1.iter().find(|g| g.ch == c)
 }
 
-/// All 31 glyphs, in [`ALPHABET`] order.
-pub static GLYPHS: [Glyph; 31] = [
+/// The v2 (odd-k, connection-kernel) glyph record for `c`, or `None`
+/// outside [`ALPHABET`].
+pub fn glyph_v2(c: char) -> Option<&'static Glyph> {
+    GLYPHS_V2.iter().find(|g| g.ch == c)
+}
 '''
 
-FOOTER = "];\n"
 
-
-def emit(data: dict) -> str:
-    out = [HEADER]
+def emit_table(name: str, doc: str, data: dict, raster, checksum_ks) -> str:
+    out = [f"\n/// {doc}\npub static {name}: [Glyph; 31] = [\n"]
     for ch in ALPHABET:
         anchors, edges = resolve_glyph(data[ch])
-        sums = [raster(anchors, edges, k) for k in CHECKSUM_KS]
+        sums = [ink_count(raster(anchors, edges, k)) for k in checksum_ks]
         out.append("    Glyph {\n")
         out.append(f"        ch: '{ch}',\n")
         out.append("        anchors: &[\n")
@@ -308,15 +392,52 @@ def emit(data: dict) -> str:
             out.append(f"                diag: {str(e['diag']).lower()},\n")
             out.append("            },\n")
         out.append("        ],\n")
-        out.append(f"        ink_bits: [{', '.join(str(s) for s in sums)}],\n")
+        out.append(f"        ink_bits: &[{', '.join(str(s) for s in sums)}],\n")
         out.append("    },\n")
-    out.append(FOOTER)
+    out.append("];\n")
     return "".join(out)
+
+
+def emit(v1: dict, v2: dict) -> str:
+    return (
+        HEADER
+        + emit_table(
+            "GLYPHS_V1",
+            "All 31 v1 (even-k, KERNEL-PULL) glyphs, in [`ALPHABET`] order.",
+            v1,
+            raster_image_v1,
+            CHECKSUM_KS_V1,
+        )
+        + emit_table(
+            "GLYPHS_V2",
+            "All 31 v2 (odd-k, CONNECTION-KERNEL) glyphs, in [`ALPHABET`] order.",
+            v2,
+            raster_image_v2,
+            CHECKSUM_KS_V2,
+        )
+    )
+
+
+def load_design(path: Path) -> dict:
+    data = json.loads(path.read_text())
+    if set(data) != set(ALPHABET):
+        missing = sorted(set(ALPHABET) - set(data))
+        extra = sorted(set(data) - set(ALPHABET))
+        sys.exit(
+            f"{path.name}: design file alphabet mismatch: "
+            f"missing {missing}, extra {extra}"
+        )
+    for ch, g in data.items():
+        px = g["px"]
+        if len(px) != ROWS or any(len(row) != COLS for row in px):
+            sys.exit(f"{path.name}: glyph {ch}: px is not {ROWS}x{COLS}")
+    return data
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--design", type=Path, default=DESIGN)
+    ap.add_argument("--design-v1", type=Path, default=DESIGN_V1)
+    ap.add_argument("--design-v2", type=Path, default=DESIGN_V2)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument(
         "--check",
@@ -325,24 +446,20 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    data = json.loads(args.design.read_text())
-    if set(data) != set(ALPHABET):
-        missing = sorted(set(ALPHABET) - set(data))
-        extra = sorted(set(data) - set(ALPHABET))
-        sys.exit(f"design file alphabet mismatch: missing {missing}, extra {extra}")
-    for ch, g in data.items():
-        px = g["px"]
-        if len(px) != ROWS or any(len(row) != COLS for row in px):
-            sys.exit(f"glyph {ch}: px is not {ROWS}x{COLS}")
+    v1 = load_design(args.design_v1)
+    v2 = load_design(args.design_v2)
 
-    generated = emit(data)
+    generated = emit(v1, v2)
     if args.check:
         on_disk = args.out.read_text() if args.out.exists() else ""
         if on_disk != generated:
-            print(f"DRIFT: {args.out} does not match design/{args.design.name}")
+            print(
+                f"DRIFT: {args.out} does not match "
+                f"design/{args.design_v1.name} + design/{args.design_v2.name}"
+            )
             print("rerun: uv run tools/bake_glyph_font.py")
             return 1
-        print(f"ok: {args.out} matches {args.design}")
+        print(f"ok: {args.out} matches {args.design_v1} + {args.design_v2}")
         return 0
     args.out.write_text(generated)
     print(f"-> {args.out}")

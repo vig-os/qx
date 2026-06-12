@@ -2,13 +2,14 @@
 //
 // !!! DRIFT WARNING !!!
 //
-// These layouts are a TypeScript port of label.py. The Python module
-// is the SSOT today (CLI tooling + tests live there). The intended
-// long-term solution per ADR-013 is to load label.py via Pyodide so
-// FE and CI run literally the same code. Until that lands, drift
-// between this file and label.py is a real risk; the test_labels.py
-// roundtrip is the canonical correctness gate, and any rule change
-// here must be mirrored to label.py + retested.
+// These layouts are a TypeScript port of the label renderer. The SSOT
+// is the Rust codec (`crates/codec`, per ADR-017; the legacy Python
+// label.py was deleted in step 9). The long-term solution is the WASM
+// façade (`crates/wasm`) so FE and CLI run literally the same code.
+// Until that swap lands, drift between this file and `crates/codec`
+// is a real risk; `crates/cli/tests/label_parity_golden.rs` is the
+// canonical correctness gate, and any rule change here must be
+// mirrored to the Rust codec + retested.
 
 import type { Layout } from "../core/types";
 import { vertLayout } from "./vert";

@@ -455,6 +455,22 @@ and registries declare:
   rule as every other render concern — no print capability is decided
   in shell code.
 
+### 9. Scope cut: printers are downstream (2026-06-12)
+
+**This repo delivers px-accurate render payloads; printing them is
+someone else's job.** All printer-physical concerns are OUT of scope:
+printer profiles (per-side intrinsic margins, cut tolerance,
+device-dpi defaults), cut-clipping warnings, and calibration
+workflows — every §3/§8 forward-hook to "printer profiles" is hereby
+retired unbuilt. This re-asserts ADR-030's own split (render-label =
+core operation; deliver-print = a consumer capability) at full
+strength. What remains in scope is pure geometry: px-true rendering,
+padding modes (incl. clip — the consumer decides whether their device
+donates white), `--unit mm --dpi <n>` as plain unit arithmetic with no
+device registry behind it, and combination validation over geometric
+(not physical) constraints. Device-specific comments in code ("≈
+Brother QL") are to be neutralized as encountered.
+
 ## Corrections
 
 > **2026-06-11:** §2 as first accepted read `--size` as the *QR symbol

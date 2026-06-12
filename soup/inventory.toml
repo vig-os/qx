@@ -398,6 +398,36 @@ revalidation_trigger = "major-bump"
 surveillance_owner = "shells-maintainer"
 notes = "fs feature only; SPA fallback to index.html."
 
+# -----------------------------------------------------------------------------
+# Repo gate tooling (crates/devtools — the obligations-check binary,
+# ADR-017 step 9 port of tools/obligations_check.py). Dev/CI gate only,
+# never in the product path. Added 2026-06-12.
+# -----------------------------------------------------------------------------
+
+[[crate]]
+name = "toml"
+version = "=0.8"
+class = 1
+role = "full-TOML parse of decisions/obligations.toml in the obligations-check gate"
+used_by = ["devtools"]
+maintenance_url = "https://github.com/toml-rs/toml"
+last_release_check = "2026-06-12"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+notes = "Gate tooling only; was already in the workspace lock as a transitive dep of figment."
+
+[[crate]]
+name = "glob"
+version = "=0.3"
+class = 1
+role = "satisfied_by path/glob resolution in the obligations-check gate"
+used_by = ["devtools"]
+maintenance_url = "https://github.com/rust-lang/glob"
+last_release_check = "2026-06-12"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+notes = "rust-lang-owned; gate tooling only, never in the product path."
+
 # Pending entries — added as adapter PRs land Class-3 deps not yet
 # in the workspace. Each entry below is a placeholder for an
 # expected dep that has not yet been pinned; the coverage tool

@@ -1,0 +1,25 @@
+[package]
+name = "part-registry-devtools"
+version = "0.1.0"
+description = "Repo gate tooling — obligations-check, the ADR-029 obligations bench (Rust port of the retired tools/obligations_check.py)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "obligations-check"
+path = "src/main.rs"
+
+[dependencies]
+# Full-TOML parse of decisions/obligations.toml (mirrors tomllib in the
+# retired Python gate). Already in the workspace lock via figment.
+toml = "0.8"
+# `satisfied_by` accepts paths OR globs (mirrors Path.glob). Already in
+# the lock as a transitive dep.
+glob = "0.3"
+# Local "today" for exemption-expiry checks (mirrors datetime.date.today).
+time = { workspace = true, features = ["local-offset"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }

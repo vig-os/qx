@@ -3,7 +3,7 @@
 
   # Per #35 Phase 3: one `nix develop` brings up the full dev environment
   # — Rust toolchain pinned to `rust-toolchain.toml`, Node 22 + npm, uv
-  # (for Python parity tests + tools/), wasm-pack, wasm-bindgen-cli,
+  # (for the design-time font tools in tools/), wasm-pack, wasm-bindgen-cli,
   # Playwright + chromium, gh, jq, actionlint. CI can `nix develop -c
   # <cmd>` to get the same env as a contributor's machine.
   #
@@ -52,6 +52,25 @@
         # the latest; pin by hash if the unstable channel ever drifts.
         wasmBindgenCli = pkgs.wasm-bindgen-cli;
 
+        # Workspace builds with the same pinned toolchain the dev shell uses.
+        rustPlatformPinned = pkgs.makeRustPlatform {
+          cargo = rustToolchain;
+          rustc = rustToolchain;
+        };
+
+        # The obligations gate binary (crates/devtools — Rust port of the
+        # retired tools/obligations_check.py, ADR-017 step 9). Built from the
+        # checked-in Cargo.lock so the derivation is hermetic; the vendor step
+        # fetches the whole workspace lock once and is cached thereafter.
+        devtools = rustPlatformPinned.buildRustPackage {
+          pname = "part-registry-devtools";
+          version = "0.1.0";
+          src = ./.;
+          cargoLock.lockFile = ./Cargo.lock;
+          buildAndTestSubdir = "crates/devtools";
+          doCheck = false;
+        };
+
       in {
         # mkDevShell layers the guardrails toolbelt + auto-hook-install
         # under our project tools (`extra`), the shell `name`, the
@@ -69,7 +88,10 @@
             # FE
             nodejs_22
 
-            # Python parity CLIs + tools/
+            # uv stays for the remaining design-time Python font tools
+            # (tools/bake_glyph_font.py + tools/font_editor_gen.py); it
+            # leaves with their Rust port. Operational Python is gone
+            # (ADR-017 step 9).
             uv
 
             # CI / repo tooling
@@ -94,10 +116,12 @@
             PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
 
             # `tools/` holds CLI scripts whose job is to write to stdout/stderr
-            # (sheet.py, obligations_check.py, …). Declare it an output surface so
-            # guardrails' no-debug-leftovers gate stays high-signal on lib/app
-            # code instead of flagging legitimate command output.
-            GUARDRAILS_OUTPUT_GLOBS = "tools/*:*/tools/*";
+            # (bake_glyph_font.py, font_editor_gen.py, …), and crates/devtools
+            # is the obligations gate binary whose report IS its output.
+            # Declare both as output surfaces so guardrails' no-debug-leftovers
+            # gate stays high-signal on lib/app code instead of flagging
+            # legitimate command output.
+            GUARDRAILS_OUTPUT_GLOBS = "tools/*:*/tools/*:crates/devtools/*:*/crates/devtools/*";
           };
 
           # Appended after the guardrails banner so the project cheatsheet
@@ -122,7 +146,7 @@
         # so local `nix flake check` and CI are the same run.
         checks.obligations = pkgs.runCommand "adr-obligations" { } ''
           cd ${./.}
-          ${pkgs.python3}/bin/python3 tools/obligations_check.py
+          ${devtools}/bin/obligations-check
           touch $out
         '';
 

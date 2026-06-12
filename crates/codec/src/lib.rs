@@ -15,9 +15,11 @@
 //!   (`label.py:97-251`)
 //! - [`px`] — px-true device-pixel renderer + job-uniformity pass
 //!   (ADR-031 §2–§4; obligation `px-true-qr-render`)
-//! - [`glyph_font`] — GENERATED nx75 v2 anchor-font data, baked from
+//! - [`glyph_font`] — GENERATED nx75 anchor-font data, BOTH optical
+//!   masters, baked from `design/glyph-font.v1.json` and
 //!   `design/glyph-font.v2.json` by `tools/bake_glyph_font.py`; the
-//!   px-true id-text rasterises it via the [`px`] connection-kernel law
+//!   px-true id-text dispatches on glyph-scale parity in [`px`]
+//!   (even k → v1 kernel-pull, odd k → v2 connection-kernel)
 //! - [`symbology`] — the `<family>[-<version>][-<ec>]` type grammar +
 //!   auto-fit resolution (ADR-031 §8 print contracts)
 //!

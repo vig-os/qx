@@ -3,8 +3,9 @@
 # This is the first *feeder* per ADR-030 §8 (and ADR-029 dimension 4, "ADR
 # commitments"): one row per load-bearing commitment an ADR makes, in
 # structured data so a checker can bench reality against it and nothing gets
-# logically lost. Benched by `tools/obligations_check.py` (prek-wired); see that
-# file for exit codes. NOT loose prose — every row is machine-checked.
+# logically lost. Benched by the `obligations-check` binary (crates/devtools,
+# prek-wired); see that crate for exit codes. NOT loose prose — every row is
+# machine-checked.
 #
 # The checker emits feeder-JSON per row for the future ADR-029 coverage joiner:
 #   { "dimension": "adr-obligation", "obligation": <id>, "satisfied": <bool>,
@@ -74,8 +75,9 @@ id = "python-strangler-deleted"
 adr = "ADR-017"
 statement = "Python CLI (label.py/mint.py/bind.py/validators) deleted once the Rust binaries reach parity"
 kind = "issue"
-status = "pending"
-tracking = "Phase A unblocked (mint/bind/label/validators have in-tree parity tests); Phase B gated on px-true codec (printer_test_62mm.py), compose-sheet port (sheet.py), and the Rust ADR-029 joiner (obligations_check.py)"
+status = "satisfied"
+satisfied_by = ["crates/cli/tests/label_parity_golden.rs", "crates/cli/tests/golden", "crates/devtools/src/main.rs"]
+tracking = "step 9 executed 2026-06-12 — deleted: mint.py, bind.py, label.py, test_labels.py, registry_contract.py, validators/, tools/sheet.py, tools/layout_analysis.py, tools/printer_test_62mm.py, tools/obligations_check.py (ported to crates/devtools), tools/gen_spleen_glyphs.py; remaining Python = the design-time font tools tools/bake_glyph_font.py + tools/font_editor_gen.py (Rust port queued)"
 
 # ---- The ports (ADR-018/019/020/021/022) --------------------------------
 
@@ -169,7 +171,7 @@ adr = "ADR-029"
 statement = "Architectural obligations are benched as structured data so nothing falls out (this feeder)"
 kind = "test"
 status = "satisfied"
-satisfied_by = "tools/obligations_check.py"
+satisfied_by = "crates/devtools/src/main.rs"
 
 [[obligation]]
 id = "coverage-joiner"
@@ -221,7 +223,7 @@ adr = "ADR-031"
 statement = "px-true render: size = exact output canvas, padding = floor, module_px DEDUCED from (size-2*pad)/N, ERROR on impossible fit; symbol_px % N == 0"
 kind = "test"
 status = "pending"
-tracking = "px geometry + clip + per-side padding + --type + --size suffix + nx75 typography ALL LANDED; REMAINING: --size-mode snap, --align, combination validation, printer profiles (task #13)"
+tracking = "px geometry + clip + per-side padding + --type + --size suffix + nx75 typography ALL LANDED; REMAINING: --size-mode snap, --align, combination validation (geometry-only); printer profiles CUT per ADR-031 SS9 — printing is downstream"
 
 [[obligation]]
 id = "print-contracts"

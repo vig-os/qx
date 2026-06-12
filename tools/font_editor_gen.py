@@ -1,9 +1,30 @@
-"""Generate the interactive font editor HTML (single file, vanilla JS)."""
+"""Generate the interactive font editor HTML (single file, vanilla JS).
+
+PARITY-DISPATCHED OPTICAL MASTERS: the editor embeds BOTH nx75 design
+files and dispatches per glyph scale k exactly like the codec
+(crates/codec/src/px.rs raster_glyph):
+
+- EVEN k -> the v1 master (design/glyph-font.v1.json) under the
+  KERNEL-PULL law (per-anchor kernel swept along each active edge to
+  the midpoint; isolated anchors at rest; cell mask)
+- ODD k  -> the v2 master (design/glyph-font.v2.json) under the
+  CONNECTION-KERNEL law (straight rects center-to-center, corner L1
+  diamonds clipped to the anti-diagonal band, node quadrants, no
+  mask)
+
+EDITING CHOICE: edits affect the master matching the CURRENT UNDERLAY
+PARITY — pick an even underlay k and you are editing v1, odd and you
+are editing v2 (the toolbar shows which). The previews always render
+each k through its own master, so both masters stay visible at all
+times. Export emits one master at a time (paste into the matching
+design/glyph-font.v{1,2}.json), reset restores the current master's
+glyph from the file this generator embedded.
+"""
 import json
 from pathlib import Path
 
-font = json.loads(Path("design/glyph-font.v2.json").read_text())
-F = {ch: ["".join(str(v) for v in row) for row in g["px"]] for ch, g in font.items()}
+font_v1 = json.loads(Path("design/glyph-font.v1.json").read_text())
+font_v2 = json.loads(Path("design/glyph-font.v2.json").read_text())
 
 html = """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>part-registry font editor</title>
@@ -20,15 +41,16 @@ canvas{background:#fff;border:1px solid #ccc;image-rendering:pixelated}
 #strip canvas{margin-right:4px}
 textarea{width:100%;height:90px;font-size:10px}
 .hint{color:#666;font-size:12px}
+#master{font-weight:bold}
 </style></head><body>
 <div id="glyphs"></div>
 <div style="margin-top:6px">
 mode: <button class="mode sel" id="m-px">pixels</button><button class="mode" id="m-conn">connections</button><button class="mode" id="m-kern">kernel sq/di</button>
-&nbsp; <label><input type="checkbox" id="mask" checked> cell clip mask</label>
 &nbsp; underlay k: <select id="editk"><option>2</option><option>3</option><option selected>4</option><option>6</option><option>8</option><option>12</option></select>
-&nbsp; <button id="export">export JSON</button> <button id="reset">reset glyph</button>
+&nbsp; editing <span id="master"></span>
+&nbsp; <button id="export-v1">export v1 JSON</button> <button id="export-v2">export v2 JSON</button> <button id="reset">reset glyph</button>
 </div>
-<div class="hint">pixels: click/drag toggles anchors &middot; connections: click a line (solid=on, faint dotted=off) &middot; kernel: click an anchor to flip &#9632;/&#9670;</div>
+<div class="hint">PARITY OPTICAL MASTERS: even k renders/edits v1 (kernel-pull), odd k renders/edits v2 (connection-kernel) &middot; pixels: click/drag toggles anchors &middot; connections: click a line (solid=on, faint dotted=off) &middot; kernel: click an anchor to flip &#9632;/&#9670;</div>
 <div id="main">
   <div><canvas id="edit" width="480" height="672"></canvas></div>
   <div id="previews"></div>
@@ -36,15 +58,22 @@ mode: <button class="mode sel" id="m-px">pixels</button><button class="mode" id=
 <div id="strip"></div>
 <textarea id="out" placeholder="exported JSON appears here"></textarea>
 <script>
-const FONT = __FONTDATA__;
-const F = Object.fromEntries(Object.entries(FONT).map(([ch, g]) => [ch, g.px.map(r => r.join(""))]));
+const FONTS = { v1: __FONTDATA_V1__, v2: __FONTDATA_V2__ };
 const ALPHA = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
-let state = {};
-for (const ch of ALPHA) {
-  const g = FONT[ch];
-  state[ch] = { px: g.px.map(row => [...row]), conn: {...g.conn}, kern: Object.fromEntries(Object.entries(g.kern).map(([k2, v]) => [k2, [...v]])) };
+let state = { v1: {}, v2: {} };
+for (const ver of ["v1", "v2"]) for (const ch of ALPHA) {
+  const g = FONTS[ver][ch];
+  state[ver][ch] = { px: g.px.map(row => [...row]), conn: {...g.conn}, kern: Object.fromEntries(Object.entries(g.kern).map(([k2, v]) => [k2, [...v]])) };
 }
 let cur = "K", mode = "px";
+
+// The parity dispatch — the same law as crates/codec/src/px.rs
+// raster_glyph: even k -> v1 kernel-pull, odd k -> v2
+// connection-kernel.
+function verFor(k){ return (k % 2 === 0) ? "v1" : "v2"; }
+function editK(){ return parseInt(document.getElementById("editk").value); }
+function curVer(){ return verFor(editK()); }
+function rasterAny(ver, g, k){ return ver === "v1" ? rasterV1(g, k) : rasterV2(g, k); }
 
 function at(px, r, c){ return (r>=0&&r<7&&c>=0&&c<5) ? px[r][c] : 0; }
 function edgeKey(a, b){ return a[0]+","+a[1]+"-"+b[0]+","+b[1]; }
@@ -69,28 +98,18 @@ function activeEdges(g){
   });
 }
 function kernel(g, r, c){
-  // corners = [tl,tr,bl,br]; the kernel IS the anchor cell's ink:
-  // orth-touching/isolated -> full square; pure-diagonal -> diamond
-  // plus the corners ALONG its active runs (ribbon continuity)
+  // corners = [tl,tr,bl,br] — the resolution law BOTH masters share:
+  // a kern override wins; else orth-touching/isolated -> full
+  // square; else the bare quadrant-less node
   const k = g.kern[r+","+c];
   if (k) return k;
   let orth = false, any = false;
-  const corners = [0,0,0,0];
   for (const e of activeEdges(g)){
     if (!e.on) continue;
-    let other = null;
-    if (e.a[0]===r&&e.a[1]===c) other = e.b;
-    else if (e.b[0]===r&&e.b[1]===c) other = e.a;
-    if (!other) continue;
-    any = true;
-    if (!e.diag){ orth = true; }
-    else {
-      const dr = other[0]-r, dc = other[1]-c;
-      corners[(dr<0?0:2)+(dc<0?0:1)] = 1;
-    }
+    const hit = (e.a[0]===r&&e.a[1]===c)||(e.b[0]===r&&e.b[1]===c);
+    if (hit){ any = true; if (!e.diag) orth = true; }
   }
-  if (orth || !any) return [1,1,1,1];
-  return [0,0,0,0];
+  return (orth || !any) ? [1,1,1,1] : [0,0,0,0];
 }
 function kernCovers(corners, dx, dy, half){
   if (Math.abs(dx)+Math.abs(dy) <= half) return true;
@@ -98,10 +117,45 @@ function kernCovers(corners, dx, dy, half){
   const ci = (dy < 0 ? 0 : 2) + (dx < 0 ? 0 : 1);
   return !!corners[ci];
 }
-function raster(g, k, useMask){
+function rasterV1(g, k){
+  // KERNEL-PULL model (the TRUE v1 law): per-anchor kernel swept
+  // along each active edge to the MIDPOINT; isolated anchors at
+  // rest; cell mask = anchor cells + bridge cells of active
+  // diagonal edges.
+  const px = g.px, edges = activeEdges(g).filter(e=>e.on);
+  const allowed = new Set();
+  for (let r=0;r<7;r++) for (let c=0;c<5;c++) if (px[r][c]) allowed.add(r+","+c);
+  for (const e of edges) if (e.diag){ allowed.add(e.a[0]+","+e.b[1]); allowed.add(e.b[0]+","+e.a[1]); }
+  const sweeps = [], inked = new Set();
+  for (const e of edges){
+    for (const [me, other] of [[e.a,e.b],[e.b,e.a]]){
+      const ax=(me[1]+0.5)*k, ay=(me[0]+0.5)*k;
+      const mx=((me[1]+other[1])/2+0.5)*k, my=((me[0]+other[0])/2+0.5)*k;
+      sweeps.push({ax, ay, vx:mx-ax, vy:my-ay, kern:kernel(g,me[0],me[1])});
+      inked.add(me[0]+","+me[1]);
+    }
+  }
+  for (let r=0;r<7;r++) for (let c=0;c<5;c++)
+    if (px[r][c] && !inked.has(r+","+c))
+      sweeps.push({ax:(c+0.5)*k, ay:(r+0.5)*k, vx:0, vy:0, kern:kernel(g,r,c)});
+  const img = [];
+  for (let j=0;j<7*k;j++) img.push(new Array(5*k).fill(0));
+  const half = k/2;
+  for (let j=0;j<7*k;j++) for (let i=0;i<5*k;i++){
+    if (!allowed.has(Math.floor(j/k)+","+Math.floor(i/k))) continue;
+    const x=i+0.5, y=j+0.5;
+    for (const s of sweeps){
+      const L2 = s.vx*s.vx + s.vy*s.vy;
+      const t = L2===0 ? 0 : Math.max(0, Math.min(1, ((x-s.ax)*s.vx+(y-s.ay)*s.vy)/L2));
+      if (kernCovers(s.kern, x-(s.ax+t*s.vx), y-(s.ay+t*s.vy), half)){ img[j][i]=1; break; }
+    }
+  }
+  return img;
+}
+function rasterV2(g, k){
   // CONNECTION-KERNEL model: connections own center-to-center ink
   // with fixed shapes; nodes are pure edge-px config (quadrants).
-  // straight = k-wide rect between node centers (inclusive);
+  // straight = k-wide rect between node centers (inclusive) and
   // diagonal = L1 diamond radius k at the shared corner — it
   // inscribes the 2x2 cell block exactly, overflow is impossible.
   const px = g.px, edges = activeEdges(g).filter(e=>e.on);
@@ -157,13 +211,14 @@ function raster(g, k, useMask){
   return img;
 }
 
-const Z = 96, edit = document.getElementById("edit"), ectx = edit.getContext("2d");
+const edit = document.getElementById("edit"), ectx = edit.getContext("2d");
 function drawEdit(){
-  const g = state[cur];
+  // The edit canvas shows the master the underlay parity selects —
+  // its anchors, edges and kernels are what the mouse edits.
+  const ver = curVer(), g = state[ver][cur];
   ectx.clearRect(0,0,480,672);
-  const cell = Z*5/5;
   const sc = 480/5;
-  const k = parseInt(document.getElementById("editk").value), R = raster(g, k, document.getElementById("mask").checked);
+  const k = editK(), R = rasterAny(ver, g, k);
   const pz = 480/(5*k);
   ectx.fillStyle = "#eee";
   for (let j=0;j<7*k;j++) for (let i=0;i<5*k;i++)
@@ -193,32 +248,38 @@ function drawEdit(){
     }
     ectx.strokeStyle="#fff"; ectx.strokeRect(x-2,y-2,4,4);
   }
+  document.getElementById("master").textContent = ver + " (" + (ver === "v1" ? "even k, kernel-pull" : "odd k, connection-kernel") + ")";
 }
 function drawPreviews(){
-  const g = state[cur], div = document.getElementById("previews");
+  // Each preview renders its k through ITS OWN master — the parity
+  // dispatch — so v1 and v2 stay visible side by side.
+  const div = document.getElementById("previews");
   div.innerHTML = "";
   for (const k of [2,3,4,6]){
+    const ver = verFor(k), g = state[ver][cur];
     const cv = document.createElement("canvas");
     const z = {2:5,3:4,4:3,6:2}[k];
     cv.width = 5*k*z; cv.height = 7*k*z;
     const ctx = cv.getContext("2d");
-    const R = raster(g, k, document.getElementById("mask").checked);
+    const R = rasterAny(ver, g, k);
     ctx.fillStyle="#000";
     for (let j=0;j<7*k;j++) for (let i=0;i<5*k;i++) if (R[j][i]) ctx.fillRect(i*z,j*z,z,z);
     cv.style.cursor = "pointer";
-    cv.title = "k="+k+" (click to set underlay)";
+    cv.title = "k="+k+" -> "+ver+" (click to set underlay / edit this master)";
     cv.onclick = ()=>{ document.getElementById("editk").value = String(k); sync(); };
     div.appendChild(cv);
   }
 }
 function drawStrip(){
+  // The strip renders at k=3 — odd, so the v2 master via the same
+  // dispatch.
   const div = document.getElementById("strip");
   div.innerHTML = "";
   for (const ch of ALPHA){
-    const k=3, z=2, cv=document.createElement("canvas");
+    const k=3, ver=verFor(k), z=2, cv=document.createElement("canvas");
     cv.width=5*k*z; cv.height=7*k*z; cv.title=ch;
     const ctx=cv.getContext("2d");
-    const R = raster(state[ch], k, true);
+    const R = rasterAny(ver, state[ver][ch], k);
     ctx.fillStyle="#000";
     for (let j=0;j<7*k;j++) for (let i=0;i<5*k;i++) if (R[j][i]) ctx.fillRect(i*z,j*z,z,z);
     cv.onclick=()=>{cur=ch; sync();};
@@ -240,7 +301,7 @@ edit.onmousedown = e => {
   const rect=edit.getBoundingClientRect();
   const x=e.clientX-rect.left, y=e.clientY-rect.top;
   const sc=480/5, c=Math.floor(x/sc), r=Math.floor(y/sc);
-  const g=state[cur];
+  const g=state[curVer()][cur];
   if (mode==="px"){
     dragging=true; dragVal = g.px[r]&&g.px[r][c]?0:1;
     if(r<7&&c<5){ g.px[r][c]=dragVal; sync(); }
@@ -274,26 +335,32 @@ edit.onmousemove = e => {
   if (!dragging || mode!=="px") return;
   const rect=edit.getBoundingClientRect();
   const sc=480/5, c=Math.floor((e.clientX-rect.left)/sc), r=Math.floor((e.clientY-rect.top)/sc);
-  if (r>=0&&r<7&&c>=0&&c<5 && state[cur].px[r][c]!==dragVal){ state[cur].px[r][c]=dragVal; sync(); }
+  const g=state[curVer()][cur];
+  if (r>=0&&r<7&&c>=0&&c<5 && g.px[r][c]!==dragVal){ g.px[r][c]=dragVal; sync(); }
 };
 window.onmouseup = ()=>{ dragging=false; };
 document.getElementById("m-px").onclick = e=>{mode="px"; selMode(e.target);};
 document.getElementById("m-conn").onclick = e=>{mode="conn"; selMode(e.target);};
 document.getElementById("m-kern").onclick = e=>{mode="kern"; selMode(e.target);};
 function selMode(t){ document.querySelectorAll(".mode").forEach(b=>b.classList.remove("sel")); t.classList.add("sel"); }
-document.getElementById("mask").onchange = sync;
 document.getElementById("editk").onchange = sync;
-document.getElementById("export").onclick = ()=>{
-  document.getElementById("out").value = JSON.stringify(state);
+document.getElementById("export-v1").onclick = ()=>{
+  document.getElementById("out").value = JSON.stringify(state.v1);
+};
+document.getElementById("export-v2").onclick = ()=>{
+  document.getElementById("out").value = JSON.stringify(state.v2);
 };
 document.getElementById("reset").onclick = ()=>{
-  state[cur] = { px: F[cur].map(row=>[...row].map(Number)), conn:{}, kern:{} };
+  const ver = curVer();
+  const g = FONTS[ver][cur];
+  state[ver][cur] = { px: g.px.map(row=>[...row]), conn: {...g.conn}, kern: Object.fromEntries(Object.entries(g.kern).map(([k2,v]) => [k2,[...v]])) };
   sync();
 };
 sync();
 </script></body></html>
 """
-html = html.replace("__FONTDATA__", json.dumps(font))
+html = html.replace("__FONTDATA_V1__", json.dumps(font_v1))
+html = html.replace("__FONTDATA_V2__", json.dumps(font_v2))
 out = Path("labels/typography-bench/font-editor.html")
 out.write_text(html)
 print(f"-> {out}")

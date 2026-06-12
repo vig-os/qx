@@ -18,6 +18,7 @@ members = [
     "crates/observability",
     "crates/config",
     "crates/cli",
+    "crates/devtools",
     "crates/wasm",
     "crates/port_tests",
     "desktop/src-tauri",
