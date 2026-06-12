@@ -172,7 +172,8 @@
           inherit cargoArtifacts;
           pname = "part-registry-wasm";
           version = "0.1.0";
-          cargoExtraArgs = "--release --target wasm32-unknown-unknown -p part-registry-wasm";
+          # crane injects --release itself; repeating it errors
+          cargoExtraArgs = "--target wasm32-unknown-unknown -p part-registry-wasm";
           # The default `cargo install` step at the end of buildPackage
           # has nothing to install for a cdylib — skip it; the wasm
           # artifact lands in $cargoBuildLog's target/ dir which we
@@ -321,7 +322,9 @@
           # warnings are errors (matches the old rust.yml).
           clippy = craneLib.cargoClippy (commonArgs // {
             inherit cargoArtifacts;
-            cargoClippyExtraArgs = "--workspace --exclude part-registry-desktop --all-targets --all-features -- -D warnings";
+            # workspace/exclude/features come from commonArgs — repeating
+            # them here makes cargo reject the duplicate flags
+            cargoClippyExtraArgs = "--all-targets -- -D warnings";
           });
 
           # cargo test — every feature ON so feature-gated corners
@@ -329,7 +332,8 @@
           # run in CI.
           test = craneLib.cargoTest (commonArgs // {
             inherit cargoArtifacts;
-            cargoTestExtraArgs = "--workspace --exclude part-registry-desktop --all-features";
+            # workspace/exclude/features inherited from commonArgs
+            cargoTestExtraArgs = "";
           });
 
           # cargo-deny — licenses + RustSec advisories. The advisory-db
@@ -337,10 +341,11 @@
           # the Nix sandbox (no GitHub clone at gate time).
           deny = craneLib.cargoDeny (commonArgs // {
             inherit advisory-db;
-            # cargo-deny takes its own flags; crane must not forward the
-            # workspace/feature args (deny errors on `--workspace`).
+            # cargo-deny takes its own flags: crane must not forward the
+            # workspace/feature args, and crane already injects `check`
+            # — only the WHICH list goes through cargoDenyChecks.
             cargoExtraArgs = "";
-            cargoDenyExtraArgs = "check bans licenses sources advisories";
+            cargoDenyChecks = "bans licenses sources advisories";
           });
 
           # ADR obligations gate — the Rust devtools binary against
