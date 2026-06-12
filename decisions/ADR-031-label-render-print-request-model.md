@@ -471,6 +471,58 @@ device registry behind it, and combination validation over geometric
 (not physical) constraints. Device-specific comments in code ("≈
 Brother QL") are to be neutralized as encountered.
 
+### 10. Payload composition + repeat sub-contracts (2026-06-12)
+
+**The payload is a layout tree.** Grammar (recursive day one; engine
+ships staged — flat list, then one nesting level, then canvas):
+
+```
+node  := leaf | [h|v: node ...] | [c WxH: leaf@(x,y) ...]
+leaf  := qr[:TYPE] | id[:GROUPING|N] | space
+size  := @<N>px|mm | @wN (flex weight) | content/solver-derived
+```
+
+- Leaves are CLOSED forever (qr / id / space) — nesting and canvas
+  compose *arrangement*, never content; the id-only security model is
+  structurally untouchable.
+- Element params > global flags > contract defaults; every existing
+  flag is sugar over the explicit form (`--content qr+id` = `"qr id"`,
+  `--chars` = bare-id default, `--type` = bare-qr default, `--layout`
+  = root axis). Order in the string IS the order on the axis.
+- One box engine: justify, `--align`, co-sizing, and gap distribution
+  all become flex-weight slack distribution; the fix-two-derive-one
+  solver (id-chars x rows x glyph-size; fix two, derive the third;
+  fix fewer, maximize) runs per group; errors quote the failing group
+  path and the nearest feasible parameter triple.
+- Canvas groups add bounds checking (ERROR) and overlap detection
+  (WARN; qr-over-qr ERROR) for die-cut/fixed-zone stock.
+- The resolved payload tree ships in the artifact's metadata receipt.
+
+**Repeat primitives** (orthogonal; they repeat the composed payload):
+`--repeat n|fill`, `--repeat-gap` (or derived), `--repeat-axis
+along|across`, `--length`, `--repeat-orient same|alternate` (alternate
+rotates every second copy 180°), `--rotate 0|90|180|270`, spacing
+linear (n−1 gaps) vs **cyclic** (n gaps — closed loops; n=2 lands
+copies on opposite sides of a cable), and `--length-excess` with
+`--excess-at start|end`: excess renders as a BLANK zone — at `start`
+it is the under-wrap leader the printed tail seals over (opaque
+media); at `end` it is the tail that wraps OVER the print
+(self-laminating clear-tail media). Physical patterns are consumer
+recipes, not core concepts (§9): cable FLAG = repeat 2, gap = 2·margin
++ d·π, orient per choice; WRAP-fill = circumference + one pitch;
+WRAP-opposite = repeat n, length d·π, cyclic, rotate 90, excess
+tunable (0 = exact-circumference butt seam). `--cable-od` and the
+`flag` layout become deprecated sugar over these. Across-axis repeat
+is multi-up rows (sheets reborn as repeats). Validated prototypes
+with embedded receipts: `labels/variants/repeat-*`.
+
+**Colors**: `--fg <color>` (default black) / `--bg <color|none>`
+(default white): hex `#RGB/#RRGGBB/#RRGGBBAA`, `rgb()`, named colors
+passed through to SVG; `none` omits the background rect (fixes the
+mm path's accidental transparency — opt-in everywhere). Contrast and
+inverted-polarity WARN via combination validation; colors ride the
+receipt.
+
 ## Corrections
 
 > **2026-06-11:** §2 as first accepted read `--size` as the *QR symbol
