@@ -560,12 +560,52 @@ fn write_glyph_rects(
 
 /// The id-text block geometry (the g-law): all values in device px,
 /// derived from the module part. See the module docs.
+///
+/// Placement is **justified** to the module-part extent (ADR-031 §8).
+/// HORZ stretches the block vertically: first row's top at the
+/// module-part top, last row's bottom at its bottom (or centered when
+/// `rows == 1`). VERT stretches each row horizontally: first glyph's
+/// left at the module-part left, last glyph's right at its right (or
+/// centered when `chars == 1`); rows below the QR keep their
+/// `8g`-pitch step. `block_h` is the **natural** block height
+/// `(8·rows - 1)·g` — the extent of the rows below the QR in VERT,
+/// used to size the canvas there. HORZ no longer reads it: the
+/// justified row offsets carry the data_px height directly.
 struct TextBlock {
     glyph_px: u32,
     block_h: u32,
     advance: u32,
-    row_pitch: u32,
     max_row_w: u32,
+}
+
+/// Distribute the integer-px slack `data_px - n * item_size` across
+/// the `n - 1` inter-item gaps and return each item's LEAD offset
+/// from the module-part start. Deterministic: the base gap is
+/// `slack / (n - 1)`, and the first `slack % (n - 1)` gaps get one
+/// extra pixel (so the last item's trailing edge lands exactly at
+/// `data_px`). For `n == 1` the single item is centered in
+/// `data_px`. Callers must guarantee `data_px >= n * item_size`
+/// (the g-law's `text_block` enforces this by flooring `g`).
+fn justified_offsets(data_px: u32, n: u32, item_size: u32) -> Vec<u32> {
+    if n == 0 {
+        return Vec::new();
+    }
+    if n == 1 {
+        return vec![data_px.saturating_sub(item_size) / 2];
+    }
+    let slack = data_px - n * item_size;
+    let gaps = n - 1;
+    let base = slack / gaps;
+    let extra = slack % gaps;
+    let mut offsets = Vec::with_capacity(n as usize);
+    let mut cursor = 0_u32;
+    for i in 0..n {
+        offsets.push(cursor);
+        // First `extra` gaps absorb one extra px each.
+        let gap = base + if i < extra { 1 } else { 0 };
+        cursor += item_size + gap;
+    }
+    offsets
 }
 
 /// Deduce the id-text block for `layout`: the glyph scale `g` is the
@@ -608,11 +648,13 @@ fn text_block(
              a larger size"
         )));
     }
+    // Natural block height in device px: `(8·rows − 1)·g`. HORZ
+    // ignores this — justified row offsets carry the data_px height —
+    // and VERT uses it to size the canvas below the QR.
     Ok(TextBlock {
         glyph_px,
         block_h: block_units * glyph_px,
         advance: 6 * glyph_px,
-        row_pitch: 8 * glyph_px,
         max_row_w: (max_chars * 6 * glyph_px).saturating_sub(glyph_px),
     })
 }
@@ -755,14 +797,17 @@ pub fn render_label_px(
     let (width_px, height_px) = match layout {
         Layout::Horz => {
             // Height is EXACTLY size_px; the text sits right of the
-            // QR at the clamped gap, the block centers vertically in
-            // the module part span, and the canvas ends exactly at
-            // the widest row plus the right white floor — no trailing
-            // white.
+            // QR at the clamped gap. The rows JUSTIFY to the module
+            // part vertically (ADR-031 §8): first row's top at the
+            // module-part top, last row's bottom at its bottom, with
+            // integer-px slack distributed across the rows-1 gaps
+            // deterministically (rows == 1 centers). The canvas ends
+            // exactly at the widest row plus the right white floor —
+            // no trailing white.
             let tx = white.left + data_px + gap;
-            let ty0 = white.top + (data_px - block.block_h) / 2;
+            let row_offsets = justified_offsets(data_px, n_rows, 7 * glyph_px);
             for (ri, row) in rows.iter().enumerate() {
-                let y0 = ty0 + ri as u32 * block.row_pitch;
+                let y0 = white.top + row_offsets[ri];
                 for (ci, ch) in row.chars().enumerate() {
                     let x0 = tx + ci as u32 * block.advance;
                     write_glyph_rects(&mut rects, ch, x0, y0, glyph_px)?;
@@ -772,18 +817,22 @@ pub fn render_label_px(
         }
         Layout::Vert => {
             // Width is EXACTLY size_px; the text sits below the QR at
-            // the clamped gap, each row centers horizontally in the
-            // module part span, and the canvas ends exactly at the
-            // block bottom plus the bottom white floor.
+            // the clamped gap. Each row JUSTIFIES horizontally to the
+            // module part (ADR-031 §8): first glyph's left at the
+            // module-part left, last glyph's right at its right, with
+            // integer-px slack distributed across the chars-1 gaps
+            // (chars == 1 centers). Row vertical pitch keeps its
+            // floor-gap step below the QR (unchanged behavior).
             let ty0 = white.top + data_px + gap;
+            let row_pitch = 8 * glyph_px;
             for (ri, row) in rows.iter().enumerate() {
-                let chars = row.chars().count() as u32;
-                let row_w = (chars * block.advance).saturating_sub(glyph_px);
-                let x_row = white.left + (data_px - row_w) / 2;
-                let y0 = ty0 + ri as u32 * block.row_pitch;
-                for (ci, ch) in row.chars().enumerate() {
-                    let x0 = x_row + ci as u32 * block.advance;
-                    write_glyph_rects(&mut rects, ch, x0, y0, glyph_px)?;
+                let row_chars: Vec<char> = row.chars().collect();
+                let chars = row_chars.len() as u32;
+                let char_offsets = justified_offsets(data_px, chars, 5 * glyph_px);
+                let y0 = ty0 + ri as u32 * row_pitch;
+                for (ci, ch) in row_chars.iter().enumerate() {
+                    let x0 = white.left + char_offsets[ci];
+                    write_glyph_rects(&mut rects, *ch, x0, y0, glyph_px)?;
                 }
             }
             (size_px, ty0 + block.block_h + white.bottom)
@@ -1670,12 +1719,13 @@ mod tests {
     }
 
     #[test]
-    fn horz_block_centers_in_the_module_part() {
+    fn horz_block_justifies_to_the_module_part() {
         // 64/2 micro 44: m=3, data 51, white (6,6,7,6), tx = 6 + 51 +
-        // max(round(1.5·6), 6) = 66. g = min(51/15, 3) = 3, block
-        // 15·3 = 45 centers at ty0 = 6 + (51 − 45)/2 = 9; both rows
-        // of FIXED_ID ink their full 7g box, so the ink spans
-        // [9, 9 + 45) exactly.
+        // max(round(1.5·6), 6) = 66. g = min(51/15, 3) = 3. Rows = 2
+        // JUSTIFY (ADR-031 §8): first row's top at the module-part
+        // top (y = white.top = 6), last row's bottom at its bottom
+        // (y = 6 + 51 = 57). slack = 51 − 2·7g = 9 lands in the one
+        // inter-row gap, so row 1 top = 6 + 7g + 9 = 36.
         let l = render(64, true);
         assert_eq!((l.glyph_cell, l.glyph_px), (7, 3));
         let (_, glyph_dots) = split_rects(&l, Layout::Horz);
@@ -1683,11 +1733,11 @@ mod tests {
             glyph_area(&glyph_dots),
             expected_ink(TextFormat::FourFour, 3)
         );
-        assert_eq!(glyph_dots.iter().map(|r| r.1).min(), Some(9), "block top");
+        assert_eq!(glyph_dots.iter().map(|r| r.1).min(), Some(6), "block top");
         assert_eq!(
             glyph_dots.iter().map(|r| r.1 + r.3).max(),
-            Some(54),
-            "block bottom 9 + 45"
+            Some(57),
+            "block bottom = module-part bottom"
         );
         // FIXED_ID's first chars (K, P) ink column 0, so the first
         // ink rect sits exactly at tx.
@@ -1915,7 +1965,7 @@ mod tests {
     // ---------- vert: glyph block below the QR, centered ----------
 
     #[test]
-    fn vert_glyph_block_sits_below_the_qr_centered() {
+    fn vert_glyph_block_sits_below_the_qr_width_justified() {
         let l = render_spec(
             "micro",
             Layout::Vert,
@@ -1930,6 +1980,8 @@ mod tests {
         assert_eq!((l.module_px, l.data_px, l.glyph_px), (3, 51, 2));
         assert_eq!(l.glyph_cell, 7, "the nx75 cell is 7 rows");
         let ty0 = l.white.top + l.data_px + 9;
+        // Below the QR rows keep their 8g pitch — `block_h` stays
+        // (8·rows − 1)·g = 15g, so the canvas height is unchanged.
         let block_h = 15 * l.glyph_px;
         let (_, glyph_dots) = split_rects(&l, Layout::Vert);
         assert_eq!(
@@ -1949,9 +2001,27 @@ mod tests {
             Some(ty0 + block_h),
             "last ink row touches the bottom white floor"
         );
-        // Rows center in the module part span: 4·12 − 2 = 46 wide →
-        // x starts at 6 + (51 − 46)/2 = 8.
-        assert_eq!(glyph_dots.iter().map(|r| r.0).min(), Some(8));
+        // Each row JUSTIFIES to the module part width (ADR-031 §8):
+        // first glyph's left at the module-part left, so the first
+        // ink column sits at white.left + left_bearing.
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.0).min(),
+            Some(l.white.left + left_bearing(TextFormat::FourFour, 2)),
+            "first glyph left at module-part left"
+        );
+        // FIXED_ID's first chars (K, P) ink column 0, so the leftmost
+        // ink rect sits exactly at white.left.
+        assert_eq!(left_bearing(TextFormat::FourFour, 2), 0);
+        // And the last glyph's right edge lands at the module-part
+        // right edge: white.left + data_px = 6 + 51 = 57. '3' and 'R'
+        // (the last chars of FIXED_ID's two FourFour rows) both ink
+        // the rightmost glyph column, so the rightmost ink rect's
+        // right edge meets the module-part right edge exactly.
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.0 + r.2).max(),
+            Some(l.white.left + l.data_px),
+            "last glyph right at module-part right"
+        );
     }
 
     // ---------- the ADR-031 §8 worked example, full geometry ----------
@@ -1962,9 +2032,10 @@ mod tests {
         // data 51, controlling floors 6/6, remainder 4 lands as top 8
         // and bottom 8, non-controlling sides at their floors (6/6).
         // gap = max(round(1.5·6), 6) = 9 → text at x = 6+51+9 = 66.
-        // Typography: g = min(51/15, 3) = 3, block 45 centers at
-        // ty0 = 8 + (51 − 45)/2 = 11; widest row 4·18 − 3 = 69 →
-        // width 66 + 69 + 6 = 141.
+        // Typography: g = min(51/15, 3) = 3. Rows JUSTIFY: row 0 top
+        // = white.top = 8, row 1 bottom = 8 + 51 = 59. slack = 9 lands
+        // in the inter-row gap. Widest row 4·18 − 3 = 69 → width
+        // 66 + 69 + 6 = 141.
         let l = render_pad(67, 2, true);
         assert_eq!((l.width_px, l.height_px), (141, 67));
         assert_eq!((l.data_px, l.module_px), (51, 3));
@@ -1982,18 +2053,205 @@ mod tests {
             Some(66 + left_bearing(TextFormat::FourFour, 3)),
             "tx + left bearing"
         );
-        assert_eq!(glyph_dots.iter().map(|r| r.1).min(), Some(11), "block top");
+        assert_eq!(glyph_dots.iter().map(|r| r.1).min(), Some(8), "block top");
         // Both rows ink their full 7g boxes, so the last ink row is
-        // the block bottom: 11 + 45 = 56.
+        // the block bottom = white.top + data_px = 8 + 51 = 59.
         assert_eq!(
             glyph_dots.iter().map(|r| r.1 + r.3).max(),
-            Some(56),
-            "block bottom"
+            Some(59),
+            "block bottom = module-part bottom"
         );
         assert!(
             glyph_dots.iter().map(|r| r.0 + r.2).max() <= Some(l.width_px - l.white.right),
             "ink never crosses the right white floor"
         );
+    }
+
+    // ---------- ADR-031 §8 justify: rows flush to the module part,
+    // slack distributes across the gaps ----------
+
+    /// 4/4/4 at micro-m3-l clip@64 horz — rows = 3 with slack 18 in
+    /// two gaps. Row 0 top at module-part top, row 2 bottom at
+    /// module-part bottom, both inter-row gaps equal to 9px.
+    #[test]
+    fn horz_444_clip_64_m3l_distributes_slack_evenly() {
+        // m3-l clip@64 pad 0: m=4, data_px=60, white top/bottom=2/2,
+        // left/right=0/0. Gap is clamped to quiet·m = 8 (clip mode
+        // floors the right white to 0). For 3 rows of 4 chars:
+        // block_units = 23, g = min(60/23, 4) = 2 → 7g = 14.
+        // slack = 60 − 3·14 = 18 → base 9, extra 0, gaps 9/9.
+        let l = render_label_px(
+            FIXED_ID,
+            Layout::Horz,
+            64,
+            TextFormat::FourFourFour,
+            &sym("micro-m3-l"),
+            Padding::uniform(0),
+            PaddingMode::Clip,
+        )
+        .expect("renders");
+        assert_eq!((l.module_px, l.data_px), (4, 60));
+        assert_eq!(l.glyph_px, 2);
+        assert_eq!((l.white.top, l.white.bottom), (2, 2));
+        let (_, glyph_dots) = split_rects(&l, Layout::Horz);
+        // FIXED_ID's 4/4/4 rows are "K7M3", "PQ9R", "T5VA"; all three
+        // ink the top and bottom raster rows, so the y-extent of the
+        // ink matches the placed row boxes exactly.
+        let top = l.white.top;
+        // Row 0 ink box [top, top+14), row 1 [top+23, top+37), row 2
+        // [top+46, top+60). Last ink row = top + 60 = 62.
+        assert_eq!(glyph_dots.iter().map(|r| r.1).min(), Some(top));
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.1 + r.3).max(),
+            Some(top + l.data_px),
+            "last row bottom = module-part bottom"
+        );
+        // The middle row sits at y = top + 7g + first gap = top + 14
+        // + 9 = top + 23. The 4/4/4 split has row 1 = "PQ9R" — every
+        // glyph inks raster row 0, so the row's top y is observable.
+        let row1_top = glyph_dots
+            .iter()
+            .map(|r| r.1)
+            .filter(|&y| y > top + 13 && y < top + 23 + 14)
+            .min()
+            .expect("row 1 ink present");
+        assert_eq!(row1_top, top + 23, "row 1 top after a 9px gap");
+        // Sanity: both gaps are 9px (top+14..top+23 and top+37..top+46).
+        let row0_bottom = top + 14;
+        let row1_bottom = top + 23 + 14;
+        let row2_top = top + 46;
+        assert_eq!(row1_top - row0_bottom, 9, "gap 0 = 9");
+        assert_eq!(row2_top - row1_bottom, 9, "gap 1 = 9");
+    }
+
+    /// 5/5/4 at the same clip@64 m3-l — also 3 rows, so the same
+    /// 9/9 gap split. The chars per row differ but the row pitch
+    /// only depends on rows, g, and data_px.
+    #[test]
+    fn horz_554_clip_64_m3l_distributes_slack_evenly() {
+        let l = render_label_px(
+            FIXED_ID,
+            Layout::Horz,
+            64,
+            TextFormat::FiveFiveFour,
+            &sym("micro-m3-l"),
+            Padding::uniform(0),
+            PaddingMode::Clip,
+        )
+        .expect("renders");
+        assert_eq!((l.module_px, l.data_px, l.glyph_px), (4, 60, 2));
+        let (_, glyph_dots) = split_rects(&l, Layout::Horz);
+        let top = l.white.top;
+        assert_eq!(glyph_dots.iter().map(|r| r.1).min(), Some(top));
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.1 + r.3).max(),
+            Some(top + l.data_px),
+            "last row bottom = module-part bottom"
+        );
+        // Row 1 starts after row 0 + gap 0 = top + 14 + 9 = top + 23.
+        let row1_top = glyph_dots
+            .iter()
+            .map(|r| r.1)
+            .filter(|&y| y > top + 13 && y < top + 37)
+            .min()
+            .expect("row 1 ink present");
+        assert_eq!(row1_top, top + 23, "row 1 top after a 9px gap");
+    }
+
+    /// 4/4 at micro-m3-l clip@64 — exact fit (15·4 = 60 = data_px):
+    /// slack 0, the gap stays at g and the SVG is byte-identical to
+    /// the pre-justify renderer.
+    #[test]
+    fn horz_44_clip_64_m3l_exact_fit_unchanged() {
+        let l = render_label_px(
+            FIXED_ID,
+            Layout::Horz,
+            64,
+            TextFormat::FourFour,
+            &sym("micro-m3-l"),
+            Padding::uniform(0),
+            PaddingMode::Clip,
+        )
+        .expect("renders");
+        assert_eq!((l.module_px, l.data_px, l.glyph_px), (4, 60, 4));
+        // The exact-fit byte-identical regression: data_px = rows·7g
+        // + (rows−1)·g, so slack = 0 and every row sits at its old
+        // (8g-pitch, centered-block) offset.
+        let top = l.white.top;
+        let (_, glyph_dots) = split_rects(&l, Layout::Horz);
+        // Old geometry: ty0 = white.top + (data_px − 15g)/2 = top,
+        // row 0 at top, row 1 at top + 8g = top + 32. The g-floor
+        // gap (g = 4) sits between row 0 bottom (top + 28) and row 1
+        // top (top + 32).
+        assert_eq!(glyph_dots.iter().map(|r| r.1).min(), Some(top));
+        let row1_top = glyph_dots
+            .iter()
+            .map(|r| r.1)
+            .filter(|&y| y >= top + 28)
+            .min()
+            .expect("row 1 ink present");
+        assert_eq!(row1_top, top + 32, "row 1 at 8g pitch");
+        // Last ink row sits at the module-part bottom (= top + 60).
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.1 + r.3).max(),
+            Some(top + l.data_px),
+        );
+    }
+
+    /// vert width-flush equivalent: each row's first glyph sits at
+    /// the module-part left, the last glyph's right at the module-part
+    /// right, and the inter-char slack distributes the same way.
+    #[test]
+    fn vert_44_clip_64_m3l_row_justifies_to_the_module_part() {
+        // micro-m3-l clip@64 vert pad 0: controlling axis horizontal,
+        // m=4, data_px=60. The vert row-width cap binds: g = min(
+        // 60/15, 60/23, 4) = min(4, 2, 4) = 2. For 4 chars of 5g=10,
+        // slack = 60 − 40 = 20 → base 6, extra 2, gaps 7/7/6.
+        let l = render_label_px(
+            FIXED_ID,
+            Layout::Vert,
+            64,
+            TextFormat::FourFour,
+            &sym("micro-m3-l"),
+            Padding::uniform(0),
+            PaddingMode::Clip,
+        )
+        .expect("renders");
+        assert_eq!((l.module_px, l.data_px, l.glyph_px), (4, 60, 2));
+        let (_, glyph_dots) = split_rects(&l, Layout::Vert);
+        // First glyph's leftmost ink sits at white.left + the row's
+        // left bearing; FIXED_ID's first chars (K, P) ink column 0,
+        // so the leftmost ink rect sits exactly at white.left.
+        assert_eq!(left_bearing(TextFormat::FourFour, 2), 0);
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.0).min(),
+            Some(l.white.left),
+            "first glyph left at module-part left"
+        );
+        // The last char's right column lands at white.left + data_px
+        // (both '3' and 'R' ink the rightmost glyph column).
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.0 + r.2).max(),
+            Some(l.white.left + l.data_px),
+            "last glyph right at module-part right"
+        );
+        // Char 1 lead = c0 + 5g + gap0 = 10 + 7 = 17 from white.left,
+        // and the gap between char 0 (ends at white.left + 10) and
+        // char 1 (starts at white.left + 17) is empty. Assert the gap
+        // stays ink-free on row 0 (y in the row's 7g-high box at ty0).
+        let ty0 = l.white.top + l.data_px + 8; // gap clamp = quiet·m = 8
+        let row0_dots = glyph_dots
+            .iter()
+            .filter(|r| r.1 >= ty0 && r.1 < ty0 + 7 * l.glyph_px);
+        let gap_start = l.white.left + 10;
+        let gap_end = l.white.left + 17;
+        for r in row0_dots {
+            let x_end = r.0 + r.2;
+            assert!(
+                x_end <= gap_start || r.0 >= gap_end,
+                "row 0 ink in the inter-char gap: rect {r:?}"
+            );
+        }
     }
 
     // ---------- fill_to_max: batch uniformity, padding floor ----------
