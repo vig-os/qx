@@ -13,6 +13,15 @@
 //!   ported from `label.py:168-206`
 //! - [`svg`] — mm-native SVG label rendering primitives
 //!   (`label.py:97-251`)
+//! - [`px`] — px-true device-pixel renderer + job-uniformity pass
+//!   (ADR-031 §2–§4; obligation `px-true-qr-render`)
+//! - [`glyph_font`] — GENERATED nx75 anchor-font data, BOTH optical
+//!   masters, baked from `design/glyph-font.v1.json` and
+//!   `design/glyph-font.v2.json` by `tools/bake_glyph_font.py`; the
+//!   px-true id-text dispatches on glyph-scale parity in [`px`]
+//!   (even k → v1 kernel-pull, odd k → v2 connection-kernel)
+//! - [`symbology`] — the `<family>[-<version>][-<ec>]` type grammar +
+//!   auto-fit resolution (ADR-031 §8 print contracts)
 //!
 //! ## wasm32
 //! The decoder compiles to `wasm32-unknown-unknown` against rxing 0.9
@@ -30,20 +39,28 @@
 use thiserror::Error;
 
 pub mod format;
+pub mod glyph_font;
+pub mod px;
 pub mod qr;
 pub mod svg;
+pub mod symbology;
 
 pub use format::{check_format_warning, recommend_format, TextFormat};
+pub use px::{fill_to_max, render_label_px, Padding, PaddingMode, PxLabel};
 #[cfg(feature = "decoder")]
 pub use qr::decode_qr;
-pub use qr::{encode, QrMatrix};
+pub use qr::{encode, encode_pinned, QrMatrix};
 pub use svg::{render, render_flag, render_horz, render_vert, Layout};
+pub use symbology::{Ec, Family, ResolvedSymbology, Symbology};
 
 /// Errors surfaced by the codec.
 ///
 /// The variants mirror the three phases of the pipeline (encode →
 /// render → decode) so callers can branch on which step failed
-/// without parsing message strings.
+/// without parsing message strings. `Unsupported` marks requests the
+/// codec recognizes but does not implement yet (e.g. the px-true flag
+/// layout, ADR-031 §5) so callers can map it to their own
+/// "unsupported" taxonomy rather than treating it as a failure.
 #[derive(Debug, Error)]
 pub enum CodecError {
     #[error("encode failed: {0}")]
@@ -52,6 +69,8 @@ pub enum CodecError {
     Decode(String),
     #[error("render failed: {0}")]
     Render(String),
+    #[error("unsupported: {0}")]
+    Unsupported(String),
 }
 
 /// Render an SVG label, dispatching by layout. Mirrors `label.py`'s

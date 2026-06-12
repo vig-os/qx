@@ -350,6 +350,132 @@ submission both ride this; a TLS misconfiguration silently
 accepting a bad cert is the highest-risk failure mode.
 """
 
+# -----------------------------------------------------------------------------
+# `pr serve` HTTP shell (ADR-030 §2; feature-gated `serve`, not in the
+# lean CLI/CI build). Added 2026-06-11 with the serve feature.
+# -----------------------------------------------------------------------------
+
+[[crate]]
+name = "axum"
+version = "=0.8"
+class = 1
+role = "HTTP router for the command-protocol endpoint (pr serve)"
+used_by = ["cli (feature serve)"]
+maintenance_url = "https://github.com/tokio-rs/axum"
+last_release_check = "2026-06-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+surveillance_owner = "shells-maintainer"
+notes = "Thin shell only — all policy/validation stays in crates/app. Feature-gated; absent from the default build."
+
+[[crate]]
+name = "tokio"
+version = "=1"
+class = 1
+role = "async runtime hosting the serve listener (dispatch runs on the blocking pool)"
+used_by = ["cli (feature serve)"]
+maintenance_url = "https://github.com/tokio-rs/tokio"
+last_release_check = "2026-06-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+surveillance_owner = "shells-maintainer"
+notes = "Feature-gated; rt-multi-thread/net/macros/signal only."
+
+[[crate]]
+name = "rmcp"
+version = "=1"
+class = 2
+role = "MCP server SDK for the pr mcp stdio shell (agent access to the command protocol)"
+used_by = ["cli (feature mcp)"]
+maintenance_url = "https://github.com/modelcontextprotocol/rust-sdk"
+last_release_check = "2026-06-11"
+upstream_status = "active"
+revalidation_trigger = "minor-bump"
+surveillance_owner = "shells-maintainer"
+notes = "Thin shell: tools map 1:1 onto protocol op families; serde (not the advertised JSON schemas) validates requests. Agent mutations flow through the same proposal/policy gates as every shell (ADR-030/034)."
+
+[[crate]]
+name = "tauri"
+version = "=2"
+class = 2
+role = "desktop webview shell hosting the webapp + the in-process dispatch command (ADR-030 §3)"
+used_by = ["desktop/src-tauri"]
+maintenance_url = "https://github.com/tauri-apps/tauri"
+last_release_check = "2026-06-11"
+upstream_status = "active"
+revalidation_trigger = "minor-bump"
+surveillance_owner = "shells-maintainer"
+notes = "Large transitive closure (wry/tao; gtk3 bindings on Linux carry unmaintained advisories tracked upstream — deny.toml scopes unmaintained to direct deps for this reason). Thin shell: all policy stays in crates/app."
+
+[[crate]]
+name = "ratatui"
+version = "=0.29"
+class = 1
+role = "terminal UI widgets for the pr tui shell"
+used_by = ["cli (feature tui)"]
+maintenance_url = "https://github.com/ratatui/ratatui"
+last_release_check = "2026-06-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+surveillance_owner = "shells-maintainer"
+notes = "Render-only shell; all data + labels come from app::dispatch/Describe."
+
+[[crate]]
+name = "crossterm"
+version = "=0.28"
+class = 1
+role = "terminal backend (raw mode, events) for pr tui"
+used_by = ["cli (feature tui)"]
+maintenance_url = "https://github.com/crossterm-rs/crossterm"
+last_release_check = "2026-06-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+surveillance_owner = "shells-maintainer"
+notes = "Feature-gated with ratatui; absent from the default build."
+
+[[crate]]
+name = "tower-http"
+version = "=0.6"
+class = 1
+role = "static-file service for the webapp bundle under pr serve"
+used_by = ["cli (feature serve)"]
+maintenance_url = "https://github.com/tower-rs/tower-http"
+last_release_check = "2026-06-11"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+surveillance_owner = "shells-maintainer"
+notes = "fs feature only; SPA fallback to index.html."
+
+# -----------------------------------------------------------------------------
+# Repo gate tooling (crates/devtools — the obligations-check binary,
+# ADR-017 step 9 port of tools/obligations_check.py). Dev/CI gate only,
+# never in the product path. Added 2026-06-12.
+# -----------------------------------------------------------------------------
+
+[[crate]]
+name = "toml"
+version = "=0.8"
+class = 1
+role = "full-TOML parse of decisions/obligations.toml in the obligations-check gate"
+used_by = ["devtools"]
+maintenance_url = "https://github.com/toml-rs/toml"
+last_release_check = "2026-06-12"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+notes = "Gate tooling only; was already in the workspace lock as a transitive dep of figment."
+
+[[crate]]
+name = "glob"
+version = "=0.3"
+class = 1
+role = "satisfied_by path/glob resolution in the obligations-check gate"
+used_by = ["devtools"]
+maintenance_url = "https://github.com/rust-lang/glob"
+last_release_check = "2026-06-12"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+notes = "rust-lang-owned; gate tooling only, never in the product path."
+
 # Pending entries — added as adapter PRs land Class-3 deps not yet
 # in the workspace. Each entry below is a placeholder for an
 # expected dep that has not yet been pinned; the coverage tool

@@ -39,10 +39,6 @@ this repo continue from ADR-014.
 
 ### Accepted
 
-_(none yet — all ADRs are Proposed pending team review.)_
-
-### Proposed
-
 Foundation set (architectural reset, 2026-05-10 — see [LOG.md](LOG.md)):
 
 - [ADR-017 — Rust core, ports/adapters, multi-target deploy](ADR-017-rust-core-ports-adapters.md)
@@ -58,10 +54,35 @@ Foundation set (architectural reset, 2026-05-10 — see [LOG.md](LOG.md)):
 - [ADR-028 — SOUP validation per IEC 62304 §5.3 + §8.1.2 (Class B; H1–H8 harnesses; surveillance plan)](ADR-028-soup-validation.md)
 - [ADR-029 — Architectural coverage validator (`coverage.toml` + prek/CI tool)](ADR-029-architectural-coverage-validator.md)
 
-Earlier ADRs (still Proposed; ADR-016 updated 2026-05-10 to align with foundation set):
+Multi-tier app design set (2026-06-10/11 — accepted 2026-06-11 after a
+two-agent generalization review; see [LOG.md](LOG.md)):
 
-- [ADR-012 — Part identification: nano-id + QR labels with mint-then-bind workflow](ADR-012-part-identification.md)
+- [ADR-030 — Multi-tier shells over one application layer + command protocol (CLI/TUI/serve/MCP/web/Tauri; supersedes ADR-014)](ADR-030-multi-tier-shells-and-application-layer.md)
+- [ADR-031 — Label rendering + structured print-request model (px-true QR, padding-fill, optimistic mint+print fast-path)](ADR-031-label-render-print-request-model.md)
+- [ADR-032 — Scan pipeline + `decode-image` (one processor over still/video/live; drop zxing-wasm)](ADR-032-scan-pipeline-decode-image.md)
+- [ADR-033 — Registry anatomy: self-describing data repo (own versioned contract; core+custom schema) + operator workspace](ADR-033-registry-anatomy-self-describing.md)
+- [ADR-034 — Registry manifest + capabilities (host-enforced authz via branch protection + CODEOWNERS; tool classifies/advises)](ADR-034-registry-manifest-capabilities.md)
+- [ADR-035 — Registry data model: collections metamodel (parts/types/vendors/… as declared collections; `batch` retired) + tiered schema + JSONL](ADR-035-part-data-model-tiered-schema-jsonl.md)
+
+Earlier accepted:
+
+- [ADR-016 — PR-diff-based policy enforcement for registry changes](ADR-016-pr-diff-policy-enforcement.md) _(change classes generalized to `{collection, op-kind}` by ADR-035 §0)_
+
+### Proposed
+
+Audit-evidence set (2026-06-11 session — identity, trail integrity,
+gate lifecycle; see [LOG.md](LOG.md)):
+
+- [ADR-036 — Audit identity: personas collection + host-resolved accountability](ADR-036-audit-identity-personas.md)
+- [ADR-037 — Audit-trail integrity: checkpoints, merge-sync, tool provenance, anchor ledger](ADR-037-audit-trail-integrity-anchoring.md)
+- [ADR-038 — Gate artifact lifecycle: vendoring, federated upgrades, host-independent CI](ADR-038-gate-artifact-upgrades-host-independent-ci.md)
+
+Earlier proposed:
+
+- [ADR-012 — Part identification: nano-id + QR labels with mint-then-bind workflow](ADR-012-part-identification.md) _(refined by ADR-035: `kind` + `components` added; `batch` retired; ids typed `(scheme,value)`)_
 - [ADR-013 — Parts registry web app: GH Pages + WASM DuckDB + PR-driven binds](ADR-013-parts-registry-web-app.md)
-- [ADR-014 — Web app architecture: extension interfaces, SSOT, plugin model](ADR-014-web-app-architecture.md) _(§"Pyodide migration trigger" superseded by ADR-017)_
-- [ADR-015 — Print event log: non-destructive audit trail of every label print](ADR-015-print-event-log.md) _(generalised by ADR-022 audit-log layer; print_log.csv migration tracked in #34)_
-- [ADR-016 — PR-diff-based policy enforcement for registry changes](ADR-016-pr-diff-policy-enforcement.md) _(open question on Pyodide vs TS-port resolved by ADR-017: validators are Rust)_
+- [ADR-015 — Print event log: non-destructive audit trail of every label print](ADR-015-print-event-log.md) _(folded into the ADR-022 audit stream; invariants restate as audit-spine validators per ADR-035)_
+
+### Superseded
+
+- [ADR-014 — Web app architecture: extension interfaces, SSOT, plugin model](ADR-014-web-app-architecture.md) _(superseded by ADR-030 — the TS SPA is retired; §"Pyodide migration trigger" was already closed by ADR-017)_

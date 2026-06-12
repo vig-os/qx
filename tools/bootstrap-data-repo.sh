@@ -16,6 +16,17 @@
 #                       workflow (default: /<repo-name>/).
 #   --force-pages       overwrite an existing pages.yml.
 #   --force-readme      overwrite an existing README.md.
+#   --force-check       overwrite existing pr-check.yml / CODEOWNERS /
+#                       protection-audit.yml.
+#   --pr-release TAG    seed the ADR-016 gate (pr-check.yml) pinned to
+#                       the code repo's released `pr` binary at TAG
+#                       (sha256 read from the release), plus the
+#                       ADR-034 protection-audit cron.
+#   --approvers HANDLE  seed CODEOWNERS with this approver handle
+#                       (e.g. "@org/qms-approvers").
+#   --protect           apply branch protection on main via the API:
+#                       require PRs + code-owner review + the "check"
+#                       status (needs admin; ADR-034 §6 "the teeth").
 #   --dry-run           print what would happen, don't push.
 #
 # Examples:
@@ -44,7 +55,11 @@ visibility="public"
 pages_base=""
 force_pages=0
 force_readme=0
+force_check=0
 dry_run=0
+pr_release=""
+approvers=""
+protect=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -53,7 +68,16 @@ while [[ $# -gt 0 ]]; do
     --pages-base) pages_base="$2"; shift 2 ;;
     --force-pages) force_pages=1; shift ;;
     --force-readme) force_readme=1; shift ;;
-    --dry-run) dry_run=1; shift ;;
+    --force-check) force_check=1; shift ;;
+    # ADR-016/034 gate seeding: the code-repo release tag whose `pr`
+    # binary the seeded pr-check.yml pins (sha256 fetched from that
+    # release). Without it the gate workflows are skipped with a note.
+    --pr-release) pr_release="$2"; shift 2 ;;
+    # CODEOWNERS approver handle(s), e.g. "@org/qms-approvers".
+    --approvers) approvers="$2"; shift 2 ;;
+    # Apply branch protection via the GitHub API (require PRs +
+    # code-owner reviews + the "check" status). Needs admin on target.
+    --protect) protect=1; shift ;;
     -h|--help)
       sed -n '2,/^set -/p' "$0" | sed -n '/^#/p' | sed 's/^# \{0,1\}//'
       exit 0
@@ -265,6 +289,114 @@ if [[ ! -e .github/workflows/pages.yml || "$force_pages" = 1 ]]; then
     "PAGES_BASE=${pages_base}"
 else
   log "  exists, skipping: .github/workflows/pages.yml (use --force-pages to overwrite)"
+fi
+
+# --- The teeth (ADR-034 §6): pr-check gate + CODEOWNERS + drift audit
+
+if [[ -n "$pr_release" ]]; then
+  log "ensuring pr-check.yml gate (release ${pr_release})"
+  # Pin the released binary by sha256 (ADR-034 §2: CI runs the
+  # released artifact). The checksum file is published by the code
+  # repo's release workflow (pr-binary job).
+  pr_sha=$(gh release download "$pr_release" --repo "$CODE_REPO" \
+      --pattern "pr-sha256sums-*.txt" --output - 2>/dev/null \
+      | awk '/pr-x86_64-unknown-linux-gnu/ {print $1}' || true)
+  if [[ -z "$pr_sha" ]]; then
+    err "release ${pr_release} on ${CODE_REPO} has no pr binary checksum — tag a release with the pr-binary job first"
+  fi
+  if [[ ! -e .github/workflows/pr-check.yml || "$force_check" = 1 ]]; then
+    render_template \
+      "${TEMPLATES_DIR}/check.yml.tmpl" \
+      .github/workflows/pr-check.yml \
+      "CODE_REPO=${CODE_REPO}" \
+      "BRANCH=main" \
+      "PR_VERSION=${pr_release}" \
+      "PR_SHA256=${pr_sha}"
+  else
+    log "  exists, skipping: pr-check.yml (use --force-check to overwrite)"
+  fi
+
+  log "ensuring protection-audit.yml (ADR-034 drift self-audit)"
+  if [[ ! -e .github/workflows/protection-audit.yml || "$force_check" = 1 ]]; then
+    render_template \
+      "${TEMPLATES_DIR}/protection-audit.yml.tmpl" \
+      .github/workflows/protection-audit.yml \
+      "BRANCH=main"
+    log "  NOTE: set the PROTECTION_AUDIT_TOKEN secret (PAT with repo Administration:read)"
+  else
+    log "  exists, skipping: protection-audit.yml"
+  fi
+
+  # ADR-037: the anchor ledger (per-push immutable-release anchors +
+  # nightly heartbeat) and the monthly evidence package. Same pin as
+  # the gate so all three run the identical released artifact.
+  log "ensuring anchor.yml (ADR-037 anchor ledger)"
+  if [[ ! -e .github/workflows/anchor.yml || "$force_check" = 1 ]]; then
+    render_template \
+      "${TEMPLATES_DIR}/anchor.yml.tmpl" \
+      .github/workflows/anchor.yml \
+      "CODE_REPO=${CODE_REPO}" \
+      "BRANCH=main" \
+      "PR_VERSION=${pr_release}" \
+      "PR_SHA256=${pr_sha}"
+    log "  NOTE: enable the 'immutable releases' repo setting — a ledger on mutable releases is not a ledger (ADR-037 §5)"
+  else
+    log "  exists, skipping: anchor.yml"
+  fi
+
+  log "ensuring bundle.yml (ADR-037 evidence package)"
+  if [[ ! -e .github/workflows/bundle.yml || "$force_check" = 1 ]]; then
+    render_template \
+      "${TEMPLATES_DIR}/bundle.yml.tmpl" \
+      .github/workflows/bundle.yml \
+      "CODE_REPO=${CODE_REPO}" \
+      "PR_VERSION=${pr_release}" \
+      "PR_SHA256=${pr_sha}"
+    log "  NOTE: arrange the external watcher (separate admin domain) to download bundle releases to offline storage (ADR-037 §4)"
+  else
+    log "  exists, skipping: bundle.yml"
+  fi
+else
+  log "skipping pr-check.yml + protection-audit.yml + anchor.yml + bundle.yml (pass --pr-release <tag> to seed the ADR-016/037 gates)"
+fi
+
+if [[ -n "$approvers" ]]; then
+  log "ensuring CODEOWNERS (approvers: ${approvers})"
+  if [[ ! -e .github/CODEOWNERS || "$force_check" = 1 ]]; then
+    render_template \
+      "${TEMPLATES_DIR}/CODEOWNERS.tmpl" \
+      .github/CODEOWNERS \
+      "APPROVERS=${approvers}"
+  else
+    log "  exists, skipping: .github/CODEOWNERS"
+  fi
+else
+  log "skipping CODEOWNERS (pass --approvers '@org/team' to seed review routing)"
+fi
+
+# Branch protection is a repo SETTING (the part the drift audit
+# watches). Applied last so the required check name exists.
+if (( protect )); then
+  if (( dry_run )); then
+    log "DRY-RUN: would apply branch protection on main (require PRs + code-owner reviews + the \"check\" status)"
+  else
+    log "applying branch protection on main (require PR + code-owner review + pr-check)"
+    gh api -X PUT "repos/${target}/branches/main/protection" \
+      --input - <<'PROTECTION' >/dev/null
+{
+  "required_status_checks": { "strict": true, "contexts": ["check"] },
+  "enforce_admins": false,
+  "required_pull_request_reviews": {
+    "require_code_owner_reviews": true,
+    "required_approving_review_count": 1
+  },
+  "restrictions": null,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}
+PROTECTION
+    log "  protection applied (verify in repo settings)"
+  fi
 fi
 
 # --- Commit + push -------------------------------------------------

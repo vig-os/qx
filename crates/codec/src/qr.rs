@@ -1,8 +1,10 @@
 //! QR encode + decode.
 //!
 //! Encoder: `qrcode` 0.14 (placeholder for `qrcode-rust2` per ADR-017
-//! §References). Standard QR V1 at EC level M for the 14-char canonical
-//! payload; Micro QR M4 at EC level M for `micro=true`.
+//! §References). Version + EC level are contract parameters (ADR-031
+//! §8): [`encode_pinned`] takes them explicitly; [`encode`] keeps the
+//! pre-contract defaults (Standard QR V1 / Micro QR M4, both EC M)
+//! for the mm-native render path.
 //!
 //! Decoder: `rxing` 0.9 — supports both Standard QR and Micro QR.
 //!
@@ -11,6 +13,7 @@
 
 use qrcode::{EcLevel, QrCode, Version};
 
+use crate::symbology::{Ec, Family};
 use crate::CodecError;
 
 /// Quiet-zone width in modules for Standard QR. ISO/IEC 18004 §6.3.8.
@@ -64,17 +67,43 @@ impl QrMatrix {
 }
 
 /// Encode a payload as a Standard QR (V1, EC M) or Micro QR (M4, EC M)
-/// matrix.
+/// matrix — the pre-contract defaults, kept for the mm-native render
+/// path. The px-true contract path resolves a [`Family`]/version/EC
+/// triple and calls [`encode_pinned`].
 ///
 /// Returns the bare module grid; callers (the SVG renderer, the PNG
 /// rasteriser used in tests) handle the quiet zone.
 pub fn encode(payload: &str, micro: bool) -> Result<QrMatrix, CodecError> {
-    let version = if micro {
-        Version::Micro(4)
+    if micro {
+        encode_pinned(payload, Family::Micro, 4, Ec::M)
     } else {
-        Version::Normal(1)
+        encode_pinned(payload, Family::Qr, 1, Ec::M)
+    }
+}
+
+/// Encode at a pinned (family, version, EC) — version + EC are
+/// contract parameters, not hardcodes (ADR-031 §8). Feasibility is the
+/// encoder's verdict: an oversized payload comes back as
+/// [`CodecError::Encode`] (which [`crate::Symbology::resolve`] maps to
+/// the feasibility hint).
+pub fn encode_pinned(
+    payload: &str,
+    family: Family,
+    version: u8,
+    ec: Ec,
+) -> Result<QrMatrix, CodecError> {
+    let version = match family {
+        Family::Micro => Version::Micro(i16::from(version)),
+        Family::Qr => Version::Normal(i16::from(version)),
     };
-    let code = QrCode::with_version(payload.as_bytes(), version, EcLevel::M)
+    let level = match ec {
+        Ec::L => EcLevel::L,
+        Ec::M => EcLevel::M,
+        Ec::Q => EcLevel::Q,
+        Ec::H => EcLevel::H,
+    };
+    let micro = family == Family::Micro;
+    let code = QrCode::with_version(payload.as_bytes(), version, level)
         .map_err(|e| CodecError::Encode(format!("{e:?}")))?;
     let size = code.width();
     let colors = code.into_colors();

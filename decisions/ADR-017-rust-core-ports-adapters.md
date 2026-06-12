@@ -195,6 +195,23 @@ Each step lands behind its own PR. Each step has its own
 `port_tests` conformance suite that must pass before the step is
 considered complete (per ADR-027).
 
+> **Step 9 executed (2026-06-12).** The legacy operational Python is
+> deleted: `mint.py`, `bind.py`, `label.py`, `test_labels.py`,
+> `registry_contract.py`, `validators/`, `tools/sheet.py`,
+> `tools/layout_analysis.py`, `tools/printer_test_62mm.py`,
+> `tools/obligations_check.py` (ported to the `obligations-check`
+> binary in `crates/devtools`, byte-identical report + exit codes) and
+> `tools/gen_spleen_glyphs.py` (its generated `glyphs_spleen.rs` was
+> already superseded by the baked glyph font). Parity evidence stays
+> executable: `crates/cli/tests/label_parity_golden.rs` checks the
+> renderer against checked-in goldens produced by `label.py` at
+> deletion time (`crates/cli/tests/golden/`), and the mint/bind/
+> validators behavior is locked by the in-tree e2e + rule-set suites
+> that were written against the Python originals. The two design-time
+> font tools (`tools/bake_glyph_font.py`, `tools/font_editor_gen.py`)
+> remain pending their own Rust port — they are not operational
+> surfaces.
+
 ## Rationale
 
 **Why Rust over Python+Pyodide.** The drift between segno and the

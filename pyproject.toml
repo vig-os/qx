@@ -1,16 +1,13 @@
+# Minimal on purpose: the operational Python (mint/label/bind, validators,
+# pytest suite) was deleted per ADR-017 step 9 — the Rust workspace is the
+# single source of truth. The only Python left is the two design-time font
+# tools (tools/bake_glyph_font.py, tools/font_editor_gen.py); both are
+# stdlib-only (bake_glyph_font.py carries PEP-723 inline metadata) and leave
+# with their queued Rust port, at which point this file goes too.
 [project]
 name = "part-registry"
 version = "0.1.0"
 description = "Per-instance physical part identification: nano-id IDs, QR labels, mint-then-bind"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "nanoid>=2.0.0",
-    "segno>=1.6.1",
-]
-
-[dependency-groups]
-dev = [
-    "pytest>=8.0",
-    "opencv-python-headless>=4.10",
-]
+dependencies = []

@@ -35,6 +35,18 @@
 
 #![forbid(unsafe_code)]
 
+/// `pr serve` — HTTP shell over the command protocol (ADR-030 §2).
+#[cfg(feature = "serve")]
+pub mod serve;
+
+/// `pr mcp` — stdio MCP shell over the command protocol (ADR-030 §2).
+#[cfg(feature = "mcp")]
+pub mod mcp;
+
+/// `pr tui` — terminal shell over the command protocol (ADR-030 §2).
+#[cfg(feature = "tui")]
+pub mod tui;
+
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io::Write;
@@ -62,6 +74,9 @@ use part_registry_observability::{
 use part_registry_storage::{PartFilter, Repository};
 use part_registry_storage_csv_git::{CsvGitConfig, CsvGitRepository};
 use part_registry_transport::{ProposalError, ProposalSink};
+use part_registry_transport_github_pr::{
+    GithubPrConfig, GithubPrProposalSink, ReqwestGithubPrHttp,
+};
 
 // -------------------------------------------------------------------
 // ADR-012 identifier helpers
@@ -505,15 +520,45 @@ impl Wiring {
         };
 
         // Proposal sink ------------------------------------------------
+        // Live path per ADR-030 build-order step 2: the fully-built
+        // `GithubPrProposalSink` wires through Config. Token resolves
+        // per ADR-020 §"Credential resolution order": explicit config
+        // (PART_REGISTRY__TRANSPORT__GITHUB_TOKEN) → conventional
+        // GITHUB_TOKEN / GH_TOKEN. (Cached-token + device-flow live in
+        // the identity adapter; system-auth borrow is tracked.)
         let sink: Box<dyn ProposalSink> = if let Some(target) = dry_run {
             Box::new(DryRunSink::new(target))
         } else {
-            return Err(CliError::BadArg(
-                "live GitHub PR submission requires --dry-run for now; the github_pr \
-                 sink will be wired through Config in a follow-up. Set --dry-run or \
-                 --dry-run-file to capture the proposal locally."
-                    .into(),
-            ));
+            if cfg.transport.adapter != part_registry_config::TransportAdapterChoice::GithubPr {
+                return Err(CliError::BadArg(format!(
+                    "unsupported transport adapter {:?}; live submission supports \
+                     `github_pr` (or pass --dry-run)",
+                    cfg.transport.adapter
+                )));
+            }
+            let token = resolve_github_token(cfg).ok_or_else(|| {
+                CliError::BadArg(
+                    "live GitHub PR submission needs a token: set \
+                     PART_REGISTRY__TRANSPORT__GITHUB_TOKEN (or GITHUB_TOKEN / \
+                     GH_TOKEN), or pass --dry-run to capture the proposal locally."
+                        .into(),
+                )
+            })?;
+            let (owner, name) = part_registry_config::parse_owner_repo(&cfg.repo.data_repo_url)?;
+            let http = ReqwestGithubPrHttp::new(token)
+                .map_err(|e| CliError::Other(format!("github http client: {e}")))?;
+            let gh_cfg = GithubPrConfig {
+                data_repo_owner: owner,
+                data_repo_name: name,
+                base_branch: cfg.repo.branch.clone(),
+                branch_prefix: "proposal/".into(),
+                // Contents-API committer pair (the PR author is the
+                // token's user; the *operator* travels in the proposal
+                // body per ADR-019/020).
+                commit_author_name: "part-registry".into(),
+                commit_author_email: "part-registry@users.noreply.github.com".into(),
+            };
+            Box::new(GithubPrProposalSink::new(http, gh_cfg))
         };
 
         Ok(Self {
@@ -523,6 +568,32 @@ impl Wiring {
             repo_root: repo_path,
         })
     }
+}
+
+/// Resolve the GitHub token per ADR-020 §"Credential resolution order"
+/// (first hit wins): explicit config → `GITHUB_TOKEN` → `GH_TOKEN`.
+fn resolve_github_token(cfg: &Config) -> Option<String> {
+    resolve_github_token_from(cfg, |k| std::env::var(k).ok())
+}
+
+/// Testable form: the env lookup is injected so tests don't race on
+/// process-global env (same pattern as `bootstrap_data_repo_with_options`).
+fn resolve_github_token_from(cfg: &Config, env: impl Fn(&str) -> Option<String>) -> Option<String> {
+    // Blank values are "unset" per source, so a blank earlier source
+    // falls through to the next instead of short-circuiting the chain.
+    let non_blank = |t: String| {
+        if t.trim().is_empty() {
+            None
+        } else {
+            Some(t)
+        }
+    };
+    cfg.transport
+        .github_token
+        .clone()
+        .and_then(non_blank)
+        .or_else(|| env("GITHUB_TOKEN").and_then(non_blank))
+        .or_else(|| env("GH_TOKEN").and_then(non_blank))
 }
 
 // -------------------------------------------------------------------
@@ -708,9 +779,9 @@ impl ProposalSink for DryRunSink {
             .map_err(|e| ProposalError::Backend(format!("encode dry-run proposal: {e}").into()))?;
         match &self.target {
             DryRunTarget::Stdout => {
-                // Use println! so consumers can capture stdout in
-                // tests; the rest of the CLI uses tracing.
-                println!("{payload}");
+                // Stdout IS the dry-run output channel (consumers
+                // capture it); the rest of the CLI uses tracing.
+                println!("{payload}"); // guardrails-ok
             }
             DryRunTarget::File(path) => {
                 let mut f = std::fs::OpenOptions::new()
@@ -1621,6 +1692,39 @@ fn _target_ref_anchor(_t: TargetRef) -> Option<Action> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn github_token_resolution_order_is_config_then_conventional_env() {
+        let mut cfg = Config::from_layers(None, std::iter::empty::<(String, String)>())
+            .expect("defaults parse");
+
+        // 1. Explicit config wins over everything.
+        cfg.transport.github_token = Some("from-config".into());
+        let tok = resolve_github_token_from(&cfg, |k| Some(format!("env-{k}")));
+        assert_eq!(tok.as_deref(), Some("from-config"));
+
+        // 2. GITHUB_TOKEN before GH_TOKEN.
+        cfg.transport.github_token = None;
+        let tok = resolve_github_token_from(&cfg, |k| match k {
+            "GITHUB_TOKEN" => Some("from-github-token".into()),
+            "GH_TOKEN" => Some("from-gh-token".into()),
+            _ => None,
+        });
+        assert_eq!(tok.as_deref(), Some("from-github-token"));
+
+        // 3. GH_TOKEN as the last fallback; blank values don't count.
+        let tok = resolve_github_token_from(&cfg, |k| match k {
+            "GITHUB_TOKEN" => Some("   ".into()),
+            "GH_TOKEN" => Some("from-gh-token".into()),
+            _ => None,
+        });
+        assert_eq!(tok.as_deref(), Some("from-gh-token"));
+
+        // 4. Nothing anywhere → None (live submission will error
+        //    with the set-a-token guidance).
+        let tok = resolve_github_token_from(&cfg, |_| None);
+        assert!(tok.is_none());
+    }
 
     #[test]
     fn mint_part_id_produces_valid_canonical() {

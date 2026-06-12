@@ -157,7 +157,7 @@ shift):
 > Until then, for binds that must reach `main` today, use the CLI:
 >
 > ```bash
-> uv run bind.py K7M3PQ9RT5VA \
+> cargo run --bin bind -- K7M3PQ9RT5VA \
 >     --type "..." --vendor "..." --part-number "..." \
 >     --location "..."
 > ```
@@ -210,7 +210,7 @@ the labels come out wrong-sized.
 
 ```bash
 # Render SVGs:
-uv run label.py --batch B-2026-05-sdmd --layout horz --tape dk-12
+cargo run --bin label -- --batch B-2026-05-sdmd --layout horz --tape dk-12
 
 # Convert each SVG to a single-page PDF:
 cd labels/B-2026-05-sdmd-horz-dk-12/

@@ -45,7 +45,7 @@ ID-only (no URL) — labels stay valid even if the lookup app moves.
 ## CLI binding (power-user path)
 
 ```bash
-uv run bind.py K7M3PQ9RT5VA \
+cargo run --bin bind -- K7M3PQ9RT5VA \
     --type "PT100 1/3 DIN class B, 4-wire" \
     --vendor "TC Direct" --part-number "402-141" \
     --location "sdmd_v2 / cooling-loop / supply-T"
@@ -81,7 +81,7 @@ CUPS / system Bluetooth / Wi-Fi.
 
 ```bash
 # 1. Render SVGs at the right tape size:
-uv run label.py --batch B-2026-05-sdmd --layout horz --tape dk-12
+cargo run --bin label -- --batch B-2026-05-sdmd --layout horz --tape dk-12
 
 # 2. Convert to single-page PDFs (one cut per file):
 cd labels/B-2026-05-sdmd-horz-dk-12/

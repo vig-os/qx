@@ -1,0 +1,512 @@
+// In-memory transport implementing the real protocol semantics over a
+// fixture entity set. A faithful double of the engine's dispatch
+// (crates/app/src/engine.rs): resolve normalization + prefix matching,
+// the Unsupported collection guard, the one filter grammar, lifecycle
+// rules for Edit/Transition, mint-then-bind Create, Print/Export/
+// PollProposal/Whoami. Used in dev (VITE_TRANSPORT=mock, the default)
+// and in tests. Not canned responses: every op evaluates against the
+// live in-memory store.
+
+import type {
+  CollectionDescriptor,
+  CountData,
+  CreateData,
+  DescribeData,
+  EditData,
+  Entity,
+  ExportData,
+  Filter,
+  ListData,
+  PollProposalData,
+  PrintData,
+  PrintLabel,
+  ProposalRef,
+  Request,
+  Response,
+  SortSpec,
+  TransitionData,
+  WhoamiData,
+} from "../protocol";
+import { err, ok, PRINT_CHARS, PRINT_LAYOUTS } from "../protocol";
+import type { Transport } from "./types";
+import type { Fixtures } from "./fixtures";
+import { partsFixtures } from "./fixtures";
+
+// nano14 (ADR-012): id length, mint alphabet, and the human-prefix
+// length accepted by Resolve (engine HUMAN_PREFIX_LEN).
+const NANO14_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+const NANO14_LENGTH = 14;
+const HUMAN_PREFIX_LEN = 8;
+
+// Engine List default page (Rust Page::default).
+const DEFAULT_PAGE_LIMIT = 50;
+
+/**
+ * Read a queryable value off an entity: micro-core keys first
+ * (id/label/status/kind/created_at), then declared fields.
+ */
+function valueOf(e: Entity, key: string): string | null {
+  switch (key) {
+    case "id":
+      return e.id;
+    case "label":
+      return e.label;
+    case "status":
+      return e.status;
+    case "kind":
+      return e.kind;
+    case "created_at":
+      return e.created_at;
+    default:
+      return e.fields[key] ?? null;
+  }
+}
+
+/** Engine `normalize_id`: trim, strip dashes/spaces, uppercase. */
+function normalizeId(query: string): string {
+  return query.trim().replace(/[- ]/g, "").toUpperCase();
+}
+
+/**
+ * Engine `apply_filter`: status/kind exact; per-field values are
+ * case-insensitive substring matches; free text is a case-insensitive
+ * substring over a haystack of id + declared field values only.
+ */
+function matches(e: Entity, filter: Filter | null | undefined): boolean {
+  if (!filter) return true;
+  if (filter.status != null && e.status !== filter.status) return false;
+  if (filter.kind != null && e.kind !== filter.kind) return false;
+  if (filter.fields) {
+    for (const [key, want] of Object.entries(filter.fields)) {
+      const have = (valueOf(e, key) ?? "").toLowerCase();
+      if (!have.includes(want.toLowerCase())) return false;
+    }
+  }
+  if (filter.text != null && filter.text !== "") {
+    const needle = filter.text.toLowerCase();
+    const haystack = [e.id, ...Object.values(e.fields)].join("\n").toLowerCase();
+    if (!haystack.includes(needle)) return false;
+  }
+  return true;
+}
+
+function sorted(items: Entity[], sort: SortSpec[]): Entity[] {
+  // Array.prototype.sort is stable, so ties keep store order.
+  return [...items].sort((a, b) => {
+    for (const s of sort) {
+      const av = valueOf(a, s.field) ?? "";
+      const bv = valueOf(b, s.field) ?? "";
+      if (av === bv) continue;
+      const cmp = av < bv ? -1 : 1;
+      return s.dir === "desc" ? -cmp : cmp;
+    }
+    return 0;
+  });
+}
+
+function csvEscape(s: string): string {
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+    return `"${s.replaceAll('"', '""')}"`;
+  }
+  return s;
+}
+
+/**
+ * Placeholder label SVG. This IS the mock's render behavior — a plain
+ * rect plus the id as text, sized in mm by layout. Real label
+ * rendering (QR + grouped human text + fit warnings) is the Rust
+ * codec's render_label, reached through the wasm/http transports.
+ */
+function placeholderSvg(id: string, sizeMm: number, layout: string): string {
+  const w = layout === "vert" ? sizeMm : sizeMm * 4;
+  const h = layout === "vert" ? sizeMm * 4 : sizeMm;
+  const fontSize = Math.min(w, h) * 0.35;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}mm" height="${h}mm" viewBox="0 0 ${w} ${h}">` +
+    `<rect x="0" y="0" width="${w}" height="${h}" fill="white" stroke="black" stroke-width="0.2"/>` +
+    `<text x="${w / 2}" y="${h / 2}" font-family="monospace" font-size="${fontSize}"` +
+    ` text-anchor="middle" dominant-baseline="middle">${id}</text>` +
+    `</svg>`
+  );
+}
+
+/**
+ * Mock stand-in for the codec's recommend_format: bigger tape fits
+ * more grouped characters. The real recommendation/warning logic lives
+ * in the Rust codec crate.
+ */
+function recommendChars(sizeMm: number): string {
+  if (sizeMm >= 12) return "554";
+  if (sizeMm >= 9) return "444";
+  return "44";
+}
+
+function assertNever(x: never): never {
+  throw new Error(`unreachable: ${JSON.stringify(x)}`);
+}
+
+type Resolved = { entity: Entity } | { failure: Response<never> };
+
+export function mockTransport(fixtures: Fixtures = partsFixtures): Transport {
+  // Deep-copied so mutations never leak into the fixture module or
+  // across mockTransport instances.
+  const registry: DescribeData = structuredClone(fixtures.describe);
+  const store: Entity[] = structuredClone(fixtures.entities);
+
+  const collection = (name: string): CollectionDescriptor | undefined =>
+    registry.collections.find((c) => c.name === name);
+
+  // Engine known_collection: an undeclared collection on any
+  // non-Describe op is Unsupported (Describe alone answers NotFound).
+  const knownCollection = (name: string): Response<never> | null => {
+    if (collection(name)) return null;
+    const roster = registry.collections.map((c) => c.name).join(", ");
+    return err(
+      "Unsupported",
+      `collection "${name}" is not declared in this registry (preset roster: ${roster})`,
+    );
+  };
+
+  // Mutations are PROPOSALS (ADR-019): the real engine submits a diff
+  // to the proposal sink and the registry does not change until the
+  // proposal merges — responses carry only a ProposalRef. This dev
+  // mock applies the mutation to the in-memory store IMMEDIATELY (so
+  // the UI can observe effects without a merge loop) but returns the
+  // authoritative proposal-carrying shapes from crates/app/src/engine.rs.
+  let proposalSeq = 0;
+  const nextProposal = (): ProposalRef => {
+    const n = String(++proposalSeq);
+    return { url: `mock://proposal/${n}`, local_id: n, adapter: "mock" };
+  };
+
+  const mintId = (): string => {
+    for (;;) {
+      let id = "";
+      for (let i = 0; i < NANO14_LENGTH; i++) {
+        id += NANO14_ALPHABET[Math.floor(Math.random() * NANO14_ALPHABET.length)];
+      }
+      if (!store.some((e) => e.id === id)) return id;
+    }
+  };
+
+  /**
+   * Engine resolve_part: typed-id form first (bare value = the default
+   * "nano14" scheme), then normalization, then exact / prefix lookup
+   * over the global id space.
+   */
+  const resolveEntity = (query: string): Resolved => {
+    let bare = query;
+    const sep = query.indexOf(":");
+    if (sep >= 0) {
+      const scheme = query.slice(0, sep);
+      if (scheme !== "nano14") {
+        return {
+          failure: err("Validation", `id scheme "${scheme}" is not declared (default: nano14)`),
+        };
+      }
+      bare = query.slice(sep + 1);
+    }
+    const q = normalizeId(bare);
+    if (q.length === NANO14_LENGTH) {
+      const entity = store.find((x) => x.id === q);
+      if (!entity) return { failure: err("NotFound", `no match for "${query}"`) };
+      return { entity };
+    }
+    if (q.length >= HUMAN_PREFIX_LEN) {
+      const hits = store.filter((x) => x.id.startsWith(q));
+      const first = hits[0];
+      if (first === undefined) return { failure: err("NotFound", `no match for "${query}"`) };
+      if (hits.length === 1) return { entity: first };
+      return {
+        failure: err(
+          "Ambiguous",
+          `ambiguous prefix "${query}" — ${hits.length} matches: ${hits.map((h) => h.id).join(", ")}`,
+        ),
+      };
+    }
+    return {
+      failure: err(
+        "BadRequest",
+        `query too short (${q.length} chars); need >= ${HUMAN_PREFIX_LEN}`,
+      ),
+    };
+  };
+
+  /**
+   * Engine validate_field_keys: every key must be one of the editable
+   * fields. The engine's EDITABLE_KEYS constant is exactly the parts
+   * descriptor's editable roster, so the mock derives it from the
+   * descriptor (the SSOT a real registry would serve via Describe).
+   */
+  const checkFieldKeys = (
+    coll: CollectionDescriptor,
+    fields: Record<string, string>,
+  ): Response<never> | null => {
+    const editable = coll.fields.filter((f) => f.editable).map((f) => f.key);
+    for (const key of Object.keys(fields)) {
+      if (!editable.includes(key)) {
+        return err("Validation", `unknown field "${key}"; editable fields: ${editable.join(", ")}`);
+      }
+    }
+    return null;
+  };
+
+  const collectionEntities = (name: string, filter?: Filter | null): Entity[] =>
+    store.filter((e) => e.collection === name && matches(e, filter));
+
+  const handle = (req: Request): Response => {
+    switch (req.op) {
+      case "Resolve": {
+        const r = resolveEntity(req.id);
+        if ("failure" in r) return r.failure;
+        return ok<Entity>(structuredClone(r.entity));
+      }
+
+      case "List": {
+        const guard = knownCollection(req.collection);
+        if (guard) return guard;
+        let items = collectionEntities(req.collection, req.filter);
+        // Engine list: id-ascending when no sort is given.
+        const sort =
+          req.sort && req.sort.length > 0
+            ? req.sort
+            : [{ field: "id", dir: "asc" } satisfies SortSpec];
+        items = sorted(items, sort);
+        const total = items.length;
+        const page = req.page ?? { offset: 0, limit: DEFAULT_PAGE_LIMIT };
+        items = items.slice(page.offset, page.offset + page.limit);
+        return ok<ListData>({ items: structuredClone(items), total });
+      }
+
+      case "Count": {
+        const guard = knownCollection(req.collection);
+        if (guard) return guard;
+        const counts: Record<string, number> = {};
+        for (const e of collectionEntities(req.collection, req.filter)) {
+          // Engine count: a missing value groups under "(none)".
+          const v = valueOf(e, req.by) ?? "(none)";
+          counts[v] = (counts[v] ?? 0) + 1;
+        }
+        return ok<CountData>({ by: req.by, counts });
+      }
+
+      case "Describe": {
+        if (req.collection == null) return ok<DescribeData>(structuredClone(registry));
+        const coll = collection(req.collection);
+        if (!coll) {
+          return err("NotFound", `collection "${req.collection}" is not declared`);
+        }
+        return ok<DescribeData>({
+          name: registry.name,
+          collections: [structuredClone(coll)],
+        });
+      }
+
+      case "Create": {
+        const guard = knownCollection(req.collection);
+        if (guard) return guard;
+        const coll = collection(req.collection);
+        if (!coll) return err("Backend", "unreachable: collection vanished");
+        // Engine create: a fields payload is rejected — mint-then-bind.
+        if (req.fields && Object.keys(req.fields).length > 0) {
+          return err(
+            "Validation",
+            `Create{${coll.name}} mints blank unbound ids; metadata binds via Transition (mint-then-bind, ADR-012)`,
+          );
+        }
+        const n = req.n ?? 1;
+        if (!Number.isInteger(n) || n < 1) {
+          return err("BadRequest", "n must be >= 1");
+        }
+        const status = coll.lifecycle.statuses[0];
+        if (status === undefined) {
+          return err("Backend", `collection ${coll.name} declares no lifecycle statuses`);
+        }
+        // One stamp per mint event (ADR-035 §1b).
+        const created_at = new Date().toISOString();
+        const items: Entity[] = Array.from({ length: n }, () => ({
+          id: mintId(),
+          collection: coll.name,
+          label: null,
+          created_at,
+          status,
+          kind: null,
+          transitioned_at: {},
+          fields: {},
+          properties: {},
+        }));
+        store.push(...items);
+        return ok<CreateData>({
+          minted: items.map((e) => e.id),
+          created_at,
+          proposal: nextProposal(),
+        });
+      }
+
+      case "Edit": {
+        const guard = knownCollection(req.collection);
+        if (guard) return guard;
+        const coll = collection(req.collection);
+        if (!coll) return err("Backend", "unreachable: collection vanished");
+        if (Object.keys(req.fields).length === 0) {
+          return err("BadRequest", "Edit requires at least one field");
+        }
+        const invalid = checkFieldKeys(coll, req.fields);
+        if (invalid) return invalid;
+        const r = resolveEntity(req.id);
+        if ("failure" in r) return r.failure;
+        const e = r.entity;
+        // Engine edit: status-preserving and bound-only.
+        if (e.status !== "bound") {
+          return err(
+            "Validation",
+            `${e.id} is ${e.status} — Edit is status-preserving and applies to bound parts; use Transition to bind or void`,
+          );
+        }
+        Object.assign(e.fields, req.fields);
+        return ok<EditData>({ id: e.id, proposal: nextProposal() });
+      }
+
+      case "Transition": {
+        const guard = knownCollection(req.collection);
+        if (guard) return guard;
+        const coll = collection(req.collection);
+        if (!coll) return err("Backend", "unreachable: collection vanished");
+        const fields = req.fields ?? {};
+        const invalid = checkFieldKeys(coll, fields);
+        if (invalid) return invalid;
+        const r = resolveEntity(req.id);
+        if ("failure" in r) return r.failure;
+        const e = r.entity;
+        const nowIso = new Date().toISOString();
+        // Engine transition: the only targets are "bound" and "void".
+        if (req.to === "bound") {
+          if (e.status === "bound") {
+            return err(
+              "Validation",
+              `${e.id} is already bound — status-preserving changes go through Edit`,
+            );
+          }
+          if (e.status === "void") {
+            return err("Validation", `${e.id} is voided; cannot bind. Mint a new ID.`);
+          }
+          e.status = "bound";
+          e.transitioned_at["bound"] = nowIso;
+          Object.assign(e.fields, fields);
+          return ok<TransitionData>({ id: e.id, to: "bound", proposal: nextProposal() });
+        }
+        if (req.to === "void") {
+          // Engine void: the request's notes (not the stored notes)
+          // gain a voided-stamp suffix.
+          const notes = fields["notes"];
+          e.fields["notes"] = notes != null ? `${notes} [voided ${nowIso}]` : `[voided ${nowIso}]`;
+          e.status = "void";
+          e.transitioned_at["void"] = nowIso;
+          return ok<TransitionData>({ id: e.id, to: "void", proposal: nextProposal() });
+        }
+        return err(
+          "Validation",
+          `unknown transition target "${req.to}"; ${coll.name} lifecycle: ${coll.lifecycle.statuses.join(" -> ")}`,
+        );
+      }
+
+      case "Print": {
+        const guard = knownCollection(req.collection);
+        if (guard) return guard;
+        const options = req.options ?? {};
+        const layout = options.layout ?? "horz";
+        const sizeMm = options.size_mm ?? 8;
+        const chars = options.chars ?? "auto";
+        const copies = options.copies ?? 1;
+        if (copies < 1) return err("BadRequest", "copies must be >= 1");
+        if (!(PRINT_LAYOUTS as readonly string[]).includes(layout)) {
+          return err("Validation", `unknown layout "${layout}"; presets: ${PRINT_LAYOUTS.join(", ")}`);
+        }
+        if (layout === "flag" && options.cable_od_mm == null) {
+          return err("Validation", 'layout "flag" requires cable_od_mm');
+        }
+        if (!(PRINT_CHARS as readonly string[]).includes(chars)) {
+          return err(
+            "Validation",
+            `unknown chars grouping "${chars}"; nano14 declares: ${PRINT_CHARS.join(", ")}`,
+          );
+        }
+        const resolvedChars = chars === "auto" ? recommendChars(sizeMm) : chars;
+        let targets: Entity[];
+        if ("ids" in req.selection) {
+          targets = [];
+          for (const id of req.selection.ids) {
+            const r = resolveEntity(id);
+            if ("failure" in r) return r.failure;
+            targets.push(r.entity);
+          }
+        } else {
+          targets = collectionEntities(req.collection, req.selection.filter);
+        }
+        if (targets.length === 0) {
+          return err("NotFound", "selection matched no entities");
+        }
+        const labels: PrintLabel[] = targets.map((e) => ({
+          id: e.id,
+          svg: placeholderSvg(e.id, sizeMm, layout),
+        }));
+        return ok<PrintData>({
+          labels,
+          size_mm: sizeMm,
+          chars: resolvedChars,
+          warning: null,
+        });
+      }
+
+      case "Export": {
+        const guard = knownCollection(req.collection);
+        if (guard) return guard;
+        if (req.format !== "csv") {
+          return err("Unsupported", `export format "${req.format}" not supported (formats: csv)`);
+        }
+        // Engine export column roster (engine.rs export).
+        const columns = [
+          "id",
+          "status",
+          "created_at",
+          "type",
+          "description",
+          "vendor",
+          "part_number",
+          "location",
+          "notes",
+        ];
+        const rows = collectionEntities(req.collection);
+        const lines = [columns.join(",")];
+        for (const e of rows) {
+          lines.push(columns.map((c) => csvEscape(valueOf(e, c) ?? "")).join(","));
+        }
+        return ok<ExportData>({
+          format: "csv",
+          content: lines.join("\n") + "\n",
+          rows: rows.length,
+        });
+      }
+
+      case "PollProposal":
+        // Mock proposals never advance: they stay open. The real sink
+        // answers from the PR backend (ADR-019).
+        return ok<PollProposalData>({ status: { kind: "open" } });
+
+      case "Whoami":
+        // A fake operator, in the engine's whoami shape: the mock is
+        // always "signed in" so mutating ops never Auth-fail in dev.
+        return ok<WhoamiData>({
+          id: "mock:operator",
+          display_name: "Mock Operator",
+          source: "OfflineClaim",
+          verified_at: null,
+        });
+
+      default:
+        return assertNever(req);
+    }
+  };
+
+  return (req) => Promise.resolve(handle(req));
+}

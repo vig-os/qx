@@ -18,6 +18,29 @@
         "type": "github"
       }
     },
+    "guardrails": {
+      "inputs": {
+        "flake-utils": [
+          "flake-utils"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1781097559,
+        "narHash": "sha256-zOJK/NgfkBg0WdtQyRVhdwi+UnT2sQPrkDcqaO4YsEo=",
+        "owner": "gerchowl",
+        "repo": "guardrails",
+        "rev": "c4c6b79a311bed14f55fd4fb82d60f62ed302b15",
+        "type": "github"
+      },
+      "original": {
+        "owner": "gerchowl",
+        "repo": "guardrails",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1778458615,
@@ -37,6 +60,7 @@
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
+        "guardrails": "guardrails",
         "nixpkgs": "nixpkgs",
         "rust-overlay": "rust-overlay"
       }

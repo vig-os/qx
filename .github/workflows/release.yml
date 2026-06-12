@@ -222,3 +222,96 @@ jobs:
               --title "${TAG}" \
               --notes-file release-notes.md
           fi
+
+  # The `pr` multicall binary (ADR-030 §2) — the artifact data-repo CI
+  # gates pin (check.yml.tmpl fetches it by tag + sha256; ADR-034 §2:
+  # CI runs the released binary, not a from-source build). Lean build —
+  # `pr check` needs no serve/mcp/tui features.
+  pr-binary:
+    needs: [test, bundle]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build pr (release, lean)
+        run: cargo build --release -p part-registry-cli --bin pr
+
+      - name: Stage + checksum
+        run: |
+          TAG="${{ needs.bundle.outputs.tag }}"
+          cp target/release/pr "pr-x86_64-unknown-linux-gnu"
+          sha256sum "pr-x86_64-unknown-linux-gnu" > "pr-sha256sums-${TAG}.txt"
+          cat "pr-sha256sums-${TAG}.txt"
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ needs.bundle.outputs.tag }}"
+          gh release upload "${TAG}" \
+            "pr-x86_64-unknown-linux-gnu" \
+            "pr-sha256sums-${TAG}.txt" \
+            --repo "${GITHUB_REPOSITORY}" --clobber
+
+      # ADR-038 §5: the curl-able install.sh pins this tarball by its
+      # released sha256 — registry setup runs release-verified code,
+      # never whatever happens to be on main.
+      - name: Bootstrap tarball (install.sh pin target)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ needs.bundle.outputs.tag }}"
+          tar -czf "bootstrap-${TAG}.tar.gz" install.sh tools/bootstrap-data-repo.sh tools/data-repo-templates
+          sha256sum "bootstrap-${TAG}.tar.gz" > "bootstrap-${TAG}.tar.gz.sha256"
+          gh release upload "${TAG}" \
+            "bootstrap-${TAG}.tar.gz" \
+            "bootstrap-${TAG}.tar.gz.sha256" \
+            --repo "${GITHUB_REPOSITORY}" --clobber
+
+  # ADR-038 §4: the runner image — data repos (and operators, via
+  # podman) run the deep suite in the SAME pinned environment as CI,
+  # so environment drift dies. Built from the released gate binary;
+  # moves to a flake dockerTools build when the gate build goes
+  # in-flake (the image then becomes bit-reproducible too).
+  runner-image:
+    needs: [bundle, pr-binary]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Fetch released gate binary (by pin, like a data repo)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ needs.bundle.outputs.tag }}"
+          gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}" \
+            --pattern "pr-x86_64-unknown-linux-gnu" \
+            --pattern "pr-sha256sums-*.txt"
+          grep "pr-x86_64-unknown-linux-gnu" "pr-sha256sums-${TAG}.txt" | sha256sum -c -
+
+      - name: Build + push runner image
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ needs.bundle.outputs.tag }}"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}-runner"
+          cp pr-x86_64-unknown-linux-gnu pr
+          cat > Dockerfile <<'DOCKER'
+          FROM debian:bookworm-slim
+          RUN apt-get update \
+            && apt-get install -y --no-install-recommends git ca-certificates jq zstd curl \
+            && rm -rf /var/lib/apt/lists/*
+          COPY pr /usr/local/bin/pr
+          RUN chmod +x /usr/local/bin/pr
+          ENTRYPOINT ["/usr/local/bin/pr"]
+          DOCKER
+          echo "${GH_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+          docker build -t "${IMAGE}:${TAG}" -t "${IMAGE}:latest" .
+          docker push "${IMAGE}:${TAG}"
+          docker push "${IMAGE}:latest"

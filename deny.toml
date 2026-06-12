@@ -1,0 +1,48 @@
+# cargo-deny — dependency licenses + RUSTSEC advisories (wired in .pre-commit-config.yaml).
+# Starter baseline: a permissive allow-list of common OSI licenses, multiple-versions tolerated
+# (large graphs are noisy), advisories deny-by-default with an explicit, auditable `ignore` list.
+# This workspace's crates are `publish = false`, so `private.ignore` skips license-gating them.
+
+[advisories]
+version = 2
+yanked = "warn"
+# Unmaintained advisories error only for DIRECT workspace deps (our
+# choices, each with a SOUP row per ADR-028). Transitive unmaintained
+# crates live inside upstream trees we track at the direct-dep grain —
+# e.g. tauri's Linux closure (gtk3-rs bindings, unic-*) and imageproc's
+# (paste) — and are fixed by bumping the direct dep, not by us.
+unmaintained = "workspace"
+ignore = []
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+private = { ignore = true }   # don't license-gate first-party (publish=false) crates
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-3.0",
+  "Zlib",
+  "MPL-2.0",
+  "CC0-1.0",
+  "0BSD",
+  "BSL-1.0",
+  # University of Illinois/NCSA — permissive, OSI-approved (appears
+  # AND-combined with MIT/Apache in the rustls/reqwest dep tree).
+  "NCSA",
+  # Community Data License Agreement Permissive 2.0 — webpki-roots'
+  # Mozilla root-certificate database (reqwest rustls-tls).
+  "CDLA-Permissive-2.0",
+]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "allow"

@@ -61,7 +61,6 @@
 
 use std::sync::{Arc, Mutex, OnceLock};
 
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::field::{Field, Visit};
 use tracing::span::{Attributes, Id};
@@ -442,7 +441,10 @@ where
                 Ok(e) => e,
                 Err(err) => {
                     self.bump_failed();
-                    eprintln!("audit-csv layer: failed to deserialise audit_entry payload: {err}");
+                    // Stderr by design: this layer sits INSIDE the
+                    // tracing pipeline — reporting via tracing here
+                    // would recurse (ADR-022 fail-open).
+                    eprintln!("audit-csv layer: failed to deserialise audit_entry payload: {err}"); // guardrails-ok
                     return;
                 }
             }
@@ -451,7 +453,8 @@ where
                 Some(e) => e,
                 None => {
                     self.bump_failed();
-                    eprintln!(
+                    // Stderr by design — see above (in-pipeline, no tracing).
+                    eprintln!( // guardrails-ok
                         "audit-csv layer: event tagged audit=true but lacks audit_entry payload and discrete fields"
                     );
                     return;
@@ -461,7 +464,8 @@ where
 
         if let Err(err) = self.sink.append(entry) {
             self.bump_failed();
-            eprintln!("audit-csv layer: append_audit_event failed: {err}");
+            // Stderr by design — see above (in-pipeline, no tracing).
+            eprintln!("audit-csv layer: append_audit_event failed: {err}"); // guardrails-ok
         }
     }
 }
@@ -820,17 +824,6 @@ pub fn void_audit_entry(
         signatures: Vec::new(),
         chain_hash: None,
     }
-}
-
-// -------------------------------------------------------------------
-// Smoke-payload type used by `init_smoke_emit` for tests
-// -------------------------------------------------------------------
-
-/// Internal serde shape for an audit-entry payload-in-event-field
-/// (the structured path). Exposed `pub(crate)` for tests.
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct AuditEventPayload {
-    pub entry: AuditEntry,
 }
 
 // -------------------------------------------------------------------

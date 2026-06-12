@@ -6,6 +6,8 @@ members = [
     "crates/validators",
     "crates/storage",
     "crates/storage_csv_git",
+    "crates/storage_jsonl_git",
+    "crates/app",
     "crates/identity",
     "crates/identity_git_config",
     "crates/identity_github_oauth",
@@ -17,8 +19,10 @@ members = [
     "crates/observability",
     "crates/config",
     "crates/cli",
+    "crates/devtools",
     "crates/wasm",
     "crates/port_tests",
+    "desktop/src-tauri",
 ]
 
 # Per ADR-017 + ADR-024: workspace pins shared dep versions so every
@@ -26,7 +30,7 @@ members = [
 # in for reproducible-build discipline.
 [workspace.package]
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 publish = false
 

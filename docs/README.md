@@ -6,6 +6,7 @@ Operator-facing documentation for the part-registry.
 |---|---|---|
 | [`operator-cheatsheet.md`](operator-cheatsheet.md) | Lab-floor reference. One A4 page, dense, pin-near-the-printer format. | ~750 words |
 | [`quickstart.md`](quickstart.md) | New-operator narrative walkthrough. PWA install → first scan → first bind → first print → where to find help. | ~1850 words |
+| [`registry-anatomy.md`](registry-anatomy.md) | Admin reference. Every file in a deployed registry repo — purpose, governing contract, how it's enforced/checked, and who administers it. | ~900 words |
 
 For the system overview and CLI reference, see the top-level
 [`README.md`](../README.md). For design rationale, see

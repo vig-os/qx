@@ -1,4 +1,0 @@
-id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes
-2A3B4C5D6E7FGH,bound,2026-05-01T10:00:00+00:00,B-2026-05-test,2026-05-02T11:00:00+00:00,PT100,supply-T probe,TC Direct,402-141,sdmd_v2 / cooling-loop,
-3K7M3PQ9RT5VWX,unbound,2026-05-01T10:00:00+00:00,B-2026-05-test,,,,,,,
-4WXYZ23456BBCD,bound,2026-05-01T10:00:00+00:00,B-2026-05-test,2026-05-03T09:00:00+00:00,PT100,resurrected,TC Direct,402-141,lab,

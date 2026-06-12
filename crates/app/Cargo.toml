@@ -1,0 +1,30 @@
+[package]
+name = "part-registry-app"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Application layer per ADR-030/035 — collection engine + command protocol; every shell dispatches through here"
+
+[dependencies]
+part-registry-domain = { path = "../domain" }
+part-registry-storage = { path = "../storage" }
+part-registry-transport = { path = "../transport" }
+part-registry-identity = { path = "../identity" }
+part-registry-validators = { path = "../validators" }
+# Encoder + renderer only — the decoder (rxing, ~1.4 MB) must not ride
+# into the wasm bundle via this dep; decode-image lands behind a
+# feature with the ADR-032 A/B gate.
+part-registry-codec = { path = "../codec", default-features = false }
+part-registry-observability = { path = "../observability" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+time.workspace = true
+# CSPRNG for mint_part_id (same pin as crates/cli; works on wasm32 via
+# the "js" feature when the wasm shell pulls it in).
+getrandom = "0.2"
+
+[dev-dependencies]

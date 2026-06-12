@@ -1,0 +1,2 @@
+# tauri-build writes the ACL schemas here on every build.
+/gen/schemas

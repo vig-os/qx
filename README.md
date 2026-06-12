@@ -21,22 +21,22 @@ the planned web app architecture.
 
 ## Workflow (CLI)
 
-Three verbs, three scripts:
+Three verbs, three Rust binaries (`crates/cli`):
 
 ```bash
 # 1. mint — create IDs, append to registry. No labels.
-uv run mint.py --count 50 --batch B-2026-05-sdmd
+cargo run --bin mint -- --count 50 --batch B-2026-05-sdmd
 
 # 2. label — render SVG labels for IDs already in the registry
-uv run label.py --batch B-2026-05-sdmd --layout horz --tape dk-12
-uv run label.py --id K7M3PQ9RT5VA --layout vert --size 8
-uv run label.py --status unbound --layout flag --size 11 --cable-od 6
+cargo run --bin label -- --batch B-2026-05-sdmd --layout horz --tape dk-12
+cargo run --bin label -- --id K7M3PQ9RT5VA --layout vert --size 8
+cargo run --bin label -- --status unbound --layout flag --size 11 --cable-od 6
 # Each successful render also appends a row per ID to print_log.csv
 # (audit trail; see ADR-015). Pass --no-log for ad-hoc renders that
 # aren't real prints, --operator <name> to override $USER.
 
 # 3. bind — attach an ID to a real part (full ID or ≥ 8-char prefix)
-uv run bind.py K7M3PQ9RT5VA \
+cargo run --bin bind -- K7M3PQ9RT5VA \
     --type "PT100 1/3 DIN class B, 4-wire" \
     --vendor "TC Direct" --part-number "402-141" \
     --location "sdmd_v2 / cooling-loop / supply-T"
@@ -70,7 +70,7 @@ and supports **AirPrint** over Wi-Fi. The simplest workflow:
 
 ```bash
 # Render labels at the right tape size:
-uv run label.py --batch B-2026-05-sdmd --layout horz --tape dk-12
+cargo run --bin label -- --batch B-2026-05-sdmd --layout horz --tape dk-12
 
 # Convert SVGs to single-page PDFs (printer auto-cuts between pages/jobs):
 cd labels/B-2026-05-sdmd-horz-sdk-12/
@@ -129,15 +129,13 @@ cd web && npm ci && npm test
 
 # FE end-to-end (headless Playwright, Vite preview build)
 cd web && npm run e2e
-
-# Legacy Python parity suite
-uv sync --group dev
-uv run pytest test_labels.py -v
 ```
 
-The roundtrip suite verifies the critical invariant — **QR-decoded
-payload === displayed text === canonical ID** — across every layout
-and size combination. Requires `rsvg-convert` (`brew install librsvg`).
+The workspace suite includes `crates/cli/tests/label_parity_golden.rs`:
+the renderer is checked structurally byte-for-byte against golden SVGs
+produced by the retired Python `label.py` right before its deletion
+(ADR-017 step 9), plus the QR roundtrip invariant — **QR-decoded
+payload === displayed text === canonical ID**.
 
 ## Validators
 
@@ -150,10 +148,6 @@ for the policy story.
 ```bash
 # Run the rule-set test suite
 cargo test -p part-registry-validators
-
-# Run the legacy Python validators (still parity-tested)
-uv run python -m validators /path/to/data-repo/registry.csv
-uv run python -m validators /path/to/data-repo/registry.csv --base /path/to/base/registry.csv
 ```
 
 Rules encoded:
@@ -181,7 +175,7 @@ open-source while operator data stays scoped to its registry:
 
 | Repo | What | Visibility |
 |---|---|---|
-| `MorePET/part-registry` (this) | Rust + Python + FE source, ADRs, examples | Public |
+| `MorePET/part-registry` (this) | Rust + FE source, ADRs, examples | Public |
 | `exo-pet/exopet-registry` | Production registry data (audit-of-record) | Private (planned; currently public until org upgrade) |
 | `exo-pet/exopet-registry-sandbox` | Throwaway sandbox for experimentation | Public |
 
@@ -214,12 +208,14 @@ for the generated workflow.
 
 ## Files
 
-- `mint.py` / `label.py` / `bind.py` — legacy Python CLIs. Parity
-  targets for the Rust binaries; deletion gated on operator review.
-- `test_labels.py` — pytest roundtrip suite
-- `validators/` — legacy Python validators (parity-tested against
-  `crates/validators/`)
-- `crates/` — Rust workspace (see workspace `Cargo.toml`)
+- `crates/` — Rust workspace (see workspace `Cargo.toml`). The legacy
+  Python CLIs (`mint.py` / `label.py` / `bind.py` / `validators/`)
+  were deleted per ADR-017 step 9 once the Rust binaries reached
+  parity; their last outputs live on as executable parity goldens
+  under `crates/cli/tests/golden/`.
+- `tools/` — repo tooling. `bake_glyph_font.py` + `font_editor_gen.py`
+  are the only remaining Python (design-time font tools; Rust port
+  queued).
 - `web/` — Vite SPA + WASM façade over `crates/codec` + `crates/validators`
 - `decisions/` — ADRs and decision log
 - `examples/` — reference label renderings used by the parity tests

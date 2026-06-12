@@ -3,9 +3,17 @@
 
   # Per #35 Phase 3: one `nix develop` brings up the full dev environment
   # — Rust toolchain pinned to `rust-toolchain.toml`, Node 22 + npm, uv
-  # (for Python parity tests + tools/), wasm-pack, wasm-bindgen-cli,
+  # (for the design-time font tools in tools/), wasm-pack, wasm-bindgen-cli,
   # Playwright + chromium, gh, jq, actionlint. CI can `nix develop -c
   # <cmd>` to get the same env as a contributor's machine.
+  #
+  # The dev shell is composed on top of the shared `guardrails` flake
+  # (gerchowl/guardrails): its toolbelt (prek, gitleaks, cargo-deny,
+  # cargo-mutants/-bloat/-criterion, tokei, the `guardrails` CLI + the
+  # editable gate scripts) rides in, and entering the shell auto-installs
+  # the pre-commit hooks defined in `.pre-commit-config.yaml` so commits
+  # are gated the same way everywhere. `guardrails info` lists the gates
+  # and every config knob; escape one line with `guardrails-ok`.
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
@@ -14,9 +22,17 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Shared code-quality / observability / perf governance. Consumed via
+    # `guardrails.lib.${system}.mkDevShell`; follows our nixpkgs/flake-utils
+    # so the closure stays deduplicated.
+    guardrails = {
+      url = "github:gerchowl/guardrails";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.flake-utils.follows = "flake-utils";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay, guardrails }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
@@ -36,11 +52,34 @@
         # the latest; pin by hash if the unstable channel ever drifts.
         wasmBindgenCli = pkgs.wasm-bindgen-cli;
 
+        # Workspace builds with the same pinned toolchain the dev shell uses.
+        rustPlatformPinned = pkgs.makeRustPlatform {
+          cargo = rustToolchain;
+          rustc = rustToolchain;
+        };
+
+        # The obligations gate binary (crates/devtools — Rust port of the
+        # retired tools/obligations_check.py, ADR-017 step 9). Built from the
+        # checked-in Cargo.lock so the derivation is hermetic; the vendor step
+        # fetches the whole workspace lock once and is cached thereafter.
+        devtools = rustPlatformPinned.buildRustPackage {
+          pname = "part-registry-devtools";
+          version = "0.1.0";
+          src = ./.;
+          cargoLock.lockFile = ./Cargo.lock;
+          buildAndTestSubdir = "crates/devtools";
+          doCheck = false;
+        };
+
       in {
-        devShells.default = pkgs.mkShell {
+        # mkDevShell layers the guardrails toolbelt + auto-hook-install
+        # under our project tools (`extra`), the shell `name`, the
+        # Playwright env vars (`env`), and our cheatsheet (`hook`).
+        devShells.default = guardrails.lib.${system}.mkDevShell {
+          inherit pkgs;
           name = "part-registry-dev";
 
-          buildInputs = with pkgs; [
+          extra = with pkgs; [
             # Rust workspace
             rustToolchain
             wasmBindgenCli
@@ -49,7 +88,10 @@
             # FE
             nodejs_22
 
-            # Python parity CLIs + tools/
+            # uv stays for the remaining design-time Python font tools
+            # (tools/bake_glyph_font.py + tools/font_editor_gen.py); it
+            # leaves with their Rust port. Operational Python is gone
+            # (ADR-017 step 9).
             uv
 
             # CI / repo tooling
@@ -69,10 +111,22 @@
           # the driver. nixpkgs ships them at a fixed store path that
           # we surface via these env vars so `npx playwright test`
           # works without network access.
-          PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
-          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
+          env = {
+            PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+            PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
 
-          shellHook = ''
+            # `tools/` holds CLI scripts whose job is to write to stdout/stderr
+            # (bake_glyph_font.py, font_editor_gen.py, …), and crates/devtools
+            # is the obligations gate binary whose report IS its output.
+            # Declare both as output surfaces so guardrails' no-debug-leftovers
+            # gate stays high-signal on lib/app code instead of flagging
+            # legitimate command output.
+            GUARDRAILS_OUTPUT_GLOBS = "tools/*:*/tools/*:crates/devtools/*:*/crates/devtools/*";
+          };
+
+          # Appended after the guardrails banner so the project cheatsheet
+          # is the last thing printed on shell entry.
+          hook = ''
             echo "part-registry dev shell"
             echo "  rust:      $(rustc --version)"
             echo "  node:      $(node --version)"
@@ -105,8 +159,21 @@
           '';
         };
 
-        # Future: `nix build` for the FE bundle as a derivation, so CI
-        # can consume the same artifact `release.yml` produces. Not in
-        # Phase 3 scope — release.yml stays the source of truth for now.
+        # Pipeline-as-derivation (ADR-038 §4): CI logic lives in flake
+        # outputs; .github/workflows/ci.yml is a thin shim running
+        # `nix flake check`. Hermetic by construction — the Nix sandbox
+        # gives the obligations gate no network and a pure source tree,
+        # so local `nix flake check` and CI are the same run.
+        checks.obligations = pkgs.runCommand "adr-obligations" { } ''
+          cd ${./.}
+          ${devtools}/bin/obligations-check
+          touch $out
+        '';
+
+        # Future: `nix build` for the FE bundle + the static (musl)
+        # gate binary + the dockerTools runner image as derivations
+        # (ADR-038 §4 end-state), so CI and release.yml consume the
+        # same artifacts. release.yml stays the source of truth until
+        # the gate build moves in-flake.
       });
 }

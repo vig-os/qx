@@ -1,0 +1,14 @@
+# CODEOWNERS — the authoritative review-routing layer per ADR-034:
+# the tool classifies changes; GitHub's branch protection + these rules
+# enforce the human review. Seeded by tools/bootstrap-data-repo.sh;
+# regenerate from the manifest's role map when manifest.toml lands.
+
+# Registry data: every change is a PR; destructive classes
+# (delete/void/header per ADR-016) additionally surface in the
+# pr-check annotation. Approvers own the data root.
+*                       __APPROVERS__
+
+# Governance surfaces are stricter by construction — contract/manifest
+# edits are CODEOWNERS-gated paths (ADR-033/034).
+/.part-registry/        __APPROVERS__
+/.github/               __APPROVERS__

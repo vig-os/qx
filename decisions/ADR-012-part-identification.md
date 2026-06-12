@@ -294,6 +294,33 @@ that matters (the short side of the available surface).
   font dependency. For printer drivers that substitute fonts, the QR
   block is the load-bearing element.
 
+## Corrections
+
+> **2026-06-11:** the alphabet was described as "32-character" with
+> power-of-two ID-space math — it is in fact **31 characters**
+> (8 digits + 23 letters), and 31 is not a power of two. True Crockford
+> base32 keeps `0`/`1` (32 symbols) and decode-maps lookalikes
+> (`O→0`, `I/L→1`); ours is *stricter* — the lookalikes are dropped
+> entirely, making the set 31-ary. Capacity math: 31¹⁴ ≈ 7.6×10²⁰
+> (~2⁶⁹), birthday-safe past 10⁹ ids; mint is additionally
+> uniqueness-checked, so collision safety is structural, not only
+> probabilistic.
+
+## Refinements
+
+> **2026-06-11:** constraint re-examined when owned bitmap typography
+> (ADR-031 §8) made `0/O`-class glyphs visually distinguishable on
+> labels: **the exclusion stays.** Typography fixes only the reading
+> channel — spoken, handwritten, and retyped ids inherit ambiguity no
+> font can remove. Structurally, exclusion is also what keeps forgiving
+> input possible (`O` can never be valid, so it is always detectably a
+> typo); admitting `0` and `O` as distinct symbols would convert every
+> confusion into a potential wrong-but-valid resolution. The gain would
+> be +4.4% entropy/char — provably unneeded. Residual in-alphabet pairs
+> (`8/B`, `5/S`, `2/Z`, `6/G`) are handled by the owned bitmap glyphs
+> (ADR-031 §8) — alphabet excludes the catastrophic, typography
+> sharpens the residual.
+
 ## References
 
 - `label.py` — SVG label renderer, text block geometry.

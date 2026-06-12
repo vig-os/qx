@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "part-registry",
+  "version": "0.1.0",
+  "identifier": "com.morepet.part-registry",
+  "build": {
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../../webapp/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "part-registry",
+        "width": 1100,
+        "height": 760
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false
+  }
+}

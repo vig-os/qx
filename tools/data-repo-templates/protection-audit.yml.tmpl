@@ -1,0 +1,71 @@
+# protection-audit.yml — the ADR-034 drift self-audit (CI-only, no
+# GitHub App yet, per the 2026-06-11 decision). Branch protection is a
+# repo SETTING, not a committed file — it can be weakened out-of-band
+# and the repo would still LOOK gated. This cron verifies the teeth
+# still match the deployed-registry contract and opens an issue on
+# drift (warn, never auto-heal).
+#
+# Requires a PAT secret PROTECTION_AUDIT_TOKEN with repository
+# Administration:read (the default GITHUB_TOKEN cannot read branch
+# protection). Accepted residual risk (recorded in ADR-034): an actor
+# who can weaken protection can also weaken this workflow — the GitHub
+# App is the eventual hardening.
+name: protection-audit
+on:
+  schedule:
+    - cron: "17 6 * * 1" # weekly, Monday 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: audit protection + CODEOWNERS
+        env:
+          GH_TOKEN: ${{ secrets.PROTECTION_AUDIT_TOKEN }}
+        run: |
+          set -u
+          drift=()
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            drift+=("PROTECTION_AUDIT_TOKEN secret is not set — the audit cannot read branch protection")
+          else
+            prot=$(gh api "repos/${GITHUB_REPOSITORY}/branches/__BRANCH__/protection" 2>/dev/null) || {
+              drift+=("branch __BRANCH__ has NO protection (or token lacks Administration:read)")
+              prot=""
+            }
+            if [ -n "$prot" ]; then
+              echo "$prot" | jq -e '.required_pull_request_reviews' >/dev/null \
+                || drift+=("required PR reviews are OFF")
+              echo "$prot" | jq -e '.required_status_checks.contexts | index("check")' >/dev/null \
+                || drift+=("required status check \"check\" (pr-check) is not enforced")
+            fi
+          fi
+
+          [ -f .github/CODEOWNERS ] || drift+=(".github/CODEOWNERS is missing")
+          [ -f .github/workflows/pr-check.yml ] || drift+=(".github/workflows/pr-check.yml is missing")
+
+          if [ "${#drift[@]}" -eq 0 ]; then
+            echo "protection-audit: OK"
+            exit 0
+          fi
+          printf 'DRIFT: %s\n' "${drift[@]}"
+          {
+            echo "The weekly ADR-034 protection audit found drift between this registry's enforcement and its deployed-registry contract:"
+            echo
+            printf -- '- %s\n' "${drift[@]}"
+            echo
+            echo "A registry whose host has no teeth only LOOKS gated (ADR-034 §6). Restore protection or update the contract deliberately."
+          } > drift.md
+          gh issue create \
+            --title "protection-audit: enforcement drift detected" \
+            --body-file drift.md \
+            --label "governance" 2>/dev/null \
+            || gh issue create --title "protection-audit: enforcement drift detected" --body-file drift.md
+          exit 1

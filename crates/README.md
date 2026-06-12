@@ -29,19 +29,19 @@ crates/
   observability/             tracing + audit-log subscriber init (ADR-022)
   config/                    12-factor configuration loader (ADR-021)
   cli/                       mint / label / bind binaries
+  devtools/                  repo gate tooling (obligations-check, ADR-029)
   wasm/                      wasm-bindgen façade for the FE
   port_tests/                conformance + parity + drift framework (ADR-027)
 ```
 
 ## Strangler-fig migration sequence
 
-Per ADR-017 §"Strangler-fig migration sequence", the Python CLIs
-(`label.py`, `mint.py`, `bind.py`, `validators/`, `tools/sheet.py`)
-remain the canonical implementation **until the corresponding Rust
-crate reaches parity**. Order:
+Per ADR-017 §"Strangler-fig migration sequence", the legacy Python
+CLIs remained the canonical implementation **until the corresponding
+Rust crate reached parity**. Order:
 
 1. `codec` — QR encoder / decoder, SVG layout primitives.
-2. `validators` — port `validators/`; add ADR-016 classifier.
+2. `validators` — port the Python validators; add ADR-016 classifier.
 3. `domain` + `config` — types and configuration loader.
 4. `storage_csv_git` — Repository trait + first adapter.
 5. `identity_git_config` + `signing_git_commit` — MVP identity / signing.
@@ -53,6 +53,14 @@ crate reaches parity**. Order:
 Each step lands as its own PR. Each step has its own `port_tests`
 conformance suite that must pass before the step is considered
 complete.
+
+Step 9 executed 2026-06-12: the operational Python (mint/label/bind,
+validators, tools/sheet.py, tools/obligations_check.py and friends) is
+gone. Parity evidence stays executable as the golden suite in
+`cli/tests/label_parity_golden.rs` + `cli/tests/golden/`. The two
+design-time font tools (`tools/bake_glyph_font.py`,
+`tools/font_editor_gen.py`) are the only remaining Python, pending
+their own Rust port.
 
 ## Running
 
