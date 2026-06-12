@@ -81,11 +81,24 @@
         # bump there propagates to `nix develop` without a flake edit.
         rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
-        # wasm-bindgen-cli's version must match the `wasm-bindgen`
-        # crate version pinned in workspace `Cargo.toml` (currently
-        # 0.2.121 per Foundation #33 + #54). nixpkgs nightly tracks
-        # the latest; pin by hash if the unstable channel ever drifts.
-        wasmBindgenCli = pkgs.wasm-bindgen-cli;
+        # wasm-bindgen-cli's version must EXACTLY match the
+        # `wasm-bindgen` crate version in Cargo.lock (0.2.121, the
+        # same prebuilt release.yml ships) — the bindgen schema is
+        # unstable across versions. nixpkgs' default binary trails
+        # the lock (0.2.117 at the current pin), so build the exact
+        # CLI from crates.io.
+        wasmBindgenCli = pkgs.buildWasmBindgenCli rec {
+          src = pkgs.fetchCrate {
+            pname = "wasm-bindgen-cli";
+            version = "0.2.121";
+            hash = "sha256-ZOMgFNOcGkO66Jz/Z83eoIu+DIzo3Z/vq6Z5g6BDY/w=";
+          };
+          cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+            inherit src;
+            inherit (src) pname version;
+            hash = "sha256-DPdCDPTAPBrbqLUqnCwQu1dePs9lGg85JCJOCIr9qjU=";
+          };
+        };
 
         # Workspace builds with the same pinned toolchain the dev shell uses.
         rustPlatformPinned = pkgs.makeRustPlatform {
@@ -334,19 +347,29 @@
             inherit cargoArtifacts;
             # workspace/exclude/features inherited from commonArgs
             cargoTestExtraArgs = "";
+            # the bootstrap e2e tests drive a LOCAL bare repo through
+            # the real git binary (no network)
+            nativeBuildInputs = (commonArgs.nativeBuildInputs or [ ]) ++ [ pkgs.git ];
           });
 
-          # cargo-deny — licenses + RustSec advisories. The advisory-db
-          # input pins the RustSec tree so the check runs OFFLINE inside
-          # the Nix sandbox (no GitHub clone at gate time).
+          # cargo-deny — bans/licenses/sources only: those run from the
+          # vendored lock, fully offline. Advisories live in the `audit`
+          # check below (cargo-deny insists on git-cloning the RustSec
+          # db itself, which the sandbox forbids).
           deny = craneLib.cargoDeny (commonArgs // {
-            inherit advisory-db;
             # cargo-deny takes its own flags: crane must not forward the
             # workspace/feature args, and crane already injects `check`
             # — only the WHICH list goes through cargoDenyChecks.
             cargoExtraArgs = "";
-            cargoDenyChecks = "bans licenses sources advisories";
+            cargoDenyChecks = "bans licenses sources";
           });
+
+          # RustSec advisories — crane's cargoAudit consumes the pinned
+          # advisory-db flake input, so the check is OFFLINE and the db
+          # revision is reproducible (bump via `nix flake update`).
+          audit = craneLib.cargoAudit {
+            inherit src advisory-db;
+          };
 
           # ADR obligations gate — the Rust devtools binary against
           # decisions/obligations.toml.
@@ -471,7 +494,8 @@
           release-binary = craneLib.buildPackage (commonArgs // {
             inherit cargoArtifacts;
             pname = "pr";
-            cargoExtraArgs = "--release -p part-registry-cli --bin pr";
+            # crane injects --release itself; repeating it errors
+            cargoExtraArgs = "-p part-registry-cli --bin pr";
             doCheck = false;
           });
         };
