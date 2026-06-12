@@ -141,6 +141,24 @@ function raster(g, k, useMask){
     // half-sweeps reuse the same nx/ny/outSign — a centered band
     // can never flip its outer side at the edge midpoint
     let outSign = 1, oneSided = false, cnx = 0, cny = 0;
+    // run vs corner-connector: a diagonal edge with NO collinear
+    // diagonal continuation at either end is a corner treatment and
+    // keeps the slim corridor-exact sweep the glyphs were authored
+    // under; only true runs take the k-row band
+    let isRun = false;
+    if (e.diag){
+      const dr0 = e.b[0]-e.a[0], dc0 = e.b[1]-e.a[1];
+      const beyondB = (e.b[0]+dr0)+","+(e.b[1]+dc0);
+      const beforeA = (e.a[0]-dr0)+","+(e.a[1]-dc0);
+      for (const e2 of edges){
+        if (!e2.diag || e2 === e) continue;
+        for (const q of [e2.a, e2.b]){
+          const qk = q[0]+","+q[1];
+          if (qk === beyondB || qk === beforeA){ isRun = true; break; }
+        }
+        if (isRun) break;
+      }
+    }
     if (e.diag){
       const ax0=(e.a[1]+0.5)*k, ay0=(e.a[0]+0.5)*k;
       const bx0=(e.b[1]+0.5)*k, by0=(e.b[0]+0.5)*k;
@@ -155,12 +173,33 @@ function raster(g, k, useMask){
       // outside = the side with less ink mass = negative dsig; at
       // k=3 the diagonal gains its extra row there, corridor-exact
       outSign = bal > 0 ? 1 : -1;
-      oneSided = Math.abs(bal) >= 1;
+      // LOCAL one-sided trigger: only when a bridge cell of this
+      // edge is orthogonally flush to FOREIGN ink (phantom risk),
+      // and the band shifts AWAY from that ink. Bowl corners with
+      // no neighbors stay centered (stamps stay under the band).
+      let foreignSide = 0;
+      for (const [br2, bc2] of [[e.a[0], e.b[1]], [e.b[0], e.a[1]]]){
+        let foreign = false;
+        for (const [dr2, dc2] of [[-1,0],[1,0],[0,-1],[0,1]]){
+          const nr2 = br2+dr2, nc2 = bc2+dc2;
+          if (nr2<0||nr2>=7||nc2<0||nc2>=5 || !px[nr2][nc2]) continue;
+          const isEnd2 = (nr2===e.a[0]&&nc2===e.a[1])||(nr2===e.b[0]&&nc2===e.b[1]);
+          if (!isEnd2){ foreign = true; break; }
+        }
+        if (foreign){
+          const db = ((bc2+0.5)*k-ax0)*cnx + ((br2+0.5)*k-ay0)*cny;
+          foreignSide += Math.sign(db);
+        }
+      }
+      if (foreignSide !== 0){
+        outSign = foreignSide > 0 ? 1 : -1;
+        oneSided = true;
+      }
     }
     for (const [me, other] of [[e.a, e.b], [e.b, e.a]]){
       const ax=(me[1]+0.5)*k, ay=(me[0]+0.5)*k;
       const mx=((me[1]+other[1])/2+0.5)*k, my=((me[0]+other[0])/2+0.5)*k;
-      sweeps.push({ax, ay, vx: mx-ax, vy: my-ay, diag: e.diag, nx: cnx, ny: cny, outSign, oneSided, bandOwned: bandOwned.has(me[0]+","+me[1]), diagTip: diagTip.has(me[0]+","+me[1]), kern: kernel(g, me[0], me[1])});
+      sweeps.push({ax, ay, vx: mx-ax, vy: my-ay, diag: e.diag, isRun, nx: cnx, ny: cny, outSign, oneSided, bandOwned: bandOwned.has(me[0]+","+me[1]), diagTip: diagTip.has(me[0]+","+me[1]), kern: kernel(g, me[0], me[1])});
       inked.add(me[0]+","+me[1]);
     }
   }
@@ -189,7 +228,13 @@ function raster(g, k, useMask){
           const dsig = ((x-s.ax)*s.nx + (y-s.ay)*s.ny) * s.outSign;
           // k anti-diagonal rows total; parity remainder and the k=3
           // bonus row always land on the OUTSIDE
-          if (k <= 2){
+          if (!s.isRun){
+            // corner connector: slim diamond-pull (L1 to the
+            // half-segment), corridor-exact — the authored look
+            const t2 = Math.max(0, Math.min(1, (((x-s.ax)*s.vx)+((y-s.ay)*s.vy))/L2));
+            const qx2 = s.ax + t2*s.vx, qy2 = s.ay + t2*s.vy;
+            if (Math.abs(x-qx2) + Math.abs(y-qy2) <= k/2 + 1e-6){ on=true; break; }
+          } else if (k <= 2){
             // n=2 floor: perpendicular thickness = kernel size
             // (full-width pulled body; the mask absorbs the spill)
             if (Math.abs(dsig) <= k/2 + 1e-6){ on=true; break; }

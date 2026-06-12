@@ -42,12 +42,13 @@
 //!   scale `k = glyph_px` by the sweep law (see [`raster_glyph`]):
 //!   every anchor's kernel is pulled along each of its active edges
 //!   to the edge midpoint — orthogonal sweeps cover a round width-k
-//!   envelope, diagonal sweeps an anti-diagonal band of exactly k px
-//!   per band row, one-sided on the low-ink side of the anchor line
-//!   or split inner/outer when the ink balances (k=3 gains one extra
-//!   outside row) — plus a rest-stamp of the kernel at every
-//!   non-band-owned anchor, all clipped to the anchor cells and the
-//!   bridge cells of active diagonal edges. Ink emits as
+//!   envelope; diagonal RUNS sweep an anti-diagonal band of exactly
+//!   k px per band row, one-sided away from foreign ink flush to a
+//!   bridge cell or split inner/outer otherwise (k=3 gains one extra
+//!   outside row), while corner-connector diagonals keep the slim
+//!   corridor-exact diamond pull — plus a rest-stamp of the kernel
+//!   at every non-band-owned anchor, all clipped to the anchor cells
+//!   and the bridge cells of active diagonal edges. Ink emits as
 //!   horizontal-run `<rect>`s in the same crispEdges group as the QR
 //!   modules.
 //! - Text-block placement is the g-law: the glyph scale `g` is the
@@ -238,14 +239,17 @@ fn qr_text_gap(white_side: u32, quiet: u32, module_px: u32) -> u32 {
 /// midpoint (the far half belongs to the far anchor's kernel).
 /// Diagonal sweeps carry the edge's CANONICAL a->b frame — `(nx,
 /// ny)` is the normal of the stored a->b orientation and `out` the
-/// outward sign derived from the baked balance, shared by BOTH
-/// half-sweeps so the band can never flip sides at the midpoint.
+/// baked outward sign (local foreign-side override, else the ink
+/// balance), shared by BOTH half-sweeps so the band can never flip
+/// sides at the midpoint — plus the baked run/corner-connector
+/// split: only `is_run` diagonals take the anti-diagonal band.
 struct Sweep {
     ax: f64,
     ay: f64,
     vx: f64,
     vy: f64,
     diag: bool,
+    is_run: bool,
     nx: f64,
     ny: f64,
     out: f64,
@@ -275,15 +279,20 @@ fn kern_covers(mask: u8, dx: f64, dy: f64, half: f64) -> bool {
 /// The law: every anchor's kernel is pulled along each of its active
 /// edges to the edge midpoint. The pulled body of an ORTHOGONAL
 /// sweep is round (L2 ≤ k/2 of the segment — a uniform width-k
-/// envelope at every angle); a DIAGONAL sweep covers an
-/// anti-diagonal band of exactly k px per band row, measured as the
-/// signed perpendicular distance `dsig` in the edge's CANONICAL a->b
-/// frame times the baked outward sign (outside = negative dsig):
-/// at k ≤ 2 the full perpendicular width `|dsig| ≤ k/2`; one-sided
-/// edges (baked balance ≠ 0) hug the OUTSIDE of the anchor line —
-/// the inner boundary IS the line; balanced edges split the rows
-/// inner/outer by parity — and k=3 gains one extra outside row
-/// either way. At rest, every non-band-owned anchor stamps its
+/// envelope at every angle). A DIAGONAL sweep splits on the baked
+/// run/corner-connector bit: a non-run diagonal (corner connector)
+/// covers the slim corridor-exact diamond pull — L1 ≤ k/2 of the
+/// half-segment, the authored look; a RUN covers an anti-diagonal
+/// band of exactly k px per band row, measured as the signed
+/// perpendicular distance `dsig` in the edge's CANONICAL a->b frame
+/// times the baked outward sign (outside = negative dsig): at k ≤ 2
+/// the full perpendicular width `|dsig| ≤ k/2`; one-sided edges
+/// (baked LOCAL trigger — a bridge cell orthogonally flush to
+/// foreign ink) hug the OUTSIDE of the anchor line, away from the
+/// foreign side — the inner boundary IS the line; edges with no
+/// foreign bridges split the rows inner/outer by parity — and k=3
+/// gains one extra outside row either way. At rest, every
+/// non-band-owned anchor stamps its
 /// kernel ([`kern_covers`]) — except pure diagonal tips, whose stamp
 /// is corners-only (no L1 diamond term); pass-through diagonal
 /// anchors are band-owned and stamp nothing (the
@@ -293,10 +302,12 @@ fn raster_glyph(g: &Glyph, k: u32) -> Vec<bool> {
     let kf = f64::from(k);
     let half = kf / 2.0;
     let sq2 = std::f64::consts::SQRT_2;
-    // Diagonal band windows: k anti-diagonal rows total, with k=3
-    // gaining one bonus row on the outside. A one-sided band hugs
-    // the outside of the anchor line; a centered band splits the
-    // rows inner/outer by parity.
+    // Diagonal band windows for RUN edges: k anti-diagonal rows
+    // total, with k=3 gaining one bonus row on the outside. A
+    // one-sided band hugs the outside of the anchor line; a centered
+    // band splits the rows inner/outer by parity. Corner connectors
+    // never use these windows — they sweep the slim corridor-exact
+    // diamond pull instead.
     let odd = k % 2 == 1;
     let rows_one = kf + if k == 3 { 1.0 } else { 0.0 };
     let lo_one = -((rows_one - if odd { 1.0 } else { 0.5 }) / sq2 + 1e-6);
@@ -333,9 +344,9 @@ fn raster_glyph(g: &Glyph, k: u32) -> Vec<bool> {
         if e.diag {
             // Canonical a->b frame: one normal and one outward sign
             // for BOTH half-sweeps — outside is the negative-dsig
-            // side (the baked out_sign is the canonical-frame ink
-            // balance, so balance > 0 keeps the frame, anything else
-            // flips it).
+            // side. The baked out_sign already resolves the LOCAL
+            // foreign-side override over the ink-balance default,
+            // and the baked one_sided bit carries the trigger.
             let ax0 = (f64::from(ea.c) + 0.5) * kf;
             let ay0 = (f64::from(ea.r) + 0.5) * kf;
             let bx0 = (f64::from(eb.c) + 0.5) * kf;
@@ -344,7 +355,7 @@ fn raster_glyph(g: &Glyph, k: u32) -> Vec<bool> {
             nx = -(by0 - ay0) / len;
             ny = (bx0 - ax0) / len;
             out = if e.out_sign > 0 { 1.0 } else { -1.0 };
-            one_sided = e.out_sign != 0;
+            one_sided = e.one_sided;
         }
         for (me, ot) in [(ea, eb), (eb, ea)] {
             let ax = (f64::from(me.c) + 0.5) * kf;
@@ -357,6 +368,7 @@ fn raster_glyph(g: &Glyph, k: u32) -> Vec<bool> {
                 vx: mx - ax,
                 vy: my - ay,
                 diag: e.diag,
+                is_run: e.is_run,
                 nx,
                 ny,
                 out,
@@ -398,13 +410,22 @@ fn raster_glyph(g: &Glyph, k: u32) -> Vec<bool> {
                     continue;
                 }
                 if s.diag {
-                    let dsig = ((x - s.ax) * s.nx + (y - s.ay) * s.ny) * s.out;
-                    let hit = if k <= 2 {
-                        dsig.abs() <= half + 1e-6
-                    } else if s.one_sided {
-                        dsig >= lo_one && dsig <= 1e-6
+                    let hit = if !s.is_run {
+                        // Corner connector: slim corridor-exact
+                        // diamond pull (L1 to the half-segment) —
+                        // the authored look
+                        let dx = x - (s.ax + t * s.vx);
+                        let dy = y - (s.ay + t * s.vy);
+                        dx.abs() + dy.abs() <= half + 1e-6
                     } else {
-                        dsig >= lo_cen && dsig <= hi_cen
+                        let dsig = ((x - s.ax) * s.nx + (y - s.ay) * s.ny) * s.out;
+                        if k <= 2 {
+                            dsig.abs() <= half + 1e-6
+                        } else if s.one_sided {
+                            dsig >= lo_one && dsig <= 1e-6
+                        } else {
+                            dsig >= lo_cen && dsig <= hi_cen
+                        }
                     };
                     if hit {
                         on = true;

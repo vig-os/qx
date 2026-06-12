@@ -29,15 +29,25 @@ tools/font_editor_gen.py) bit for bit:
   rest-stamp (the constant-derivative law)
 - diagonal tips: an anchor with exactly ONE active edge and that
   edge diagonal gets a corners-only rest-stamp (no L1 diamond term)
-- out_sign per diagonal edge: the sign of the ink balance over all
-  anchors against the edge line's normal in the edge's CANONICAL
-  a->b frame (a < b lexicographically, as stored), computed once at
-  bake time; the renderer turns it into outSign = +1 at balance > 0
-  else -1 (outside = the negative-dsig side) and oneSided =
-  balance != 0, and BOTH half-sweeps measure dsig with the same
-  canonical normal and outSign — never recomputed from the
-  half-sweep direction, so a centered band cannot flip its outer
-  side at the edge midpoint
+- is_run per diagonal edge: true iff some OTHER active diagonal
+  edge has an endpoint at the collinear continuation beyond either
+  end (b + (b-a) or a - (b-a)); runs sweep the k-row anti-diagonal
+  band, non-runs (corner connectors, e.g. the bowl corners of
+  8/6/B/D) sweep the slim corridor-exact diamond pull instead
+- one_sided per diagonal edge: the LOCAL foreign-flush trigger —
+  true iff a bridge cell of the edge is orthogonally flush to
+  FOREIGN ink (an anchor that is not an endpoint of the edge); the
+  band then hugs the outside of the anchor line, away from the
+  foreign side; no foreign bridges means a centered band
+- out_sign per diagonal edge, in the edge's CANONICAL a->b frame
+  (as stored), computed once at bake time: when one_sided it is the
+  foreign-side sign (the sum of the foreign bridges' signed
+  perpendicular distances against the edge line's normal), else the
+  sign of the glyph's global ink balance (balance > 0 -> +1, else
+  -1). Outside = the negative-dsig side, and BOTH half-sweeps
+  measure dsig with the same canonical normal and out_sign — never
+  recomputed from the half-sweep direction, so a centered band
+  cannot flip its outer side at the edge midpoint
 
 The output is deterministic (alphabet order, no timestamps):
 re-running on the same design file yields a byte-identical module.
@@ -73,7 +83,7 @@ def resolve_glyph(g: dict) -> tuple[list[dict], list[dict]]:
 
     Returns (anchors, edges); anchors are dicts with r, c,
     corner_mask, band_owned, has_stamp, diag_tip; edges are dicts
-    with a, b (anchor indices), diag, bal_sign.
+    with a, b (anchor indices), diag, is_run, out_sign, one_sided.
     """
     px = g["px"]
     conn = g.get("conn", {})
@@ -142,14 +152,28 @@ def resolve_glyph(g: dict) -> tuple[list[dict], list[dict]]:
         for r, c in anchors
     ]
 
-    # Per-edge ink-balance sign in the edge's CANONICAL a->b frame —
-    # both half-sweeps reuse it. Scale-invariant, so it bakes once:
-    # anchors on the edge line are within the 1e-9 threshold and
-    # never vote.
+    # Per-edge band law for DIAGONALS in the edge's CANONICAL a->b
+    # frame — both half-sweeps reuse it. Everything here is
+    # scale-invariant, so it bakes once: anchors on the edge line are
+    # within the 1e-9 threshold and never vote in the balance.
     baked_edges = []
-    for a, b, diag in edges:
-        bal_sign = 0
+    for ei, (a, b, diag) in enumerate(edges):
+        is_run = False
+        out_sign = 0
+        one_sided = False
         if diag:
+            # RUN iff some OTHER active diagonal edge has an endpoint
+            # at the collinear continuation beyond either end; corner
+            # connectors keep the slim corridor-exact sweep.
+            dr0, dc0 = b[0] - a[0], b[1] - a[1]
+            beyond_b = (b[0] + dr0, b[1] + dc0)
+            before_a = (a[0] - dr0, a[1] - dc0)
+            for ej, (a2, b2, diag2) in enumerate(edges):
+                if not diag2 or ej == ei:
+                    continue
+                if a2 in (beyond_b, before_a) or b2 in (beyond_b, before_a):
+                    is_run = True
+                    break
             ax, ay = a[1] + 0.5, a[0] + 0.5
             bx, by = b[1] + 0.5, b[0] + 0.5
             ln = math.sqrt((bx - ax) ** 2 + (by - ay) ** 2)
@@ -159,9 +183,35 @@ def resolve_glyph(g: dict) -> tuple[list[dict], list[dict]]:
                 d = (cc + 0.5 - ax) * nx + (rr + 0.5 - ay) * ny
                 if abs(d) > 1e-9:
                     bal += 1 if d > 0 else -1
-            bal_sign = (bal > 0) - (bal < 0)
+            out_sign = 1 if bal > 0 else -1
+            # LOCAL one-sided trigger: a bridge cell of this edge is
+            # orthogonally flush to FOREIGN ink (an anchor that is
+            # not an endpoint of the edge) — the band shifts AWAY
+            # from the foreign side. No foreign bridges -> centered,
+            # with the ink-balance sign deciding the outer side.
+            foreign_side = 0
+            for br, bc in ((a[0], b[1]), (b[0], a[1])):
+                foreign = False
+                for dr2, dc2 in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    nr, nc = br + dr2, bc + dc2
+                    if at(px, nr, nc) and (nr, nc) not in (a, b):
+                        foreign = True
+                        break
+                if foreign:
+                    db = (bc + 0.5 - ax) * nx + (br + 0.5 - ay) * ny
+                    foreign_side += 1 if db > 0 else -1
+            if foreign_side != 0:
+                out_sign = 1 if foreign_side > 0 else -1
+                one_sided = True
         baked_edges.append(
-            {"a": index[a], "b": index[b], "diag": diag, "bal_sign": bal_sign}
+            {
+                "a": index[a],
+                "b": index[b],
+                "diag": diag,
+                "is_run": is_run,
+                "out_sign": out_sign,
+                "one_sided": one_sided,
+            }
         )
     return baked_anchors, baked_edges
 
@@ -176,17 +226,25 @@ def kern_covers(mask: int, dx: float, dy: float, half: float) -> bool:
 
 
 def raster(anchors: list[dict], edges: list[dict], k: int) -> int:
-    """Ink-pixel count of the 5k x 7k raster — the renderer's law.
+    """Ink-pixel count of the 5k x 7k raster — the renderer's law."""
+    return sum(v for row in raster_image(anchors, edges, k) for v in row)
+
+
+def raster_image(anchors: list[dict], edges: list[dict], k: int) -> list[list[int]]:
+    """The full 5k x 7k ink bitmap, row-major — the renderer's law.
 
     This mirrors crates/codec/src/px.rs raster_glyph operation for
     operation (same expressions, same order) so the baked checksums
     lock the Rust renderer bit for bit.
     """
     half = k / 2.0
-    # Diagonal band windows: k anti-diagonal rows total, with k=3
-    # gaining one bonus row on the outside. A one-sided band hugs the
-    # outside of the anchor line — its inner boundary IS the line; a
-    # centered band splits the rows inner/outer by parity.
+    # Diagonal band windows for RUN edges: k anti-diagonal rows
+    # total, with k=3 gaining one bonus row on the outside. A
+    # one-sided band hugs the outside of the anchor line — its inner
+    # boundary IS the line; a centered band splits the rows
+    # inner/outer by parity. Non-run diagonals (corner connectors)
+    # never use these windows — they sweep the slim corridor-exact
+    # diamond pull instead.
     odd = k % 2 == 1
     rows_one = k + (1 if k == 3 else 0)
     lo_one = -((rows_one - (1.0 if odd else 0.5)) / SQRT2 + 1e-6)
@@ -210,19 +268,21 @@ def raster(anchors: list[dict], edges: list[dict], k: int) -> int:
         one_sided = False
         if e["diag"]:
             # Canonical a->b frame: one normal and one outSign for
-            # BOTH half-sweeps — outside is the negative-dsig side
+            # BOTH half-sweeps — outside is the negative-dsig side.
+            # The baked out_sign already resolves the local
+            # foreign-side override over the ink-balance default.
             ax0, ay0 = (a["c"] + 0.5) * k, (a["r"] + 0.5) * k
             bx0, by0 = (b["c"] + 0.5) * k, (b["r"] + 0.5) * k
             ln = math.sqrt((bx0 - ax0) ** 2 + (by0 - ay0) ** 2)
             nx, ny = -(by0 - ay0) / ln, (bx0 - ax0) / ln
-            out = 1.0 if e["bal_sign"] > 0 else -1.0
-            one_sided = e["bal_sign"] != 0
+            out = 1.0 if e["out_sign"] > 0 else -1.0
+            one_sided = e["one_sided"]
         for me, ot in ((a, b), (b, a)):
             ax, ay = (me["c"] + 0.5) * k, (me["r"] + 0.5) * k
             mx = ((me["c"] + ot["c"]) / 2 + 0.5) * k
             my = ((me["r"] + ot["r"]) / 2 + 0.5) * k
             sweeps.append(
-                (ax, ay, mx - ax, my - ay, e["diag"], nx, ny, out, one_sided)
+                (ax, ay, mx - ax, my - ay, e["diag"], e["is_run"], nx, ny, out, one_sided)
             )
     stamps = [
         ((a["c"] + 0.5) * k, (a["r"] + 0.5) * k, a["corner_mask"], a["diag_tip"])
@@ -230,7 +290,7 @@ def raster(anchors: list[dict], edges: list[dict], k: int) -> int:
         if a["has_stamp"]
     ]
 
-    ink = 0
+    img = [[0] * (COLS * k) for _ in range(ROWS * k)]
     for j in range(ROWS * k):
         cr = j // k
         y = j + 0.5
@@ -239,19 +299,27 @@ def raster(anchors: list[dict], edges: list[dict], k: int) -> int:
                 continue
             x = i + 0.5
             on = False
-            for ax, ay, vx, vy, diag, nx, ny, out, one_sided in sweeps:
+            for ax, ay, vx, vy, diag, is_run, nx, ny, out, one_sided in sweeps:
                 l2 = vx * vx + vy * vy
                 t = max(0.0, min(1.0, ((x - ax) * vx + (y - ay) * vy) / l2))
                 if t <= 0.0:
                     continue
                 if diag:
-                    dsig = ((x - ax) * nx + (y - ay) * ny) * out
-                    if k <= 2:
-                        hit = abs(dsig) <= half + 1e-6
-                    elif one_sided:
-                        hit = lo_one <= dsig <= 1e-6
+                    if not is_run:
+                        # Corner connector: slim corridor-exact
+                        # diamond pull (L1 to the half-segment) —
+                        # the authored look
+                        dx = x - (ax + t * vx)
+                        dy = y - (ay + t * vy)
+                        hit = abs(dx) + abs(dy) <= half + 1e-6
                     else:
-                        hit = lo_cen <= dsig <= hi_cen
+                        dsig = ((x - ax) * nx + (y - ay) * ny) * out
+                        if k <= 2:
+                            hit = abs(dsig) <= half + 1e-6
+                        elif one_sided:
+                            hit = lo_one <= dsig <= 1e-6
+                        else:
+                            hit = lo_cen <= dsig <= hi_cen
                     if hit:
                         on = True
                         break
@@ -277,8 +345,8 @@ def raster(anchors: list[dict], edges: list[dict], k: int) -> int:
                         on = True
                         break
             if on:
-                ink += 1
-    return ink
+                img[j][i] = 1
+    return img
 
 
 HEADER = '''\
@@ -350,16 +418,30 @@ pub struct Edge {
     pub b: u8,
     /// Diagonal edge (both row and column step).
     pub diag: bool,
-    /// Sign of the glyph's ink balance against the edge line's
-    /// normal in the edge's CANONICAL a->b frame, in -1/0/+1,
-    /// computed once at bake time. The renderer derives one outward
-    /// sign per edge from it — `+1` at balance > 0, else `-1`, with
-    /// outside the negative-dsig side — plus `one_sided = balance
-    /// != 0`, and BOTH half-sweeps measure dsig with the same
-    /// canonical normal and sign (never recomputed from the
-    /// half-sweep direction). Always 0 for orthogonal edges (unused
-    /// there).
+    /// Diagonal RUN: some OTHER active diagonal edge has an
+    /// endpoint at the collinear continuation beyond either end
+    /// (`b + (b-a)` or `a - (b-a)`). Runs sweep the k-row
+    /// anti-diagonal band; non-run diagonals (corner connectors)
+    /// sweep the slim corridor-exact diamond pull instead. Always
+    /// false for orthogonal edges.
+    pub is_run: bool,
+    /// Outward sign of the band in the edge's CANONICAL a->b frame,
+    /// in -1/+1 for diagonal edges, computed once at bake time:
+    /// the foreign-side sign (the sum of the foreign bridges'
+    /// signed perpendicular distances against the edge normal) when
+    /// `one_sided`, else the sign of the glyph's global ink balance
+    /// (balance > 0 keeps the frame, anything else flips it).
+    /// Outside = the negative-dsig side, and BOTH half-sweeps
+    /// measure dsig with the same canonical normal and sign (never
+    /// recomputed from the half-sweep direction). Always 0 for
+    /// orthogonal edges (unused there).
     pub out_sign: i8,
+    /// LOCAL one-sided trigger: a bridge cell of this edge is
+    /// orthogonally flush to FOREIGN ink (an anchor that is not an
+    /// endpoint of the edge) — the band hugs the outside of the
+    /// anchor line, away from the foreign side. False means a
+    /// centered band. Always false for orthogonal edges.
+    pub one_sided: bool,
 }
 
 /// One nx75 glyph: anchors, active edges and baked ink checksums.
@@ -413,7 +495,9 @@ def emit(data: dict) -> str:
             out.append(f"                a: {e['a']},\n")
             out.append(f"                b: {e['b']},\n")
             out.append(f"                diag: {str(e['diag']).lower()},\n")
-            out.append(f"                out_sign: {e['bal_sign']},\n")
+            out.append(f"                is_run: {str(e['is_run']).lower()},\n")
+            out.append(f"                out_sign: {e['out_sign']},\n")
+            out.append(f"                one_sided: {str(e['one_sided']).lower()},\n")
             out.append("            },\n")
         out.append("        ],\n")
         out.append(f"        ink_bits: [{', '.join(str(s) for s in sums)}],\n")
