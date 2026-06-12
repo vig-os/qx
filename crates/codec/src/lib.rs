@@ -38,6 +38,7 @@
 
 use thiserror::Error;
 
+pub mod canvas;
 pub mod color;
 pub mod format;
 pub mod glyph_font;
@@ -45,13 +46,18 @@ pub mod payload;
 pub mod px;
 pub mod qr;
 pub mod receipt;
+pub mod repeat;
 pub mod solver;
 pub mod svg;
 pub mod symbology;
 
+pub use canvas::{resolve_canvas, CanvasResolved, ResolvedChild as CanvasResolvedChild};
 pub use color::{default_bg, default_fg, Color};
 pub use format::{check_format_warning, recommend_format, TextFormat};
-pub use payload::{Element as PayloadElement, Payload};
+pub use payload::{
+    parse_tree as parse_payload_tree, CanvasChild, CanvasDim, Element as PayloadElement, GroupAxis,
+    Leaf as PayloadLeaf, Node as PayloadNode, NodeSize, Payload,
+};
 pub use px::{
     fill_to_max, render_label_px, render_label_px_with_opts, Padding, PaddingMode, PayloadShape,
     PxLabel, RenderOpts, SizeMode,
@@ -60,6 +66,10 @@ pub use px::{
 pub use qr::decode_qr;
 pub use qr::{encode, encode_pinned, QrMatrix};
 pub use receipt::Receipt;
+pub use repeat::{
+    compose as compose_repeat, deprecated_flag_sugar, ExcessAt, Orient, RepeatAxis, RepeatComposed,
+    RepeatCount, RepeatOpts, RepeatResolved, Rotate, Spacing,
+};
 pub use solver::{IdBlock, Inputs as SolverInputs};
 pub use svg::{render, render_flag, render_horz, render_vert, Layout};
 pub use symbology::{Ec, Family, ResolvedSymbology, Symbology};

@@ -220,6 +220,39 @@ enum Cmd {
         /// Suffix grammar like --size: 28px / 8mm / bare 28 = px.
         #[arg(long, value_parser = parse_id_size_spec)]
         id_size_px: Option<u32>,
+        /// ADR-031 §10 repeat: compose the rendered label into
+        /// N copies. Accepts a whole number or "fill".
+        #[arg(long)]
+        repeat: Option<String>,
+        /// `--repeat-axis along|across` (along = canvas flow,
+        /// default; across = multi-up rows).
+        #[arg(long)]
+        repeat_axis: Option<String>,
+        /// `--repeat-gap <N>[px|mm]` — explicit inter-copy gap.
+        #[arg(long, value_parser = parse_id_size_spec)]
+        repeat_gap: Option<u32>,
+        /// `--repeat-orient same|alternate` (alternate rotates
+        /// every second copy 180°).
+        #[arg(long)]
+        repeat_orient: Option<String>,
+        /// `--length <N>[px|mm]` — required for `fill` and for
+        /// derived gaps.
+        #[arg(long, value_parser = parse_id_size_spec)]
+        length: Option<u32>,
+        /// `--spacing linear|cyclic` (linear = n-1 gaps,
+        /// cyclic = n gaps).
+        #[arg(long)]
+        spacing: Option<String>,
+        /// `--rotate 0|90|180|270` — whole-label rotation
+        /// applied BEFORE repeating.
+        #[arg(long)]
+        rotate: Option<u32>,
+        /// `--length-excess <N>[px|mm]` — BLANK leader/tail.
+        #[arg(long, value_parser = parse_id_size_spec)]
+        length_excess: Option<u32>,
+        /// `--excess-at start|end` — which end carries the excess.
+        #[arg(long)]
+        excess_at: Option<String>,
     },
     /// Current operator identity.
     Whoami {
@@ -641,6 +674,15 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
         id_chars,
         rows,
         id_size_px,
+        repeat,
+        repeat_axis,
+        repeat_gap,
+        repeat_orient,
+        length,
+        spacing,
+        rotate,
+        length_excess,
+        excess_at,
     } = cmd
     {
         // ADR-031 §10 sugar: --content qr+id|id+qr|qr|id expands
@@ -675,6 +717,15 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
             id_chars,
             rows,
             id_size_px,
+            repeat,
+            repeat_axis,
+            repeat_gap_px: repeat_gap,
+            repeat_orient,
+            length_px: length,
+            spacing,
+            rotate,
+            length_excess_px: length_excess,
+            excess_at,
         };
         return protocol_print(&ctx, ids, options, &out_dir);
     }
