@@ -140,6 +140,13 @@
               || (pkgs.lib.hasInfix "/decisions/" p)
               || (pkgs.lib.hasInfix "/labels/" p)
               || (pkgs.lib.hasInfix "/web/test-fixtures/" p)
+              # label.py parity goldens the cli test suite reads
+              || (pkgs.lib.hasInfix "/tests/golden/" p)
+              # storage conformance fixtures (registry.csv etc.)
+              || (pkgs.lib.hasInfix "/tests/fixtures/" p)
+              # committed example SVGs the codec regression suite
+              # diffs against (root examples/)
+              || (pkgs.lib.hasInfix "/examples/" p)
               || (pkgs.lib.hasSuffix ".toml" base)
               || (pkgs.lib.hasSuffix ".lock" base);
         };
@@ -473,6 +480,15 @@
             nativeBuildInputs = [ pkgs.nodejs_22 pkgs.playwright-driver.browsers ];
             PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
             PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
+            # The bundle is built right here (with the wasm dropped in
+            # from wasmArtifact) — playwright must SERVE it, not re-run
+            # `npm run build`, whose build:wasm step needs cargo +
+            # wasm-bindgen the sandbox doesn't have.
+            E2E_WEB_SERVER_CMD = "./node_modules/.bin/vite preview --port 4173 --strictPort --base /";
+            # Baked into the bundle at build time — the same values
+            # playwright.config.ts sets for its own webServer build.
+            VITE_DATA_REPO = "exo-pet/exopet-registry-sandbox";
+            VITE_BASE = "/";
           } ''
             mkdir -p $TMPDIR/repo/web $TMPDIR/repo/schema
             cp -r ${webSrc}/. $TMPDIR/repo/web/
