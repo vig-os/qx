@@ -13,8 +13,10 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use part_registry_codec::{
-    check_format_warning, fill_to_max, recommend_format, render_label, render_label_px, CodecError,
-    Family, Layout, Padding, PaddingMode, PxLabel, Symbology, TextFormat,
+    check_format_warning, color, fill_to_max, payload as payload_dsl, recommend_format,
+    render_label, render_label_px_with_opts, solver as solver_mod, svg as svg_mod, CodecError,
+    Color, Family, IdBlock, Layout, Padding, PaddingMode, PayloadShape, PxLabel, RenderOpts,
+    SizeMode, SolverInputs, Symbology, TextFormat,
 };
 use part_registry_domain::{
     Diff, DiffEdit, DiffRow, Operator, OperatorRef, Part, PartId, PartStatus, PrintEvent, Proposal,
@@ -925,16 +927,52 @@ fn print_mm(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
         Err(r) => return r,
     };
 
+    // ADR-031 §10 colors land on the mm path too — when fg/bg are
+    // explicitly set the new `render_with` entry emits the receipt
+    // metadata + bg rect (default white = the §10 fix to the
+    // accidental transparency bug). Absent colors keep the legacy
+    // byte-identical output for golden parity.
+    let (fg_mm, bg_mm, color_warning) = match resolve_colors(options) {
+        Ok(t) => t,
+        Err(r) => return r,
+    };
+    let use_color_entry = options.fg.is_some() || options.bg.is_some();
     let mut labels = Vec::with_capacity(targets.len());
     for p in &targets {
-        match render_label(p.id.as_str(), layout, options.size_mm, text_format, micro) {
-            Ok(svg) => labels.push(json!({
-                "id": p.id.as_str(),
-                "svg": svg,
-                "symbology": resolved,
-            })),
-            Err(e) => return Response::error(ErrorKind::Backend, e.to_string()),
-        }
+        let svg = if use_color_entry {
+            let receipt = mm_receipt(
+                p.id.as_str(),
+                resolved,
+                &options.layout,
+                options.size_mm,
+                &fg_mm,
+                &bg_mm,
+            );
+            let metadata_body = part_registry_codec::receipt::metadata_element(&receipt);
+            let mm_opts = svg_mod::MmRenderOpts {
+                fg: &fg_mm.svg,
+                bg: &bg_mm.svg,
+                metadata: Some(&metadata_body),
+            };
+            svg_mod::render_with(
+                p.id.as_str(),
+                layout,
+                options.size_mm,
+                text_format,
+                micro,
+                &mm_opts,
+            )
+        } else {
+            match render_label(p.id.as_str(), layout, options.size_mm, text_format, micro) {
+                Ok(s) => s,
+                Err(e) => return Response::error(ErrorKind::Backend, e.to_string()),
+            }
+        };
+        labels.push(json!({
+            "id": p.id.as_str(),
+            "svg": svg,
+            "symbology": resolved,
+        }));
     }
 
     if options.log {
@@ -961,12 +999,50 @@ fn print_mm(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
         }
     }
 
+    let combined = combine_warnings(warning.as_deref(), color_warning.as_deref());
     Response::ok(json!({
         "labels": labels,
         "size_mm": options.size_mm,
         "chars": chars_name(text_format),
-        "warning": warning,
+        "fg": fg_mm.svg,
+        "bg": bg_mm.svg,
+        "warning": combined,
     }))
+}
+
+/// Build an mm-path receipt. The mm renderer has no module_px /
+/// glyph_px (Consolas via SVG `<text>`); receipt values that the px
+/// renderer carries get zeroed out as "n/a in this renderer". This
+/// keeps the single-Receipt-type SSOT (used by both renderers) but
+/// honestly marks the mm path's reduced detail.
+fn mm_receipt(
+    canonical: &str,
+    symbology: &str,
+    layout: &str,
+    size_mm: f64,
+    fg: &Color,
+    bg: &Color,
+) -> part_registry_codec::Receipt {
+    part_registry_codec::Receipt {
+        id: canonical.into(),
+        // Stage 1: mm always renders the legacy qr+id arrangement,
+        // so shape/payload is documented as "qr id" for the receipt.
+        payload: format!("qr id (layout {layout})"),
+        symbology: symbology.into(),
+        // The mm path is mm-native, so size_px is reported as the
+        // nearest dpi-equivalent at 300dpi for receipt comparability.
+        size_px: (size_mm / MM_PER_INCH * DEFAULT_DPI).round() as u32,
+        padding: [0, 0, 0, 0],
+        padding_mode: "n/a".into(),
+        size_mode: "exact".into(),
+        qr_px: 0,
+        module_px: 0,
+        glyph_px: 0,
+        fg: fg.svg.clone(),
+        bg: bg.svg.clone(),
+        font: "Consolas".into(),
+        generator: part_registry_codec::receipt::generator(),
+    }
 }
 
 /// The ADR-031 §2/§8 px-true render path (`unit: "px"`). Native unit
@@ -982,6 +1058,32 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
             format!("dpi must be a positive number, got {dpi}"),
         );
     }
+    // ADR-031 §10 colors: parse + collect a contrast/polarity warning.
+    let (fg_color, bg_color, color_warning) = match resolve_colors(options) {
+        Ok(t) => t,
+        Err(r) => return r,
+    };
+    // ADR-031 §8 size-mode: exact (default) or snap.
+    let size_mode = match options.size_mode.as_deref() {
+        None | Some("exact") => SizeMode::Exact,
+        Some("snap") => SizeMode::Snap,
+        Some(other) => {
+            return Response::error(
+                ErrorKind::Validation,
+                format!("unknown size_mode {other:?}; modes: exact, snap (ADR-031 §8)"),
+            );
+        }
+    };
+    // ADR-031 §10 payload DSL (stage 1: flat list).
+    let payload_elements = match options
+        .payload
+        .as_deref()
+        .map(payload_dsl::parse)
+        .transpose()
+    {
+        Ok(p) => p,
+        Err(e) => return Response::error(ErrorKind::Validation, e),
+    };
     // §3: size_px (the EXACT output canvas) is direct; otherwise
     // mm → px at `dpi` defines the canvas. The codec deduces the
     // module size inside it (§2/§8, 2026-06-11).
@@ -1045,9 +1147,39 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
         Err(r) => return r,
     };
 
+    // §10 payload shape: from --payload if present, else from
+    // --content/legacy flags (effective "qr id" today).
+    let shape = match resolve_payload_shape(payload_elements.as_deref()) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+
     let mut rendered: Vec<PxLabel> = Vec::with_capacity(targets.len());
     for p in &targets {
-        match render_label_px(
+        // §10 solver: with --id-chars/--rows/--id-size set, override
+        // the text_format-derived id-block. Otherwise the g-law runs.
+        let solver_block = match resolve_solver_block(
+            options,
+            layout,
+            shape,
+            size_px,
+            padding,
+            padding_mode,
+            &symbology,
+            p.id.as_str(),
+        ) {
+            Ok(b) => b,
+            Err(r) => return r,
+        };
+        let render_opts = RenderOpts {
+            fg: fg_color.clone(),
+            bg: bg_color.clone(),
+            size_mode,
+            shape,
+            id_block: solver_block,
+            embed_metadata: true,
+        };
+        match render_label_px_with_opts(
             p.id.as_str(),
             layout,
             size_px,
@@ -1055,6 +1187,7 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
             &symbology,
             padding,
             padding_mode,
+            &render_opts,
         ) {
             Ok(l) => rendered.push(l),
             Err(e) => return px_codec_error(e),
@@ -1081,6 +1214,7 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
                 "white": l.white,
                 "padding_mode": l.padding_mode,
                 "symbology": l.symbology,
+                "receipt": l.receipt,
             })
         })
         .collect();
@@ -1122,15 +1256,19 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
         }
     }
 
+    let combined_warning = combine_warnings(warning.as_deref(), color_warning.as_deref());
     Response::ok(json!({
         "labels": labels,
         "unit": "px",
         "size_px": size_px,
+        "size_mode": size_mode_name(size_mode),
         "padding": padding,
         "padding_mode": padding_mode,
+        "fg": fg_color.svg,
+        "bg": bg_color.svg,
         "dpi": dpi,
         "chars": chars_name(text_format),
-        "warning": warning,
+        "warning": combined_warning,
     }))
 }
 
@@ -1145,6 +1283,201 @@ fn px_codec_error(e: CodecError) -> Response {
         CodecError::Render(m) => Response::error(ErrorKind::Validation, m),
         CodecError::Encode(m) => Response::error(ErrorKind::Validation, m),
         other => Response::error(ErrorKind::Backend, other.to_string()),
+    }
+}
+
+/// Parse `--fg`/`--bg` and assemble the contrast/polarity WARN
+/// (ADR-031 §10).
+fn resolve_colors(options: &PrintOptions) -> Result<(Color, Color, Option<String>), Response> {
+    let fg = match options.fg.as_deref() {
+        Some(s) => color::parse(s, false).map_err(|e| Response::error(ErrorKind::Validation, e))?,
+        None => color::default_fg(),
+    };
+    let bg = match options.bg.as_deref() {
+        Some(s) => color::parse(s, true).map_err(|e| Response::error(ErrorKind::Validation, e))?,
+        None => color::default_bg(),
+    };
+    let warn = color::warning(&fg, &bg);
+    Ok((fg, bg, warn))
+}
+
+/// Resolve the payload shape from the explicit DSL list (stage 1:
+/// flat list — `qr`, `id`, `qr id`, `id qr`).
+fn resolve_payload_shape(
+    elements: Option<&[part_registry_codec::PayloadElement]>,
+) -> Result<PayloadShape, Response> {
+    let Some(els) = elements else {
+        return Ok(PayloadShape::QrId);
+    };
+    // Stage 1 supports the four exhaustive arrangements; anything
+    // else (e.g. a `space` element between qr and id) is fine
+    // structurally — space is treated as a zero-flex gap stage 1 —
+    // but the shape stays one of the four.
+    let mut has_qr = false;
+    let mut has_id = false;
+    let mut qr_first = false;
+    let mut id_first = false;
+    for (i, e) in els.iter().enumerate() {
+        match e {
+            part_registry_codec::PayloadElement::Qr { .. } => {
+                if !has_qr {
+                    qr_first = i == 0 || (!has_id);
+                    has_qr = true;
+                }
+            }
+            part_registry_codec::PayloadElement::Id { .. } => {
+                if !has_id {
+                    id_first = i == 0 || (!has_qr);
+                    has_id = true;
+                }
+            }
+            part_registry_codec::PayloadElement::Space { .. } => {}
+        }
+    }
+    match (has_qr, has_id) {
+        (true, true) if qr_first && !id_first => Ok(PayloadShape::QrId),
+        (true, true) if id_first && !qr_first => Ok(PayloadShape::IdQr),
+        (true, true) => Ok(PayloadShape::QrId),
+        (true, false) => Ok(PayloadShape::QrOnly),
+        (false, true) => Ok(PayloadShape::IdOnly),
+        (false, false) => Err(Response::error(
+            ErrorKind::Validation,
+            "payload: stage 1 requires at least one of qr or id",
+        )),
+    }
+}
+
+/// Convert PrintOptions's solver knobs (--id-chars / --rows /
+/// --id-size) into the codec solver's [`SolverInputs`] and solve.
+/// Returns `None` when no knob is set (the codec falls back to the
+/// g-law). Errors are §10 Validation with the nearest-feasible hint.
+#[allow(clippy::too_many_arguments)]
+fn resolve_solver_block(
+    options: &PrintOptions,
+    layout: Layout,
+    shape: PayloadShape,
+    size_px: u32,
+    padding: Padding,
+    padding_mode: PaddingMode,
+    symbology: &Symbology,
+    canonical: &str,
+) -> Result<Option<IdBlock>, Response> {
+    if options.id_chars.is_none() && options.rows.is_none() && options.id_size_px.is_none() {
+        return Ok(None);
+    }
+    if matches!(shape, PayloadShape::QrOnly) {
+        return Err(Response::error(
+            ErrorKind::Validation,
+            "id solver inputs (--id-chars/--rows/--id-size) require an id element \
+             in the payload — the qr-only shape has no id text",
+        ));
+    }
+    // Compute the per-layout text budget. Id-only shape: the budget is
+    // the whole canvas along the layout axis (minus pad floors).
+    let (budget, glyph_cap) = if matches!(shape, PayloadShape::IdOnly) {
+        let pad_a = match layout {
+            Layout::Horz => padding.top + padding.bottom,
+            Layout::Vert => padding.left + padding.right,
+            Layout::Flag { .. } => 0,
+        };
+        (size_px.saturating_sub(pad_a), None)
+    } else {
+        // Need the module_px to know the budget + g cap.
+        let (resolved, matrix) = symbology
+            .resolve(canonical)
+            .map_err(|e| Response::error(ErrorKind::Validation, e.to_string()))?;
+        let data = matrix.size as u32;
+        let quiet = resolved.quiet_modules();
+        let (pad_a, pad_b) = match layout {
+            Layout::Horz => (padding.top, padding.bottom),
+            Layout::Vert => (padding.left, padding.right),
+            Layout::Flag { .. } => (0, 0),
+        };
+        let module_px = deduce_module_px(size_px, pad_a, pad_b, data, quiet, padding_mode);
+        if module_px < 1 {
+            return Err(Response::error(
+                ErrorKind::Validation,
+                format!(
+                    "id solver: cannot run before module_px is deducible \
+                     (size {size_px}px does not fit one px/module under \
+                     padding_mode {})",
+                    padding_mode_name(padding_mode),
+                ),
+            ));
+        }
+        (data * module_px, Some(module_px))
+    };
+    let inputs = SolverInputs {
+        chars: options.id_chars,
+        rows: options.rows,
+        glyph_px: options.id_size_px,
+        glyph_px_cap: glyph_cap,
+        chars_max: canonical.chars().count() as u32,
+    };
+    match solver_mod::solve(inputs, budget) {
+        Ok(b) => Ok(Some(b)),
+        Err(e) => Err(Response::error(ErrorKind::Validation, e.message)),
+    }
+}
+
+fn padding_mode_name(m: PaddingMode) -> &'static str {
+    match m {
+        PaddingMode::Overlap => "overlap",
+        PaddingMode::Additive => "additive",
+        PaddingMode::Clip => "clip",
+    }
+}
+
+fn size_mode_name(m: SizeMode) -> &'static str {
+    match m {
+        SizeMode::Exact => "exact",
+        SizeMode::Snap => "snap",
+    }
+}
+
+/// Re-implementation of the codec's private `deduce_module_px` for the
+/// engine's solver-budget calculation — kept in sync structurally by
+/// the px-render tests (overlap/additive/clip boundary tables).
+fn deduce_module_px(
+    size_px: u32,
+    pad_a: u32,
+    pad_b: u32,
+    data: u32,
+    quiet: u32,
+    mode: PaddingMode,
+) -> u32 {
+    let mut m = 1u32;
+    let mut best = 0u32;
+    loop {
+        let floor_a = match mode {
+            PaddingMode::Overlap => pad_a.max(quiet * m),
+            PaddingMode::Additive => quiet * m + pad_a,
+            PaddingMode::Clip => pad_a,
+        };
+        let floor_b = match mode {
+            PaddingMode::Overlap => pad_b.max(quiet * m),
+            PaddingMode::Additive => quiet * m + pad_b,
+            PaddingMode::Clip => pad_b,
+        };
+        let need = data * m + floor_a + floor_b;
+        if need > size_px {
+            break;
+        }
+        best = m;
+        m += 1;
+    }
+    best
+}
+
+/// Compose multiple per-axis warning strings into one — the response
+/// `warning` field carries `null`, a single string, or a "; "-joined
+/// concatenation of every active warning.
+fn combine_warnings(a: Option<&str>, b: Option<&str>) -> Option<String> {
+    match (a, b) {
+        (None, None) => None,
+        (Some(a), None) => Some(a.into()),
+        (None, Some(b)) => Some(b.into()),
+        (Some(a), Some(b)) => Some(format!("{a}; {b}")),
     }
 }
 

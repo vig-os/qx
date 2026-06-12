@@ -910,3 +910,298 @@ fn poll_proposal_returns_status() {
     let d = r.data().expect("ok");
     assert_eq!(d["status"]["kind"], json!("open"));
 }
+
+// -------------------------------------------------------------------
+// ADR-031 §10 print-contract — stage 1
+// -------------------------------------------------------------------
+
+// Payload DSL rejects nesting (the staged grammar): the engine
+// surfaces the "staged: nesting not yet enabled" error verbatim.
+#[test]
+fn print_px_payload_nesting_rejected_with_staged_message() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "payload":"[h: qr id]","log":false}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(
+        e.message.contains("staged: nesting not yet enabled"),
+        "got: {}",
+        e.message
+    );
+}
+
+// Sugar equivalence (ADR-031 §10): `--chars 554` mapped to the
+// payload form `id:554` (via --payload) produces the same px
+// geometry. The receipt's payload string is the stage-1 canonical
+// form; sugar's job is geometry-equivalence, not string identity
+// (the implicit "qr id" path doesn't know the grouping flag
+// resolves to "554", and the §10 grammar lets either form coexist).
+#[test]
+fn print_px_payload_id_grouping_matches_chars_flag_geometry() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r1 = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"554","log":false}}),
+    );
+    let r2 = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"554","payload":"qr id:554","log":false}}),
+    );
+    let a = &r1.data().expect("ok")["labels"][0];
+    let b = &r2.data().expect("ok")["labels"][0];
+    assert_eq!(a["module_px"], b["module_px"]);
+    assert_eq!(a["data_px"], b["data_px"]);
+    assert_eq!(a["qr_px"], b["qr_px"]);
+    // Both paths inscribe the same default-form receipt payload
+    // when no solver block is engaged (--chars threads through the
+    // legacy g-law; --id-chars/--rows/--id-size engages the solver,
+    // tested separately).
+    assert_eq!(a["receipt"]["payload"], json!("qr id"));
+    assert_eq!(b["receipt"]["payload"], json!("qr id"));
+}
+
+// ADR-031 §10 fix-two-derive-one: --id-chars + --rows derives g.
+#[test]
+fn print_px_solver_derives_glyph_from_chars_and_rows() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44",
+                          "id_chars":14,"rows":3,"log":false}}),
+    );
+    let l = &r.data().expect("ok")["labels"][0];
+    // budget = data_px = 51 (m=3), 14 chars over 3 rows balances
+    // to 5,5,4, and g = floor(51 / (8·3 - 1)) = floor(51/23) = 2
+    // (capped at m=3).
+    assert_eq!(l["module_px"], json!(3));
+    assert_eq!(l["glyph_px"], json!(2));
+}
+
+// ADR-031 §10 infeasible solver pin: the error message MUST quote
+// the nearest feasible triple (the §10 example pattern). Use a
+// size where the g-law cap (module_px) is bigger than the requested
+// id_size_px, so the budget-need-have message fires before the cap.
+#[test]
+fn print_px_solver_infeasible_quotes_nearest_feasible_triple() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    // size_px 300, clip, micro → module_px = 300/17 = 17, budget =
+    // 17·17 = 289. Requested: 14 chars / 3 rows / 16px needs
+    // (8·3-1)·16 = 368; budget 289 — infeasible. Nearest g for
+    // rows=3 = 289/23 = 12; nearest rows for g=16 = 8r-1 ≤ 18 →
+    // r=2 (15·16 = 240 ≤ 289).
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":300,"micro":true,
+                          "padding_mode":"clip","chars":"44",
+                          "id_chars":14,"rows":3,"id_size_px":16,
+                          "log":false}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(
+        e.message.contains("needs") && e.message.contains("have"),
+        "missing need/have: {}",
+        e.message
+    );
+    assert!(
+        e.message.contains("feasible:") || e.message.contains("increase the size"),
+        "missing nearest-feasible hint: {}",
+        e.message
+    );
+}
+
+// ADR-031 §10 colors: --fg + --bg ride the receipt; the response
+// surfaces the parsed canonical forms.
+#[test]
+fn print_px_colors_ride_through_to_response_and_receipt() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","fg":"#222","bg":"#fff","log":false}}),
+    );
+    let d = r.data().expect("ok");
+    assert_eq!(d["fg"], json!("#222"));
+    assert_eq!(d["bg"], json!("#fff"));
+    assert_eq!(d["labels"][0]["receipt"]["fg"], json!("#222"));
+    assert_eq!(d["labels"][0]["receipt"]["bg"], json!("#fff"));
+    let svg = d["labels"][0]["svg"].as_str().unwrap();
+    assert!(svg.contains("fill=\"#fff\""), "bg rect emits fg: {svg}");
+    assert!(svg.contains("fill=\"#222\""), "module fg present");
+}
+
+// Low-contrast WARN tier rides the response.warning field (combined
+// with other warnings via the "; " separator).
+#[test]
+fn print_px_low_contrast_colors_emit_warning() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","fg":"#444","bg":"#333","log":false}}),
+    );
+    let d = r.data().expect("ok");
+    let w = d["warning"].as_str().expect("warning");
+    assert!(
+        w.contains("low contrast") || w.contains("inverted"),
+        "expected color warning: {w}"
+    );
+}
+
+// bg=none flips the warning to surface-dependent + the SVG omits the
+// background rect entirely.
+#[test]
+fn print_px_bg_none_omits_rect_and_warns_surface() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","bg":"none","log":false}}),
+    );
+    let d = r.data().expect("ok");
+    assert_eq!(d["bg"], json!("none"));
+    let svg = d["labels"][0]["svg"].as_str().unwrap();
+    // The fg group still emits `fill="black"` (default fg); the
+    // bg rect is absent.
+    assert!(
+        !svg.contains("<rect width=\"64\""),
+        "bg rect must be absent: {svg}"
+    );
+    let w = d["warning"].as_str().expect("surface warning");
+    assert!(w.contains("surface-dependent"), "got: {w}");
+}
+
+// mm renderer fix: the bg rect is emitted (default white) when --bg
+// is set, retiring the legacy accidental transparency.
+#[test]
+fn print_mm_with_colors_emits_background_rect() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"mm","size_mm":8.0,"chars":"44",
+                          "fg":"#000","bg":"white","log":false}}),
+    );
+    let d = r.data().expect("ok");
+    let svg = d["labels"][0]["svg"].as_str().unwrap();
+    assert!(
+        svg.contains("fill=\"white\""),
+        "mm bg rect now emitted: {svg}"
+    );
+}
+
+// SSOT: the response receipt EQUALS the SVG `<metadata>` JSON,
+// field for field. Built once, used twice.
+#[test]
+fn print_px_receipt_equals_inscribed_metadata() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","log":false}}),
+    );
+    let l = &r.data().expect("ok")["labels"][0];
+    let response_receipt = &l["receipt"];
+    let svg = l["svg"].as_str().expect("svg");
+    let inscribed: serde_json::Value = {
+        let start = svg.find("<![CDATA[").expect("metadata present");
+        let end = svg[start..].find("]]>").expect("CDATA closed");
+        let json = &svg[start + "<![CDATA[".len()..start + end];
+        serde_json::from_str(json).expect("metadata is JSON")
+    };
+    assert_eq!(*response_receipt, inscribed, "receipt SSOT drift");
+}
+
+// Snap-mode geometry: the canvas snaps DOWN to the content lattice
+// instead of holding size_px exactly.
+#[test]
+fn print_px_snap_mode_shrinks_canvas_to_content_lattice() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let exact = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","log":false}}),
+    );
+    let snap = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","size_mode":"snap","log":false}}),
+    );
+    let e = &exact.data().expect("ok")["labels"][0];
+    let s = &snap.data().expect("ok")["labels"][0];
+    // Exact mode holds the canvas at size_px on the controlling axis
+    // (horz: height); snap mode drops the lattice remainder.
+    assert_eq!(e["height_px"], json!(64));
+    assert!(
+        s["height_px"].as_u64().unwrap() < 64,
+        "snap shrank, exact stayed: snap_h = {}",
+        s["height_px"]
+    );
+    // Module geometry is the same — only the canvas changes.
+    assert_eq!(e["module_px"], s["module_px"]);
+    assert_eq!(e["data_px"], s["data_px"]);
+    assert_eq!(s["receipt"]["size_mode"], json!("snap"));
+    assert_eq!(e["receipt"]["size_mode"], json!("exact"));
+}
+
+// Unknown size_mode is Validation with the modes list.
+#[test]
+fn print_px_unknown_size_mode_is_validation() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"size_mode":"wibble","log":false}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(e.message.contains("exact"));
+    assert!(e.message.contains("snap"));
+}
+
+// Unknown payload color value is Validation (e.g. uppercase name
+// without the explicit lowercase grammar).
+#[test]
+fn print_px_unknown_color_is_validation() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"fg":"BLACK","log":false}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(e.message.contains("BLACK"), "got: {}", e.message);
+}

@@ -205,6 +205,40 @@ pub struct PrintOptions {
     /// is the documented fallback).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dpi: Option<f64>,
+    /// ADR-031 §10 — flat-list payload DSL (stage 1). Whitespace-
+    /// separated leaves in axis order: `qr[:TYPE] | id[:GROUPING|chars-N]
+    /// | space[:SIZE]`. Element params win over the global flags
+    /// (`chars`, `symbology`); the global flags win over contract
+    /// defaults. Absent ⇒ the resolved shape comes from the legacy
+    /// flags alone (effective `"qr id"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload: Option<String>,
+    /// `--fg` color (ADR-031 §10). Accepted: `#RGB`/`#RRGGBB`/
+    /// `#RRGGBBAA`, `rgb(r,g,b)`, lowercase ascii names. Default
+    /// black.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fg: Option<String>,
+    /// `--bg` color (ADR-031 §10). Accepts the same forms as `fg`,
+    /// plus `"none"` (omits the background rect). Default white.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bg: Option<String>,
+    /// `--size-mode exact|snap` (ADR-031 §8 2026-06-11). `exact`
+    /// (default) holds the canvas at the requested size; `snap`
+    /// treats `size_px` as an UPPER BOUND and the canvas snaps DOWN
+    /// to the content lattice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_mode: Option<String>,
+    /// `--id-chars` — id-text solver input (ADR-031 §10): how many
+    /// id characters render.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id_chars: Option<u32>,
+    /// `--rows` — id-text solver input: how many rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rows: Option<u32>,
+    /// `--id-size <N>[px|mm]` — id-text solver input: glyph height
+    /// in device px (mm rides the value like `--size`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id_size_px: Option<u32>,
 }
 
 fn default_layout() -> String {
@@ -242,11 +276,24 @@ impl Default for PrintOptions {
             padding_px: None,
             padding_mode: None,
             dpi: None,
+            payload: None,
+            fg: None,
+            bg: None,
+            size_mode: None,
+            id_chars: None,
+            rows: None,
+            id_size_px: None,
         }
     }
 }
 
 /// The command protocol. JSON is internally tagged with `"op"`.
+///
+/// The size difference between variants is acceptable here: the
+/// protocol enum is dispatched once per request — it lives on the
+/// stack briefly, never in hot Vec's or maps. Boxing `Print` would
+/// trade clarity for negligible savings.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op")]
 pub enum Request {

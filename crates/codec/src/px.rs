@@ -68,8 +68,11 @@ use std::fmt::Write as _;
 
 use serde::{Deserialize, Serialize};
 
+use crate::color::{default_bg, default_fg, Color};
 use crate::format::TextFormat;
 use crate::glyph_font::{self, Glyph};
+use crate::receipt::{metadata_element, Receipt};
+use crate::solver::IdBlock;
 use crate::svg::Layout;
 use crate::symbology::Symbology;
 use crate::CodecError;
@@ -162,6 +165,78 @@ impl PaddingMode {
     }
 }
 
+/// Whether `size_px` is the EXACT canvas (the §2/§8 law) or an UPPER
+/// BOUND that the canvas snaps down from (ADR-031 §8 `--size-mode`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SizeMode {
+    /// `exact` (default) — the canvas holds the requested size; the
+    /// lattice remainder distributes into auto padding. Required for
+    /// batch uniformity and fixed-slot placement (§8).
+    #[default]
+    Exact,
+    /// `snap` — `size_px` is an UPPER BOUND; the canvas snaps DOWN to
+    /// the content lattice (deduced module geometry + declared padding
+    /// floors, remainder omitted; §8).
+    Snap,
+}
+
+impl SizeMode {
+    fn name(self) -> &'static str {
+        match self {
+            SizeMode::Exact => "exact",
+            SizeMode::Snap => "snap",
+        }
+    }
+}
+
+/// The render-payload arrangement (stage 1: which elements ride and in
+/// what order). Stage 1 supports the three layout cases exhaustively:
+/// `qr` only, `id` only, and the two qr+id arrangements.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PayloadShape {
+    /// `qr id` — QR first along the axis, id text second.
+    #[default]
+    QrId,
+    /// `id qr` — id text first, QR second.
+    IdQr,
+    /// `qr` — QR only; no id text.
+    QrOnly,
+    /// `id` — id text only; the canvas is the text budget (no QR).
+    IdOnly,
+}
+
+/// Render options for [`render_label_px_with_opts`].
+#[derive(Clone, Debug)]
+pub struct RenderOpts {
+    /// Foreground (modules + glyph ink).
+    pub fg: Color,
+    /// Background. `bg.is_none()` omits the background rect.
+    pub bg: Color,
+    /// `exact` (default) vs `snap`.
+    pub size_mode: SizeMode,
+    /// Payload shape (stage 1).
+    pub shape: PayloadShape,
+    /// When `Some`, overrides the text_format-derived rows/g (the
+    /// fix-two-derive-one solver's output rides through here).
+    pub id_block: Option<IdBlock>,
+    /// Embed the receipt as an SVG `<metadata>` element. Default true.
+    pub embed_metadata: bool,
+}
+
+impl Default for RenderOpts {
+    fn default() -> Self {
+        Self {
+            fg: default_fg(),
+            bg: default_bg(),
+            size_mode: SizeMode::Exact,
+            shape: PayloadShape::QrId,
+            id_block: None,
+            embed_metadata: true,
+        }
+    }
+}
+
 /// One px-true rendered label.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PxLabel {
@@ -200,6 +275,11 @@ pub struct PxLabel {
     /// form (e.g. `micro-m4-m`) — version/EC pins or auto-fit results
     /// are evidence, not guesses (ADR-031 §8).
     pub symbology: String,
+    /// The artifact receipt — the SAME object the protocol response
+    /// carries and the SVG `<metadata>` element inscribes (ADR-031
+    /// §10). Built once in [`render_label_px_with_opts`], so the wire
+    /// receipt and the inscribed metadata can never drift.
+    pub receipt: Receipt,
 }
 
 /// Largest `m` (px/module) that fits the controlling axis, or 0 when
@@ -696,12 +776,61 @@ pub fn render_label_px(
     padding: Padding,
     padding_mode: PaddingMode,
 ) -> Result<PxLabel, CodecError> {
+    // Test-facing wrapper around the rich API: default options keep
+    // bit-for-bit parity with the pre-ADR-031-§10 behavior (no
+    // metadata, default colors, exact mode, qr+id shape). The receipt
+    // module is wired in via `RenderOpts` for callers that want it.
+    let opts = RenderOpts {
+        embed_metadata: false,
+        ..Default::default()
+    };
+    render_label_px_with_opts(
+        canonical,
+        layout,
+        size_px,
+        text_format,
+        symbology,
+        padding,
+        padding_mode,
+        &opts,
+    )
+}
+
+/// Render one px-true label with full ADR-031 §10 options (colors,
+/// size-mode, payload-shape, optional id-block override, metadata
+/// receipt).
+///
+/// Behavior is identical to [`render_label_px`] when `opts` matches
+/// [`RenderOpts::default`] except `embed_metadata` (the rich entry
+/// inscribes the receipt; the legacy entry does not).
+#[allow(clippy::too_many_arguments)]
+pub fn render_label_px_with_opts(
+    canonical: &str,
+    layout: Layout,
+    size_px: u32,
+    text_format: TextFormat,
+    symbology: &Symbology,
+    padding: Padding,
+    padding_mode: PaddingMode,
+    opts: &RenderOpts,
+) -> Result<PxLabel, CodecError> {
     if matches!(layout, Layout::Flag { .. }) {
         return Err(CodecError::Unsupported(
             "flag layout has no px-true geometry yet (ADR-031 §5); \
              use horz or vert, or unit=mm for flag"
                 .into(),
         ));
+    }
+    if matches!(opts.shape, PayloadShape::IdOnly) {
+        return render_id_only(
+            canonical,
+            layout,
+            size_px,
+            text_format,
+            padding,
+            padding_mode,
+            opts,
+        );
     }
     let (resolved, matrix) = symbology.resolve(canonical)?;
     let data = matrix.size as u32;
@@ -735,13 +864,19 @@ pub fn render_label_px(
     }
     let qr_px = modules * module_px;
     let data_px = data * module_px;
-    // Controlling axis: floors + remainder, extra px on the
-    // bottom/right edge (deterministic). Non-controlling sides sit at
-    // their floors exactly — that dimension is an output, not a budget.
+    // Controlling axis: floors + remainder (exact mode) or floors
+    // only (snap mode — the §8 `--size-mode snap` rule: canvas snaps
+    // DOWN to the content lattice, remainder omitted). The
+    // non-controlling sides always sit at their floors exactly.
     let floor_a = padding_mode.floor_px(pad_a, quiet, module_px);
     let floor_b = padding_mode.floor_px(pad_b, quiet, module_px);
-    let rem = size_px - data_px - floor_a - floor_b;
-    let (white_a, white_b) = (floor_a + rem / 2, floor_b + rem / 2 + rem % 2);
+    let (white_a, white_b) = match opts.size_mode {
+        SizeMode::Exact => {
+            let rem = size_px - data_px - floor_a - floor_b;
+            (floor_a + rem / 2, floor_b + rem / 2 + rem % 2)
+        }
+        SizeMode::Snap => (floor_a, floor_b),
+    };
     let white = match layout {
         Layout::Horz => Padding {
             top: white_a,
@@ -765,19 +900,27 @@ pub fn render_label_px(
         Layout::Flag { .. } => unreachable!("rejected above"),
     };
 
-    // The g-law text block (module docs): the nx75 anchor font draws
-    // at scale g inside the module-part budget for both layouts.
-    let rows = text_format.split(canonical);
-    let n_rows = rows.len() as u32;
-    let max_chars = rows.iter().map(|r| r.chars().count()).max().unwrap_or(0) as u32;
-    let block = text_block(layout, data_px, module_px, n_rows, max_chars)?;
-    let glyph_px = block.glyph_px;
+    let show_text = !matches!(opts.shape, PayloadShape::QrOnly);
+    // The g-law text block (module docs) — but the §10 solver may
+    // override rows/g when --id-chars/--rows/--id-size are present.
+    let (rows, n_rows, block_opt) = if show_text {
+        let (text_rows, n_rows, _max_chars, block) = resolve_text_block(
+            canonical,
+            text_format,
+            layout,
+            data_px,
+            module_px,
+            opts.id_block,
+        )?;
+        (text_rows, n_rows, Some(block))
+    } else {
+        (Vec::new(), 0, None)
+    };
+    let glyph_px = block_opt.as_ref().map(|b| b.glyph_px).unwrap_or(0);
 
     // Module rects at their canvas offsets — every coordinate an
-    // integer device px. The quiet zone is not drawn; the white
-    // background supplies it (white ≥ quiet·m is structural under
-    // overlap/additive; under clip the printer's intrinsic margins
-    // supply it physically).
+    // integer device px. The quiet zone is not drawn; the bg supplies
+    // it (white ≥ quiet·m is structural under overlap/additive).
     let mut rects = String::with_capacity(matrix.size * matrix.size * 48);
     for r in 0..matrix.size {
         for c in 0..matrix.size {
@@ -794,16 +937,8 @@ pub fn render_label_px(
 
     // Glyph rects join the SAME crispEdges fill group as the modules:
     // the whole label is one deterministic binary raster.
-    let (width_px, height_px) = match layout {
-        Layout::Horz => {
-            // Height is EXACTLY size_px; the text sits right of the
-            // QR at the clamped gap. The rows JUSTIFY to the module
-            // part vertically (ADR-031 §8): first row's top at the
-            // module-part top, last row's bottom at its bottom, with
-            // integer-px slack distributed across the rows-1 gaps
-            // deterministically (rows == 1 centers). The canvas ends
-            // exactly at the widest row plus the right white floor —
-            // no trailing white.
+    let (width_px, height_px) = match (layout, block_opt) {
+        (Layout::Horz, Some(block)) => {
             let tx = white.left + data_px + gap;
             let row_offsets = justified_offsets(data_px, n_rows, 7 * glyph_px);
             for (ri, row) in rows.iter().enumerate() {
@@ -813,16 +948,15 @@ pub fn render_label_px(
                     write_glyph_rects(&mut rects, ch, x0, y0, glyph_px)?;
                 }
             }
-            (tx + block.max_row_w + white.right, size_px)
+            // Exact mode keeps the canvas at size_px; snap mode lets
+            // the controlling axis shrink to the content lattice.
+            let h = match opts.size_mode {
+                SizeMode::Exact => size_px,
+                SizeMode::Snap => data_px + floor_a + floor_b,
+            };
+            (tx + block.max_row_w + white.right, h)
         }
-        Layout::Vert => {
-            // Width is EXACTLY size_px; the text sits below the QR at
-            // the clamped gap. Each row JUSTIFIES horizontally to the
-            // module part (ADR-031 §8): first glyph's left at the
-            // module-part left, last glyph's right at its right, with
-            // integer-px slack distributed across the chars-1 gaps
-            // (chars == 1 centers). Row vertical pitch keeps its
-            // floor-gap step below the QR (unchanged behavior).
+        (Layout::Vert, Some(block)) => {
             let ty0 = white.top + data_px + gap;
             let row_pitch = 8 * glyph_px;
             for (ri, row) in rows.iter().enumerate() {
@@ -835,17 +969,52 @@ pub fn render_label_px(
                     write_glyph_rects(&mut rects, *ch, x0, y0, glyph_px)?;
                 }
             }
-            (size_px, ty0 + block.block_h + white.bottom)
+            let w = match opts.size_mode {
+                SizeMode::Exact => size_px,
+                SizeMode::Snap => data_px + floor_a + floor_b,
+            };
+            (w, ty0 + block.block_h + white.bottom)
         }
-        Layout::Flag { .. } => unreachable!("rejected above"),
+        // qr-only shape: the canvas is just the symbol + white floors.
+        (Layout::Horz, None) => {
+            let h = match opts.size_mode {
+                SizeMode::Exact => size_px,
+                SizeMode::Snap => data_px + floor_a + floor_b,
+            };
+            (white.left + data_px + white.right, h)
+        }
+        (Layout::Vert, None) => {
+            let w = match opts.size_mode {
+                SizeMode::Exact => size_px,
+                SizeMode::Snap => data_px + floor_a + floor_b,
+            };
+            (w, white.top + data_px + white.bottom)
+        }
+        (Layout::Flag { .. }, _) => unreachable!("rejected above"),
     };
 
-    let svg = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width_px}\" height=\"{height_px}\" \
-viewBox=\"0 0 {width_px} {height_px}\">\
-<rect width=\"{width_px}\" height=\"{height_px}\" fill=\"white\"/>\
-<g fill=\"black\" shape-rendering=\"crispEdges\">{rects}</g>\
-</svg>\n",
+    let receipt = receipt_for(
+        canonical,
+        &resolved.compact(),
+        size_px,
+        padding,
+        padding_mode,
+        opts.size_mode,
+        qr_px,
+        module_px,
+        glyph_px,
+        &opts.fg,
+        &opts.bg,
+        payload_canonical_for(&opts.shape, &text_format, opts.id_block),
+    );
+    let svg = build_svg(
+        width_px,
+        height_px,
+        &opts.bg,
+        &opts.fg,
+        &rects,
+        opts,
+        || receipt.clone(),
     );
 
     Ok(PxLabel {
@@ -861,6 +1030,278 @@ viewBox=\"0 0 {width_px} {height_px}\">\
         white,
         padding_mode,
         symbology: resolved.compact(),
+        receipt,
+    })
+}
+
+/// Resolve the id-text block under either the g-law (no solver
+/// override) or the §10 fix-two-derive-one solver result. Returns
+/// `(rows, n_rows, max_chars, TextBlock)` for the placement loops.
+fn resolve_text_block(
+    canonical: &str,
+    text_format: TextFormat,
+    layout: Layout,
+    data_px: u32,
+    module_px: u32,
+    override_block: Option<IdBlock>,
+) -> Result<(Vec<String>, u32, u32, TextBlock), CodecError> {
+    if let Some(b) = override_block {
+        // The solver already chose rows + glyph_px against the
+        // budget. We hand-build the row strings from the canonical id
+        // prefix using the balanced grouping.
+        let groups = b.grouping();
+        let mut idx = 0;
+        let chars: Vec<char> = canonical.chars().collect();
+        let mut rows: Vec<String> = Vec::with_capacity(groups.len());
+        for g in &groups {
+            let end = (idx + *g as usize).min(chars.len());
+            rows.push(chars[idx..end].iter().collect());
+            idx = end;
+        }
+        let n_rows = b.rows;
+        let max_chars = groups.iter().copied().max().unwrap_or(0);
+        let block = TextBlock {
+            glyph_px: b.glyph_px,
+            block_h: (8 * n_rows - 1) * b.glyph_px,
+            advance: 6 * b.glyph_px,
+            max_row_w: (max_chars * 6 * b.glyph_px).saturating_sub(b.glyph_px),
+        };
+        return Ok((rows, n_rows, max_chars, block));
+    }
+    let rows = text_format.split(canonical);
+    let n_rows = rows.len() as u32;
+    let max_chars = rows.iter().map(|r| r.chars().count()).max().unwrap_or(0) as u32;
+    let block = text_block(layout, data_px, module_px, n_rows, max_chars)?;
+    Ok((rows, n_rows, max_chars, block))
+}
+
+/// Build the canonical payload string for the response/metadata
+/// receipt (stage 1: a flat list reflecting the resolved shape +
+/// id-block).
+fn payload_canonical_for(
+    shape: &PayloadShape,
+    _fmt: &TextFormat,
+    id_block: Option<IdBlock>,
+) -> String {
+    let id_part = match id_block {
+        Some(b) => format!("id:{}", b.grouping_str()),
+        None => "id".into(),
+    };
+    match shape {
+        PayloadShape::QrId => format!("qr {id_part}"),
+        PayloadShape::IdQr => format!("{id_part} qr"),
+        PayloadShape::QrOnly => "qr".into(),
+        PayloadShape::IdOnly => id_part,
+    }
+}
+
+/// Construct the SSOT [`Receipt`] for both the response payload and
+/// the inscribed SVG metadata (ADR-031 §10: single constructor).
+#[allow(clippy::too_many_arguments)]
+fn receipt_for(
+    canonical: &str,
+    symbology: &str,
+    size_px: u32,
+    padding: Padding,
+    padding_mode: PaddingMode,
+    size_mode: SizeMode,
+    qr_px: u32,
+    module_px: u32,
+    glyph_px: u32,
+    fg: &Color,
+    bg: &Color,
+    payload_canonical: String,
+) -> Receipt {
+    Receipt {
+        id: canonical.into(),
+        payload: payload_canonical,
+        symbology: symbology.into(),
+        size_px,
+        padding: [padding.top, padding.right, padding.bottom, padding.left],
+        padding_mode: padding_mode.name().into(),
+        size_mode: size_mode.name().into(),
+        qr_px,
+        module_px,
+        glyph_px,
+        fg: fg.svg.clone(),
+        bg: bg.svg.clone(),
+        font: "nx75".into(),
+        generator: crate::receipt::generator(),
+    }
+}
+
+/// Assemble the SVG document: bg rect (omitted when `bg.is_none()`),
+/// the content fill group with `fg`, and optionally the metadata
+/// receipt before the content (so it sits inside the root in a
+/// well-known location).
+fn build_svg<F: FnOnce() -> Receipt>(
+    width_px: u32,
+    height_px: u32,
+    bg: &Color,
+    fg: &Color,
+    rects: &str,
+    opts: &RenderOpts,
+    build_receipt: F,
+) -> String {
+    let mut out = format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width_px}\" height=\"{height_px}\" \
+viewBox=\"0 0 {width_px} {height_px}\">",
+    );
+    if opts.embed_metadata {
+        let r = build_receipt();
+        out.push_str(&metadata_element(&r));
+    }
+    if !bg.is_none() {
+        let _ = write!(
+            out,
+            "<rect width=\"{width_px}\" height=\"{height_px}\" fill=\"{}\"/>",
+            bg.svg
+        );
+    }
+    let _ = writeln!(
+        out,
+        "<g fill=\"{}\" shape-rendering=\"crispEdges\">{rects}</g></svg>",
+        fg.svg
+    );
+    out
+}
+
+/// `id`-only payload (ADR-031 §10): no QR — the id-text block fills
+/// the whole canvas budget along the layout axis. Solver mode is
+/// strongly recommended; without a solver override we fall through to
+/// the g-law over the full canvas budget.
+fn render_id_only(
+    canonical: &str,
+    layout: Layout,
+    size_px: u32,
+    text_format: TextFormat,
+    padding: Padding,
+    padding_mode: PaddingMode,
+    opts: &RenderOpts,
+) -> Result<PxLabel, CodecError> {
+    // For id-only, the budget IS the whole canvas (minus the per-side
+    // pad floors — clip mode reaches the widest).
+    let (pad_a, pad_b) = match layout {
+        Layout::Horz => (padding.top, padding.bottom),
+        Layout::Vert => (padding.left, padding.right),
+        Layout::Flag { .. } => unreachable!("flag rejected upstream"),
+    };
+    let budget = size_px.saturating_sub(pad_a + pad_b);
+    if budget < 7 {
+        return Err(CodecError::Render(format!(
+            "id-only payload: budget {budget}px (size {size_px}, pad {pad_a}/{pad_b}) cannot fit \
+             one 7px glyph row"
+        )));
+    }
+    // Build a synthetic IdBlock either from the solver or the
+    // text_format default.
+    let block = match opts.id_block {
+        Some(b) => b,
+        None => {
+            // g-law over budget: rows from text_format, g = budget /
+            // ((8·rows - 1)) and bounded by chars-width.
+            let rows = text_format.split(canonical);
+            let n_rows = rows.len() as u32;
+            let max_chars = rows.iter().map(|r| r.chars().count()).max().unwrap_or(0) as u32;
+            let units = 8 * n_rows - 1;
+            let row_units = (6 * max_chars).saturating_sub(1).max(1);
+            let g = (budget / units).min(budget / row_units).max(1);
+            let total_chars: u32 = rows.iter().map(|r| r.chars().count() as u32).sum();
+            IdBlock {
+                chars: total_chars,
+                rows: n_rows,
+                glyph_px: g,
+            }
+        }
+    };
+    let rows_split = {
+        let groups = block.grouping();
+        let chars: Vec<char> = canonical.chars().collect();
+        let mut idx = 0;
+        let mut out: Vec<String> = Vec::with_capacity(groups.len());
+        for g in &groups {
+            let end = (idx + *g as usize).min(chars.len());
+            out.push(chars[idx..end].iter().collect());
+            idx = end;
+        }
+        out
+    };
+    let glyph_px = block.glyph_px;
+    let n_rows = block.rows;
+    let max_chars = block.grouping().into_iter().max().unwrap_or(0);
+    let block_h = (8 * n_rows - 1) * glyph_px;
+    let row_w = max_chars * 6 * glyph_px - glyph_px;
+
+    let mut rects = String::new();
+    let (width_px, height_px) = match layout {
+        Layout::Horz => {
+            // The id-block runs the full canvas width as 1 row by
+            // default; for multi-row, the rows justify vertically.
+            let y_top = pad_a;
+            let row_offsets = justified_offsets(budget, n_rows, 7 * glyph_px);
+            for (ri, row) in rows_split.iter().enumerate() {
+                let y0 = y_top + row_offsets[ri];
+                for (ci, ch) in row.chars().enumerate() {
+                    let x0 = padding.left + ci as u32 * 6 * glyph_px;
+                    write_glyph_rects(&mut rects, ch, x0, y0, glyph_px)?;
+                }
+            }
+            (padding.left + row_w + padding.right, size_px)
+        }
+        Layout::Vert => {
+            let row_pitch = 8 * glyph_px;
+            for (ri, row) in rows_split.iter().enumerate() {
+                let row_chars: Vec<char> = row.chars().collect();
+                let chars_n = row_chars.len() as u32;
+                let char_offsets = justified_offsets(budget, chars_n, 5 * glyph_px);
+                let y0 = padding.top + ri as u32 * row_pitch;
+                for (ci, ch) in row_chars.iter().enumerate() {
+                    let x0 = padding.left + char_offsets[ci];
+                    write_glyph_rects(&mut rects, *ch, x0, y0, glyph_px)?;
+                }
+            }
+            (size_px, padding.top + block_h + padding.bottom)
+        }
+        Layout::Flag { .. } => unreachable!("flag rejected upstream"),
+    };
+
+    let receipt = receipt_for(
+        canonical,
+        "none",
+        size_px,
+        padding,
+        padding_mode,
+        opts.size_mode,
+        0,
+        0,
+        glyph_px,
+        &opts.fg,
+        &opts.bg,
+        payload_canonical_for(&opts.shape, &text_format, Some(block)),
+    );
+    let svg = build_svg(
+        width_px,
+        height_px,
+        &opts.bg,
+        &opts.fg,
+        &rects,
+        opts,
+        || receipt.clone(),
+    );
+    Ok(PxLabel {
+        svg,
+        width_px,
+        height_px,
+        qr_px: 0,
+        module_px: 0,
+        modules: 0,
+        data_px: 0,
+        glyph_px,
+        glyph_cell: glyph_font::GRID_ROWS,
+        white: padding,
+        padding_mode,
+        symbology: "none".into(),
+        receipt,
     })
 }
 
@@ -897,10 +1338,18 @@ pub fn fill_to_max(labels: &mut [PxLabel], padding: Padding) {
         let dx = (target_w - l.width_px) / 2;
         let dy = (target_h - l.height_px) / 2;
         let inner = inner_body(&l.svg);
+        // Preserve the label's bg color in the uniform outer canvas
+        // (the receipt's bg rides the truth; `none` ⇒ no rect).
+        let bg = &l.receipt.bg;
+        let bg_rect = if bg == "none" {
+            String::new()
+        } else {
+            format!("<rect width=\"{target_w}\" height=\"{target_h}\" fill=\"{bg}\"/>")
+        };
         l.svg = format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{target_w}\" height=\"{target_h}\" \
 viewBox=\"0 0 {target_w} {target_h}\">\
-<rect width=\"{target_w}\" height=\"{target_h}\" fill=\"white\"/>\
+{bg_rect}\
 <g transform=\"translate({dx},{dy})\">{inner}</g>\
 </svg>\n"
         );
