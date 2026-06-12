@@ -59,7 +59,7 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use part_registry_codec::{render_label, Layout, TextFormat};
-use part_registry_config::Config;
+use part_registry_config::{Config, IdentityAdapterChoice, StorageAdapterChoice};
 use part_registry_domain::{
     Action, AuditEntry, Diff, DiffEdit, DiffRow, Operator, OperatorRef, Part, PartId, PartStatus,
     PrintEvent, Proposal, ProposalRef, ProposalStatus, RequestId, Signature, TargetRef,
@@ -68,8 +68,8 @@ use part_registry_domain::{
 use part_registry_identity::IdentityProvider;
 use part_registry_identity_git_config::GitConfigIdentity;
 use part_registry_observability::{
-    bind_audit_entry, emit_audit, init, mint_audit_entry, request_id_span, set_current_operator,
-    void_audit_entry, AuditSinkHandle, ObservabilityConfig,
+    bind_audit_entry, emit_audit, init, mint_audit_entry, request_id_span, void_audit_entry,
+    AuditSinkHandle, ObservabilityConfig, OperatorGuard,
 };
 use part_registry_storage::{PartFilter, Repository};
 use part_registry_storage_csv_git::{CsvGitConfig, CsvGitRepository};
@@ -488,7 +488,7 @@ impl Wiring {
     /// `dry_run` is requested.
     pub fn from_config(cfg: &Config, dry_run: Option<DryRunTarget>) -> Result<Self, CliError> {
         // Repository ---------------------------------------------------
-        if cfg.storage.adapter != "csv_git" {
+        if cfg.storage.adapter != StorageAdapterChoice::CsvGit {
             return Err(CliError::BadArg(format!(
                 "unsupported storage adapter {:?}; only `csv_git` is wired today",
                 cfg.storage.adapter
@@ -510,8 +510,8 @@ impl Wiring {
         let repo_arc: Arc<dyn Repository> = Arc::new(repo);
 
         // Identity -----------------------------------------------------
-        let identity: Box<dyn IdentityProvider> = match cfg.identity.adapter.as_str() {
-            "git_config" => Box::new(GitConfigIdentity::new()),
+        let identity: Box<dyn IdentityProvider> = match cfg.identity.adapter {
+            IdentityAdapterChoice::GitConfig => Box::new(GitConfigIdentity::new()),
             other => {
                 return Err(CliError::BadArg(format!(
                     "unsupported identity adapter {other:?}; CLI supports `git_config`"
@@ -529,7 +529,7 @@ impl Wiring {
         let sink: Box<dyn ProposalSink> = if let Some(target) = dry_run {
             Box::new(DryRunSink::new(target))
         } else {
-            if cfg.transport.adapter != "github_pr" {
+            if cfg.transport.adapter != part_registry_config::TransportAdapterChoice::GithubPr {
                 return Err(CliError::BadArg(format!(
                     "unsupported transport adapter {:?}; live submission supports \
                      `github_pr` (or pass --dry-run)",
@@ -931,7 +931,7 @@ pub fn run_mint(args: &MintArgs, wiring: &Wiring) -> Result<MintOutcome, CliErro
     }
 
     let operator = wiring.identity.current()?;
-    set_current_operator(operator.clone());
+    let _op_guard = OperatorGuard::new(operator.clone());
 
     let now = OffsetDateTime::now_utc();
     let batch = args
@@ -957,7 +957,7 @@ pub fn run_mint(args: &MintArgs, wiring: &Wiring) -> Result<MintOutcome, CliErro
     }
 
     // Build the Diff (N RowAdds).
-    let diff = build_mint_diff(&new_ids, &batch, minted_at)?;
+    let diff = build_mint_diff(&new_ids, &batch, minted_at, &operator)?;
     let request_id = RequestId::new();
     let proposal = Proposal {
         diff: diff.clone(),
@@ -1036,6 +1036,7 @@ fn build_mint_diff(
     new_ids: &[PartId],
     batch: &str,
     minted_at: OffsetDateTime,
+    operator: &Operator,
 ) -> Result<Diff, CliError> {
     let ts = minted_at
         .format(&Rfc3339)
@@ -1046,6 +1047,7 @@ fn build_mint_diff(
         fields.insert("status".into(), "unbound".into());
         fields.insert("minted_at".into(), ts.clone());
         fields.insert("batch".into(), batch.to_owned());
+        fields.insert("minted_by".into(), operator.id.0.clone());
         adds.push(DiffRow {
             id: Some(id.clone()),
             fields,
@@ -1128,9 +1130,7 @@ pub fn run_label(args: &LabelArgs, wiring: &Wiring) -> Result<LabelOutcome, CliE
     }
 
     let identity = wiring.identity.current().ok();
-    if let Some(op) = identity.as_ref() {
-        set_current_operator(op.clone());
-    }
+    let _op_guard = identity.as_ref().map(|op| OperatorGuard::new(op.clone()));
 
     // Selection.
     let all_parts = wiring.repo.list_parts(&PartFilter::default())?;
@@ -1165,6 +1165,8 @@ pub fn run_label(args: &LabelArgs, wiring: &Wiring) -> Result<LabelOutcome, CliE
         LayoutArg::Horz => Layout::Horz,
         LayoutArg::Flag => Layout::Flag {
             cable_od_mm: args.cable_od.expect("cable_od checked above"),
+            no_markers: false,
+            alignment_line: false,
         },
     };
 
@@ -1368,15 +1370,17 @@ pub struct BindOutcome {
 ///    `ProposalSink`.
 /// 4. Emit an `AuditEntry` via the observability layer.
 pub fn run_bind(args: &BindArgs, wiring: &Wiring) -> Result<BindOutcome, CliError> {
-    if args.void && (args.type_.is_some() || args.vendor.is_some()) {
-        // Parity with bind.py, which tolerates (and ignores) metadata
-        // flags alongside the void flag. We surface a warning via
-        // tracing but proceed.
-        tracing::warn!("--void ignores metadata flags");
+    if args.void && (args.type_.is_some() || args.vendor.is_some() || args.notes.is_some()) {
+        // Parity with bind.py — silently ignore metadata on --void;
+        // the Python CLI tolerates this. We surface a warning via
+        // tracing but proceed. Per issue #56, notes is also ignored
+        // (Python appends the void marker to existing notes, ignoring
+        // --notes).
+        tracing::warn!("--void ignores metadata flags (type, vendor, notes)");
     }
 
     let operator = wiring.identity.current()?;
-    set_current_operator(operator.clone());
+    let _op_guard = OperatorGuard::new(operator.clone());
 
     let all_parts = wiring.repo.list_parts(&PartFilter::default())?;
     let target = resolve_part(&all_parts, &args.id)?;
@@ -1387,10 +1391,10 @@ pub fn run_bind(args: &BindArgs, wiring: &Wiring) -> Result<BindOutcome, CliErro
         .map_err(|e| CliError::Other(format!("format now: {e}")))?;
 
     if args.void {
-        let reason = match &args.notes {
-            Some(n) => format!("{n} [voided {now_iso}]"),
-            None => format!("[voided {now_iso}]"),
-        };
+        // Parity with bind.py:98 — append `[voided <ts>]` to existing
+        // notes; ignore `args.notes` (see issue #56).
+        let existing_notes = target.notes.clone().unwrap_or_default();
+        let reason = format!("{existing_notes} [voided {now_iso}]");
         let (proposal_ref, request_id) =
             submit_void(wiring, &operator, &target, &reason, now_iso.clone())?;
         let extra = json!({
@@ -1433,7 +1437,7 @@ pub fn run_bind(args: &BindArgs, wiring: &Wiring) -> Result<BindOutcome, CliErro
         )));
     }
 
-    let (before, after) = build_bind_fields(&target, args, &now_iso);
+    let (before, after) = build_bind_fields(&target, args, &now_iso, &operator);
     let (proposal_ref, request_id) = submit_bind(wiring, &operator, &target, &before, &after)?;
 
     let extra = json!({
@@ -1504,6 +1508,7 @@ fn build_bind_fields(
     target: &Part,
     args: &BindArgs,
     now_iso: &str,
+    operator: &Operator,
 ) -> (BTreeMap<String, String>, BTreeMap<String, String>) {
     let mut before = BTreeMap::new();
     before.insert("status".into(), target.status.to_string());
@@ -1529,6 +1534,7 @@ fn build_bind_fields(
     let mut after = BTreeMap::new();
     after.insert("status".into(), "bound".into());
     after.insert("bound_at".into(), now_iso.into());
+    after.insert("bound_by".into(), operator.id.0.clone());
     let pick = |new: &Option<String>, old: &Option<String>| -> Option<String> {
         new.clone().or_else(|| old.clone())
     };

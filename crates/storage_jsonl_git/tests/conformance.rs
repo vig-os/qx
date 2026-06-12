@@ -55,6 +55,13 @@ fn part(
         part_number: None,
         location: None,
         notes: None,
+        minted_by: None,
+        bound_by: None,
+        last_edited_at: None,
+        last_edited_by: None,
+        components: Vec::new(),
+        manufacturer_id: None,
+        metadata: std::collections::BTreeMap::new(),
         signatures: vec![],
         chain_hash: None,
     }

@@ -58,7 +58,7 @@ use time::OffsetDateTime;
 /// `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (Crockford-style: no `0`/`O`,
 /// no `1`/`I`/`L`). Constructors validate; field is private to make
 /// the invariant unforgeable from outside the crate.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct PartId(String);
 
@@ -690,12 +690,37 @@ pub struct Part {
     pub part_number: Option<String>,
     pub location: Option<String>,
     pub notes: Option<String>,
+    pub minted_by: Option<String>,
+    pub bound_by: Option<String>,
+    pub last_edited_at: Option<String>,
+    pub last_edited_by: Option<String>,
+    /// Semicolon-separated child part IDs (#168). Non-empty = assembly.
+    /// Sorted alphabetically on write for deterministic CSV diffs.
+    #[serde(default)]
+    pub components: Vec<PartId>,
+    /// Manufacturer's own tracking/serial number (#171). No alphabet
+    /// constraint — any manufacturer format. Distinct from `part_number`
+    /// (our vendor catalog number).
+    #[serde(default)]
+    pub manufacturer_id: Option<String>,
+    /// Type-specific key-value metadata (#171), validated against the
+    /// contract's `typeFields` for the part's `type`. BTreeMap keeps
+    /// keys sorted for deterministic JSON serialisation in CSV diffs.
+    #[serde(default)]
+    pub metadata: BTreeMap<String, Json>,
     /// ADR-023 forward-compat. Default `vec![]` round-trips correctly.
     #[serde(default)]
     pub signatures: Vec<Signature>,
     /// ADR-023 forward-compat. `None` at MVP.
     #[serde(default)]
     pub chain_hash: Option<Hash>,
+}
+
+impl Part {
+    /// True when this part has child components — making it an assembly.
+    pub fn is_assembly(&self) -> bool {
+        !self.components.is_empty()
+    }
 }
 
 /// One row of `print_log.csv` per ADR-015.
@@ -1178,6 +1203,13 @@ mod tests {
             part_number: None,
             location: None,
             notes: None,
+            minted_by: None,
+            bound_by: None,
+            last_edited_at: None,
+            last_edited_by: None,
+            components: vec![],
+            manufacturer_id: None,
+            metadata: BTreeMap::new(),
             signatures,
             chain_hash: None,
         }

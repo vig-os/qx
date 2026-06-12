@@ -21,7 +21,7 @@ pub fn fresh_repo() -> (TempDir, Arc<dyn Repository>, PathBuf) {
     // registry.csv with header
     std::fs::write(
         root.join("registry.csv"),
-        "id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,signatures,chain_hash\n",
+        "id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,minted_by,bound_by,last_edited_at,last_edited_by,components,manufacturer_id,metadata,signatures,chain_hash\n",
     )
     .unwrap();
     std::fs::write(
@@ -95,8 +95,31 @@ pub fn seeded_wiring(rows: &[(&str, &str, &str)]) -> (TempDir, Wiring, Arc<Mutex
     let path = wiring.repo_root.join("registry.csv");
     let mut s = std::fs::read_to_string(&path).unwrap();
     for (id, status, batch) in rows {
+        // 20 columns: id(0),status(1),minted_at(2),batch(3) filled;
+        // bound_at..chain_hash (fields 4-19, 16 cols) empty.
         s.push_str(&format!(
-            "{id},{status},2026-05-01T00:00:00Z,{batch},,,,,,,,,\n"
+            "{id},{status},2026-05-01T00:00:00Z,{batch},,,,,,,,,,,,,,,,\n"
+        ));
+    }
+    std::fs::write(&path, s).unwrap();
+    (tmp, wiring, store)
+}
+
+/// Same as `seeded_wiring`, but also lets the caller set notes per row.
+/// Each tuple: (id, status, batch, notes).
+#[allow(dead_code)]
+pub fn seeded_wiring_with_notes(
+    rows: &[(&str, &str, &str, &str)],
+) -> (TempDir, Wiring, Arc<Mutex<Vec<Proposal>>>) {
+    let (tmp, wiring, store) = fresh_wiring();
+    let path = wiring.repo_root.join("registry.csv");
+    let mut s = std::fs::read_to_string(&path).unwrap();
+    for (id, status, batch, notes) in rows {
+        // 20 columns: id(0)..notes(10),minted_by(11)..last_edited_by(14),
+        // components(15),manufacturer_id(16),metadata(17),signatures(18),
+        // chain_hash(19). notes(10) filled; rest empty.
+        s.push_str(&format!(
+            "{id},{status},2026-05-01T00:00:00Z,{batch},,,,,,,{notes},,,,,,,,,\n"
         ));
     }
     std::fs::write(&path, s).unwrap();

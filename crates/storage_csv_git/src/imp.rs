@@ -4,6 +4,7 @@
 //! (read + audit-append only per ADR-018, shell-vs-git2 rationale,
 //! forward-compat column handling).
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -420,7 +421,7 @@ fn status_order(s: PartStatus) -> u8 {
 // reviewable per ADR-018.
 
 // --- registry.csv ---
-// header: id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,signatures,chain_hash
+// header: id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,minted_by,bound_by,last_edited_at,last_edited_by,components,manufacturer_id,metadata,signatures,chain_hash
 
 #[derive(Debug, Serialize, Deserialize)]
 struct PartRow {
@@ -436,6 +437,23 @@ struct PartRow {
     part_number: String,
     location: String,
     notes: String,
+    #[serde(default)]
+    minted_by: String,
+    #[serde(default)]
+    bound_by: String,
+    #[serde(default)]
+    last_edited_at: String,
+    #[serde(default)]
+    last_edited_by: String,
+    // #168: semicolon-separated child part IDs. Empty = not an assembly.
+    #[serde(default)]
+    components: String,
+    // #171: manufacturer's own tracking number. Plain string.
+    #[serde(default)]
+    manufacturer_id: String,
+    // #171: type-specific metadata as a JSON object string (single-line).
+    #[serde(default)]
+    metadata: String,
     // ADR-023 forward-compat. Optional in the CSV header so the
     // existing on-disk `registry.csv` (which predates this ADR)
     // continues to deserialise without these columns.
@@ -486,6 +504,29 @@ impl PartRow {
             part_number: opt(self.part_number),
             location: opt(self.location),
             notes: opt(self.notes),
+            minted_by: opt(self.minted_by),
+            bound_by: opt(self.bound_by),
+            last_edited_at: opt(self.last_edited_at),
+            last_edited_by: opt(self.last_edited_by),
+            components: if self.components.is_empty() {
+                Vec::new()
+            } else {
+                let mut ids: Vec<PartId> = self
+                    .components
+                    .split(';')
+                    .map(|s| PartId::new(s.trim().to_string()))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| RepoError::SchemaMismatch(format!("invalid component id: {e}")))?;
+                ids.sort();
+                ids
+            },
+            manufacturer_id: opt(self.manufacturer_id),
+            metadata: if self.metadata.trim().is_empty() {
+                BTreeMap::new()
+            } else {
+                serde_json::from_str(&self.metadata)
+                    .map_err(|e| RepoError::SchemaMismatch(format!("invalid metadata JSON: {e}")))?
+            },
             signatures,
             chain_hash,
         })
@@ -508,6 +549,26 @@ impl PartRow {
             part_number: p.part_number.clone().unwrap_or_default(),
             location: p.location.clone().unwrap_or_default(),
             notes: p.notes.clone().unwrap_or_default(),
+            minted_by: p.minted_by.clone().unwrap_or_default(),
+            bound_by: p.bound_by.clone().unwrap_or_default(),
+            last_edited_at: p.last_edited_at.clone().unwrap_or_default(),
+            last_edited_by: p.last_edited_by.clone().unwrap_or_default(),
+            components: {
+                let mut ids = p.components.clone();
+                ids.sort();
+                ids.iter()
+                    .map(|id| id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(";")
+            },
+            manufacturer_id: p.manufacturer_id.clone().unwrap_or_default(),
+            metadata: if p.metadata.is_empty() {
+                String::new()
+            } else {
+                // Single-line JSON for stable CSV diffs (BTreeMap → sorted keys).
+                serde_json::to_string(&p.metadata)
+                    .map_err(|e| RepoError::Backend(format!("encode metadata: {e}").into()))?
+            },
             signatures: if p.signatures.is_empty() {
                 String::new()
             } else {

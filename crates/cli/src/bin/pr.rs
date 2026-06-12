@@ -379,6 +379,7 @@ fn init_obs(cfg: &Config, wiring: &Wiring) {
         stdout_json: cfg.observability.stdout_json,
         stderr_human: cfg.observability.stderr_human,
         audit_csv: cfg.observability.audit_csv,
+        audit_log_path: cfg.observability.audit_log_path.clone(),
     };
     let _ = init_observability(&obs_cfg, wiring.repo.clone());
 }
@@ -849,6 +850,13 @@ fn rows_to_parts(
             part_number: row.get("part_number").cloned(),
             location: row.get("location").cloned(),
             notes: row.get("notes").cloned(),
+            minted_by: row.get("minted_by").cloned(),
+            bound_by: row.get("bound_by").cloned(),
+            last_edited_at: row.get("last_edited_at").cloned(),
+            last_edited_by: row.get("last_edited_by").cloned(),
+            components: Vec::new(),
+            manufacturer_id: row.get("manufacturer_id").cloned(),
+            metadata: std::collections::BTreeMap::new(),
             signatures: Vec::new(),
             chain_hash: None,
         });

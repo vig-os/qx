@@ -25,18 +25,15 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # `cargo install wasm-bindgen-cli 0.2.121` requires rustc 1.86+,
-      # but the workspace pins 1.85 (rust-toolchain.toml). cargo-binstall
-      # downloads the official prebuilt 1.85-compatible binary instead
-      # of recompiling. Tracked as a follow-up: bump MSRV past 1.86 and
-      # this dance goes away.
-      - uses: cargo-bins/cargo-binstall@main
+      # Direct download of wasm-bindgen prebuilt binary — avoids
+      # cargo-binstall's GH API rate limits and the rustc 1.86+
+      # requirement of `cargo install wasm-bindgen-cli@0.2.121`.
       - name: Install wasm-bindgen-cli (prebuilt)
-        # `--force` because Swatinem/rust-cache restores the cargo
-        # `install.crates2.json` metadata file but NOT the binaries
-        # themselves; without --force, binstall says "already
-        # installed" and the wasm-bindgen executable isn't on PATH.
-        run: cargo binstall --force --no-confirm wasm-bindgen-cli@0.2.121
+        run: |
+          curl -sL https://github.com/rustwasm/wasm-bindgen/releases/download/0.2.121/wasm-bindgen-0.2.121-x86_64-unknown-linux-musl.tar.gz \
+            | tar xz -C /tmp
+          cp /tmp/wasm-bindgen-0.2.121-x86_64-unknown-linux-musl/wasm-bindgen ~/.cargo/bin/
+          chmod +x ~/.cargo/bin/wasm-bindgen
 
       - uses: actions/setup-node@v4
         with:
@@ -64,6 +61,8 @@ jobs:
       - name: Run Playwright e2e
         working-directory: web
         run: npm run e2e
+        env:
+          PARTREG_TEST_PAT: ${{ secrets.PARTREG_TEST_PAT }}
 
       - name: Upload Playwright traces on failure
         if: failure()

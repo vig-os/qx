@@ -76,12 +76,6 @@ use part_registry_domain::{
 use part_registry_storage::{RepoError, Repository};
 
 // -------------------------------------------------------------------
-// Re-exports
-// -------------------------------------------------------------------
-
-pub use part_registry_domain::RequestId as DomainRequestId;
-
-// -------------------------------------------------------------------
 // Errors
 // -------------------------------------------------------------------
 
@@ -100,60 +94,14 @@ pub enum InitError {
 }
 
 // -------------------------------------------------------------------
-// Config
+// Config — re-exported from the config crate (single source of truth)
 // -------------------------------------------------------------------
 
-/// Observability layer configuration.
-///
-/// Per ADR-021 the log level is a string (e.g. `info`, `debug`,
-/// `part_registry=trace`). The parser is `tracing_subscriber::EnvFilter`
-/// at init time.
-#[derive(Debug, Clone)]
-pub struct ObservabilityConfig {
-    pub log_level: String,
-    pub stdout_json: bool,
-    pub stderr_human: bool,
-    pub audit_csv: bool,
-}
-
-impl Default for ObservabilityConfig {
-    /// Read-only / library defaults: stderr human on, stdout JSON off,
-    /// audit-CSV off. Suitable for tests and the WASM façade.
-    fn default() -> Self {
-        Self {
-            log_level: "info".into(),
-            stdout_json: false,
-            stderr_human: true,
-            audit_csv: false,
-        }
-    }
-}
-
-impl ObservabilityConfig {
-    /// Defaults for a mutating CLI binary (`mint`, `bind`, `label`):
-    /// stderr human + audit-CSV on, stdout JSON off by default.
-    /// Per ADR-022: mutating processes MUST enable the audit-CSV layer.
-    pub fn cli_defaults() -> Self {
-        Self {
-            log_level: "info".into(),
-            stdout_json: false,
-            stderr_human: true,
-            audit_csv: true,
-        }
-    }
-
-    /// Defaults for CI runs: stdout JSON on (machine-parseable
-    /// contract), stderr human off, audit-CSV gated on the workflow's
-    /// `Repository` wiring.
-    pub fn ci_defaults() -> Self {
-        Self {
-            log_level: "info".into(),
-            stdout_json: true,
-            stderr_human: false,
-            audit_csv: true,
-        }
-    }
-}
+/// Re-exported from [`part_registry_config::ObservabilityConfig`] so
+/// consumers that already depend on this crate don't need a separate
+/// `part_registry_config` import. The config crate owns the shape;
+/// this crate consumes it. See ADR-021 §Corrections and issue #38.
+pub use part_registry_config::ObservabilityConfig;
 
 // -------------------------------------------------------------------
 // AuditSinkHandle
@@ -227,13 +175,54 @@ thread_local! {
 /// Per ADR-022 §"audit_csv_layer is the bridge": the layer reads the
 /// active `Operator` from a thread-local. The identity port (ADR-020)
 /// sets it before any audit-emitting code runs.
+///
+/// **Prefer [`OperatorGuard`]** for scoped usage — it clears the slot
+/// automatically on drop, even if the guarded code panics.
 pub fn set_current_operator(op: Operator) {
     CURRENT_OPERATOR.with(|slot| *slot.borrow_mut() = Some(op));
 }
 
 /// Clear the active operator (test convenience + identity port teardown).
+///
+/// **Prefer [`OperatorGuard`]** for scoped usage — it clears the slot
+/// automatically on drop, even if the guarded code panics.
 pub fn clear_current_operator() {
     CURRENT_OPERATOR.with(|slot| *slot.borrow_mut() = None);
+}
+
+/// RAII guard that sets the thread-local [`Operator`] on construction
+/// and clears it on drop — including during stack unwinding (panics).
+///
+/// ```no_run
+/// # use part_registry_observability::OperatorGuard;
+/// # use part_registry_domain::{Operator, OperatorId, IdentitySource};
+/// let op = Operator {
+///     id: OperatorId("git:user".into()),
+///     display_name: "user".into(),
+///     source: IdentitySource::GitConfig,
+///     verified_at: None,
+///     claims: Default::default(),
+///     pubkey: None,
+/// };
+/// let _guard = OperatorGuard::new(op);
+/// // … business code — operator is active here …
+/// // guard dropped here (or on panic) → slot cleared
+/// ```
+pub struct OperatorGuard(());
+
+impl OperatorGuard {
+    /// Set the thread-local operator and return a guard that will clear
+    /// it when dropped.
+    pub fn new(op: Operator) -> Self {
+        set_current_operator(op);
+        Self(())
+    }
+}
+
+impl Drop for OperatorGuard {
+    fn drop(&mut self) {
+        clear_current_operator();
+    }
 }
 
 /// Snapshot of the active operator, if any.
@@ -605,7 +594,7 @@ where
     // that want lossless fidelity use [`emit_audit`] with a pre-built
     // payload instead.
     let action_str = v.action.as_deref()?;
-    let action = action_from_kind_str(action_str)?;
+    let action = action_from_kind_str(action_str, v.target_value.as_deref())?;
 
     // target: from `target_kind` + `target_value` per the ADR macro.
     let target = match v.target_kind.as_deref() {
@@ -655,25 +644,28 @@ where
     })
 }
 
-fn action_from_kind_str(s: &str) -> Option<Action> {
+fn action_from_kind_str(s: &str, target_value: Option<&str>) -> Option<Action> {
     use part_registry_domain::PartId;
-    // Placeholder PartId/maps for payload — discrete macro form is lossy.
-    let placeholder_id = PartId::new("23456789ABCDEF").ok()?;
+    // Try to use the real target value as the PartId; fall back to a
+    // placeholder when the value is missing or fails validation.
+    let part_id = target_value
+        .and_then(|v| PartId::new(v.to_string()).ok())
+        .or_else(|| PartId::new("23456789ABCDEF").ok())?;
     Some(match s {
         "row_add" | "mint" | "add" => Action::RowAdd {
             row: serde_json::Value::Object(serde_json::Map::new()),
         },
-        "row_delete" | "delete" => Action::RowDelete { id: placeholder_id },
+        "row_delete" | "delete" => Action::RowDelete { id: part_id },
         "row_void" | "void" => Action::RowVoid {
-            id: placeholder_id,
+            id: part_id,
             reason: "discrete-form void".into(),
         },
         "row_bind" | "bind" => Action::RowBind {
-            id: placeholder_id,
+            id: part_id,
             fields: std::collections::BTreeMap::new(),
         },
         "row_edit" | "edit" => Action::RowEdit {
-            id: placeholder_id,
+            id: part_id,
             before: std::collections::BTreeMap::new(),
             after: std::collections::BTreeMap::new(),
         },

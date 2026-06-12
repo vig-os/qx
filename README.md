@@ -4,6 +4,8 @@ Per-instance physical identification for hardware parts: nano-id canonical
 IDs, QR labels, mint-then-bind workflow. Designed for permanence — labels
 outlive servers and orgs.
 
+**[Live sandbox](https://exo-pet.github.io/exopet-registry-sandbox/)** — try the full app with demo data.
+
 > Public to bootstrap quickly. Will move private once the registry holds
 > operational data — though the design intent (per [ADR-013](decisions/ADR-013-parts-registry-web-app.md))
 > is that registry data — hardware IDs + locations + types — is generally
@@ -218,9 +220,32 @@ for the generated workflow.
 - `decisions/` — ADRs and decision log
 - `examples/` — reference label renderings used by the parity tests
 
+## Web app
+
+A PWA at **[exo-pet.github.io/exopet-registry-sandbox](https://exo-pet.github.io/exopet-registry-sandbox/)** (sandbox) gives operators a phone-first interface for the full workflow:
+
+| Tab | What |
+|-----|------|
+| **Lookup** | Filterable data-grid, fuzzy search, column sort, status chips, grouping dashboard, CSV export, deep-link URLs |
+| **Print** | Layout selector (horz/vert/flag), tape presets, mm/px sizing, A4 sheet + DK strip modes, live SVG preview |
+| **Bind** | Scan QR (single, multi-pick, image upload, rolling), template/repeat mode, preflight policy check, submit batch as PR |
+| **Mint** | Generate IDs in-browser, download CSV, copy to clipboard, add to print plan |
+
+Built with Pico CSS, vanilla TypeScript, Vite, and a Rust WASM facade over `crates/codec` + `crates/validators`. Offline-capable via service worker. See [`docs/quickstart.md`](docs/quickstart.md) for operator onboarding.
+
+### Porting to another registry
+
+Fork the data repo template, set 3 env vars, deploy:
+
+```bash
+VITE_DATA_REPO=your-org/your-registry
+VITE_BASE=/your-registry/
+VITE_DATA_BRANCH=main
+```
+
 ## Status
 
-- **Phase 1** (this repo): CLI tooling — functional today.
-- **Phase 2** (planned): GH Pages SPA + WASM DuckDB + camera scanner
-  + PR-driven binds + page-per-label printing. Tracked in
-  [issues](../../issues).
+- **Rust workspace**: 17 crates, ports/adapters architecture (ADR-017), 260+ tests
+- **Web app**: 4 tabs, 4 scanner modes, PWA, Pico CSS, deployed to GitHub Pages
+- **CI**: 4 workflows (rust, playwright, release, pages), SSoT enforcement tests
+- **Releases**: Tagged bundles with SHA-256 checksums, consumed by data repos

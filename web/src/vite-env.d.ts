@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+/// <reference types="vite-plugin-pwa/client" />
 
 declare module "*.wasm?url" {
   const url: string;
@@ -18,3 +19,18 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+// Deploy config + code types (build-time JSON import via Vite alias)
+declare module "@deploy-config" {
+  const config: Record<string, unknown>;
+  export default config;
+}
+declare module "@code-types" {
+  const codeTypes: Array<Record<string, unknown>>;
+  export default codeTypes;
+}
+
+// Build-time constants injected by vite.config.ts `define`.
+declare const __APP_VERSION__: string;
+declare const __GIT_HASH__: string;
+declare const __BUILD_TIME__: string;

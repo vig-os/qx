@@ -62,6 +62,13 @@ fn bind_unbound_part_via_full_id_succeeds() {
     assert_eq!(p.diff.edits.len(), 1);
     assert!(p.diff.adds.is_empty());
 
+    // bound_by is populated with the operator ID (#18).
+    let bound_by = p.diff.edits[0]
+        .after
+        .get("bound_by")
+        .expect("bound_by must be set in diff after");
+    assert_eq!(bound_by, "test:tester", "bound_by must match operator id");
+
     // change_classification = RowBind (status unbound -> bound).
     assert_eq!(p.change_classification.len(), 1);
     assert_eq!(p.change_classification[0].kind(), ActionKind::RowBind);
@@ -203,4 +210,63 @@ fn bind_unknown_id_errors() {
     let err = run_bind(&args, &wiring).unwrap_err();
     let msg = format!("{err}");
     assert!(msg.contains("no match"));
+}
+
+/// Issue #56: void must *append* `[voided <ts>]` to existing notes
+/// and ignore `args.notes`, matching Python `bind.py:98`.
+#[test]
+fn bind_void_appends_to_existing_notes() {
+    let rows = vec![(ID_A, "unbound", "B-test", "pre-existing note")];
+    let (_tmp, wiring, store) = common::seeded_wiring_with_notes(&rows);
+
+    let mut args = bind_args(ID_A);
+    args.void = true;
+    // --notes should be ignored when voiding (parity with Python).
+    args.notes = Some("should be ignored".into());
+
+    let out = run_bind(&args, &wiring).unwrap();
+    assert!(out.voided);
+
+    let proposals = store.lock().unwrap();
+    assert_eq!(proposals.len(), 1);
+    let edit = &proposals[0].diff.edits[0];
+    let notes_after = edit.after.get("notes").expect("notes must be set");
+    // Must contain the original notes AND the void marker.
+    assert!(
+        notes_after.contains("pre-existing note"),
+        "existing notes must be preserved, got: {notes_after}"
+    );
+    assert!(
+        notes_after.contains("[voided "),
+        "void marker must be appended, got: {notes_after}"
+    );
+    // --notes value must NOT appear.
+    assert!(
+        !notes_after.contains("should be ignored"),
+        "--notes must be ignored on void, got: {notes_after}"
+    );
+}
+
+/// Issue #56: void on a row with no pre-existing notes still produces
+/// the `[voided <ts>]` marker.
+#[test]
+fn bind_void_empty_notes_gets_marker() {
+    let rows = vec![(ID_A, "unbound", "B-test")];
+    let (_tmp, wiring, store) = common::seeded_wiring(&rows);
+
+    let mut args = bind_args(ID_A);
+    args.void = true;
+
+    let out = run_bind(&args, &wiring).unwrap();
+    assert!(out.voided);
+
+    let proposals = store.lock().unwrap();
+    let notes_after = proposals[0].diff.edits[0]
+        .after
+        .get("notes")
+        .expect("notes must be set");
+    assert!(
+        notes_after.contains("[voided "),
+        "void marker must be present, got: {notes_after}"
+    );
 }

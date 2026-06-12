@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "id", "statuses", "fields"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "id": {
+      "type": "object",
+      "required": ["alphabet", "canonicalLength", "prefixLength"],
+      "properties": {
+        "alphabet": { "type": "string" },
+        "canonicalLength": { "type": "integer" },
+        "prefixLength": { "type": "integer" },
+        "legacyCanonicalLength": { "type": "integer" }
+      }
+    },
+    "statuses": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "label", "type", "editable"],
+        "properties": {
+          "key": { "type": "string" },
+          "label": { "type": "string" },
+          "type": { "type": "string", "enum": ["string", "dropdown", "yes-no", "date", "number"] },
+          "editable": { "type": "boolean" },
+          "options": { "type": "array", "items": { "type": "string" } },
+          "on_unknown": { "type": "string", "enum": ["warn", "block"] },
+          "meaningfulFrom": { "type": "string" },
+          "validation": {
+            "type": "object",
+            "properties": {
+              "required": { "type": "boolean" },
+              "pattern": { "type": "string" },
+              "maxLength": { "type": "integer" },
+              "min": { "type": "number" },
+              "max": { "type": "number" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

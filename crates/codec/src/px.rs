@@ -1857,7 +1857,11 @@ mod tests {
     fn flag_layout_is_unsupported_in_px_mode() {
         let err = render_label_px(
             FIXED_ID,
-            Layout::Flag { cable_od_mm: 6.0 },
+            Layout::Flag {
+                cable_od_mm: 6.0,
+                no_markers: false,
+                alignment_line: false,
+            },
             64,
             TextFormat::FourFour,
             &sym("micro"),

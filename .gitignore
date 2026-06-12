@@ -1,8 +1,9 @@
-# Generated label artifacts (regenerable from registry + label.py).
-# Per-ID SVGs are high-volume and noisy in diffs; sheet outputs under
-# sheets/ stay tracked so they can be shared and printed straight from
-# the repo without rerunning tools/sheet.py.
+# Generated label artifacts (regenerable from registry + the Rust CLI).
+# Per-ID SVGs are high-volume and noisy in diffs.
 labels/
+
+# Sheet outputs from tools/sheet.py — regenerable, no need to track.
+sheets/
 
 # Python
 .venv/
@@ -24,3 +25,8 @@ target/
 .direnv/
 result
 result-*
+
+# Claude Code session scratch — per-process runtime locks (sessionId/pid)
+# and pre-compaction handoff notes. Never meant to be tracked.
+.claude/*.lock
+HANDOFF.md

@@ -71,7 +71,7 @@ export interface Layout {
 export interface LayoutOptionField {
   key: string;
   label: string;
-  type: "number";
+  type: "number" | "checkbox";
   default: number;
   min?: number;
   max?: number;

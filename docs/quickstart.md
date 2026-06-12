@@ -254,6 +254,38 @@ hold CUT until the light stops blinking.
   renderings at common sizes. Useful for picking a layout before you
   print.
 
+## Porting to another registry (data repo setup)
+
+The web app is designed to work with any data repository that serves a
+`registry.csv` file via GitHub Pages. To point the app at your own
+registry, set three environment variables at build time:
+
+```bash
+# The GitHub org/repo that hosts registry.csv on its gh-pages branch.
+VITE_DATA_REPO=your-org/your-registry
+
+# The base path the app is served from (must match your GitHub Pages
+# config or your reverse proxy). Include the trailing slash.
+VITE_BASE=/your-registry/
+
+# The branch that GitHub Pages serves from (usually main or gh-pages).
+VITE_DATA_BRANCH=main
+```
+
+For example, to build and deploy for a custom registry:
+
+```bash
+VITE_DATA_REPO=acme-lab/acme-parts \
+VITE_BASE=/acme-parts/ \
+VITE_DATA_BRANCH=main \
+npm run build
+```
+
+The resulting `dist/` folder can be deployed to any static host. The
+app will fetch `registry.csv` from
+`https://raw.githubusercontent.com/${VITE_DATA_REPO}/${VITE_DATA_BRANCH}/registry.csv`
+at runtime.
+
 ## What's next
 
 The on-site help is being built incrementally. Tracked in

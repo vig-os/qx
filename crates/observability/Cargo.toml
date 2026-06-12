@@ -17,6 +17,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }
+part-registry-config = { path = "../config" }
 part-registry-domain = { path = "../domain" }
 part-registry-storage = { path = "../storage" }
 

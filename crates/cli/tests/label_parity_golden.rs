@@ -114,7 +114,11 @@ fn parity_vert_6mm_micro_4_4() {
 fn parity_flag_d6_11mm_4_4_4() {
     let rs = render(
         FIXED_ID,
-        Layout::Flag { cable_od_mm: 6.0 },
+        Layout::Flag {
+            cable_od_mm: 6.0,
+            no_markers: false,
+            alignment_line: false,
+        },
         11.0,
         TextFormat::FourFourFour,
         false,

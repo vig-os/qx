@@ -26,7 +26,7 @@ describe("registry contract", () => {
   });
 
   it("matches the web schema field order", () => {
-    expect(REGISTRY_FIELD_KEYS).toEqual(contract.fields.map((field) => field.key));
+    expect(REGISTRY_FIELD_KEYS).toEqual(contract.fields.map((field: { key: string }) => field.key));
   });
 
   it("matches the web status enum", () => {
@@ -36,5 +36,16 @@ describe("registry contract", () => {
   it("matches the canonical ID constants", () => {
     expect(ID_ALPHABET).toBe(contract.id.alphabet);
     expect(ID_LENGTH).toBe(contract.id.canonicalLength);
+  });
+
+  it("has schema_version 1", () => {
+    expect(contract.schema_version).toBe(1);
+  });
+
+  it("every field has a type", () => {
+    for (const field of contract.fields) {
+      expect(field.type).toBeDefined();
+      expect(["string", "dropdown", "yes-no", "date", "number", "json"]).toContain(field.type);
+    }
   });
 });

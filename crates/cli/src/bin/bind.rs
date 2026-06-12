@@ -11,7 +11,7 @@ use part_registry_cli::{
 };
 use part_registry_config::Config;
 use part_registry_domain::RequestId;
-use part_registry_observability::{request_id_span, ObservabilityConfig};
+use part_registry_observability::request_id_span;
 
 fn main() -> ExitCode {
     let args = BindArgs::parse();
@@ -38,13 +38,7 @@ fn main() -> ExitCode {
         }
     };
 
-    let obs_cfg = ObservabilityConfig {
-        log_level: cfg.observability.log_level.clone(),
-        stdout_json: cfg.observability.stdout_json,
-        stderr_human: cfg.observability.stderr_human,
-        audit_csv: cfg.observability.audit_csv,
-    };
-    let _ = init_observability(&obs_cfg, wiring.repo.clone());
+    let _ = init_observability(&cfg.observability, wiring.repo.clone());
 
     let rid = RequestId::new();
     let span = request_id_span("cli.bind", rid);

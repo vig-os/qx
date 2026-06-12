@@ -12,8 +12,9 @@ import type {
   LayoutOptionField,
 } from "../core/types";
 import { renderLabelSync, type WasmFormatId } from "../wasm/loader";
+import { resolveFormat, resolveMicro, isDataMatrix, stripText } from "./label-settings";
+import { renderDataMatrixSync } from "../wasm/datamatrix-writer";
 
-const FORMAT: WasmFormatId = "4/4";
 const DEFAULT_CABLE_OD_MM = 6;
 
 function cableOd(opts: LayoutOptions): number {
@@ -33,9 +34,19 @@ export const flagLayout: Layout = {
     return { widthMm: 4 * s + wrap, heightMm: s };
   },
   renderSvg(canonical: string, opts: LayoutOptions): string {
-    return renderLabelSync(canonical, "flag", opts.size, FORMAT, {
+    if (isDataMatrix(opts)) {
+      // Flag layout with DataMatrix falls back to horizontal — the
+      // cable-wrap mirroring is QR-specific geometry.
+      return renderDataMatrixSync(canonical, opts.size, opts.extra?.showText !== false);
+    }
+    const fmt: WasmFormatId = resolveFormat(opts);
+    const svg = renderLabelSync(canonical, "flag", opts.size, fmt, {
+      micro: resolveMicro(opts),
       cableOdMm: cableOd(opts),
+      noMarkers: Boolean(opts.extra?.noMarkers),
+      alignmentLine: Boolean(opts.extra?.alignmentLine),
     });
+    return opts.extra?.showText === false ? stripText(svg) : svg;
   },
   optionFields(): LayoutOptionField[] {
     return [
@@ -47,6 +58,18 @@ export const flagLayout: Layout = {
         min: 1,
         max: 50,
         step: 0.5,
+      },
+      {
+        key: "noMarkers",
+        label: "No markers",
+        type: "checkbox",
+        default: 0,
+      },
+      {
+        key: "alignmentLine",
+        label: "Alignment line",
+        type: "checkbox",
+        default: 0,
       },
     ];
   },

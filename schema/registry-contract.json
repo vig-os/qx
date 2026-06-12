@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "id": {
     "alphabet": "23456789ABCDEFGHJKMNPQRSTUVWXYZ",
     "canonicalLength": 14,
@@ -7,16 +8,164 @@
   },
   "statuses": ["unbound", "bound", "void"],
   "fields": [
-    { "key": "id", "label": "ID", "editable": false },
-    { "key": "status", "label": "Status", "editable": false },
-    { "key": "minted_at", "label": "Minted at", "editable": false },
-    { "key": "batch", "label": "Batch", "editable": false },
-    { "key": "bound_at", "label": "Bound at", "editable": false, "meaningfulFrom": "bound" },
-    { "key": "type", "label": "Type", "editable": true, "meaningfulFrom": "bound" },
-    { "key": "description", "label": "Description", "editable": true, "meaningfulFrom": "bound" },
-    { "key": "vendor", "label": "Vendor", "editable": true, "meaningfulFrom": "bound" },
-    { "key": "part_number", "label": "Part number", "editable": true, "meaningfulFrom": "bound" },
-    { "key": "location", "label": "Location", "editable": true, "meaningfulFrom": "bound" },
-    { "key": "notes", "label": "Notes", "editable": true }
-  ]
+    {
+      "key": "id",
+      "label": "ID",
+      "type": "string",
+      "editable": false,
+      "validation": {
+        "required": true,
+        "pattern": "^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{14}$"
+      }
+    },
+    {
+      "key": "status",
+      "label": "Status",
+      "type": "dropdown",
+      "editable": false,
+      "options": ["unbound", "bound", "void"],
+      "on_unknown": "block",
+      "validation": { "required": true }
+    },
+    {
+      "key": "minted_at",
+      "label": "Minted at",
+      "type": "date",
+      "editable": false
+    },
+    {
+      "key": "batch",
+      "label": "Batch",
+      "type": "string",
+      "editable": false
+    },
+    {
+      "key": "bound_at",
+      "label": "Bound at",
+      "type": "date",
+      "editable": false,
+      "meaningfulFrom": "bound"
+    },
+    {
+      "key": "type",
+      "label": "Type",
+      "type": "string",
+      "editable": true,
+      "meaningfulFrom": "bound",
+      "validation": { "maxLength": 100 }
+    },
+    {
+      "key": "description",
+      "label": "Description",
+      "type": "string",
+      "editable": true,
+      "meaningfulFrom": "bound",
+      "validation": { "maxLength": 500 }
+    },
+    {
+      "key": "vendor",
+      "label": "Vendor",
+      "type": "dropdown",
+      "editable": true,
+      "meaningfulFrom": "bound",
+      "options": ["TC Direct", "Adafruit", "Mouser", "Digi-Key", "RS Components", "Farnell"],
+      "on_unknown": "warn",
+      "validation": { "maxLength": 200 }
+    },
+    {
+      "key": "part_number",
+      "label": "Part number",
+      "type": "string",
+      "editable": true,
+      "meaningfulFrom": "bound",
+      "validation": { "maxLength": 100 }
+    },
+    {
+      "key": "location",
+      "label": "Location",
+      "type": "string",
+      "editable": true,
+      "meaningfulFrom": "bound",
+      "validation": { "maxLength": 200 }
+    },
+    {
+      "key": "notes",
+      "label": "Notes",
+      "type": "string",
+      "editable": true,
+      "validation": { "maxLength": 1000 }
+    },
+    {
+      "key": "minted_by",
+      "label": "Minted by",
+      "type": "string",
+      "editable": false
+    },
+    {
+      "key": "bound_by",
+      "label": "Bound by",
+      "type": "string",
+      "editable": false,
+      "meaningfulFrom": "bound"
+    },
+    {
+      "key": "last_edited_at",
+      "label": "Last edited at",
+      "type": "date",
+      "editable": false
+    },
+    {
+      "key": "last_edited_by",
+      "label": "Last edited by",
+      "type": "string",
+      "editable": false
+    },
+    {
+      "key": "components",
+      "label": "Components",
+      "type": "string",
+      "editable": true,
+      "meaningfulFrom": "bound",
+      "validation": {
+        "maxLength": 1000,
+        "pattern": "^$|^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{14}(;[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{14})*$"
+      }
+    },
+    {
+      "key": "manufacturer_id",
+      "label": "Manufacturer ID",
+      "type": "string",
+      "editable": true,
+      "meaningfulFrom": "bound",
+      "validation": { "maxLength": 200 }
+    },
+    {
+      "key": "metadata",
+      "label": "Metadata",
+      "type": "json",
+      "editable": true,
+      "meaningfulFrom": "bound",
+      "validation": { "maxLength": 4000 }
+    }
+  ],
+  "typeFields": {
+    "PT100": [
+      { "key": "resistance_0c", "label": "R₀", "type": "number", "unit": "Ω" },
+      { "key": "accuracy_class", "label": "Class", "type": "dropdown", "options": ["A", "B", "1/3B", "1/10B"] },
+      { "key": "wiring", "label": "Wiring", "type": "dropdown", "options": ["2-wire", "3-wire", "4-wire"] }
+    ],
+    "Fitting": [
+      { "key": "thread_size", "label": "Thread", "type": "string" },
+      { "key": "material", "label": "Material", "type": "dropdown", "options": ["SS316", "SS304", "Brass", "PTFE"] }
+    ],
+    "Cable": [
+      { "key": "wire_gauge", "label": "Gauge (AWG)", "type": "number" },
+      { "key": "length_m", "label": "Length", "type": "number", "unit": "m" },
+      { "key": "shielded", "label": "Shielded", "type": "yes-no" }
+    ],
+    "Module": [
+      { "key": "firmware", "label": "Firmware", "type": "string" },
+      { "key": "channels", "label": "Channels", "type": "number" }
+    ]
+  }
 }

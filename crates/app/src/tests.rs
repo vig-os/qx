@@ -131,6 +131,13 @@ fn part(id: &str, status: PartStatus, type_: Option<&str>, vendor: Option<&str>)
         part_number: None,
         location: None,
         notes: None,
+        minted_by: None,
+        bound_by: None,
+        last_edited_at: None,
+        last_edited_by: None,
+        components: Vec::new(),
+        manufacturer_id: None,
+        metadata: BTreeMap::new(),
         signatures: Vec::new(),
         chain_hash: None,
     }

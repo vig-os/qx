@@ -897,7 +897,11 @@ fn print_mm(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
         "vert" => Layout::Vert,
         "horz" => Layout::Horz,
         "flag" => match options.cable_od_mm {
-            Some(od) => Layout::Flag { cable_od_mm: od },
+            Some(od) => Layout::Flag {
+                cable_od_mm: od,
+                no_markers: false,
+                alignment_line: false,
+            },
             None => {
                 return Response::error(
                     ErrorKind::Validation,
@@ -1019,6 +1023,8 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
         "horz" => Layout::Horz,
         "flag" => Layout::Flag {
             cable_od_mm: options.cable_od_mm.unwrap_or(0.0),
+            no_markers: false,
+            alignment_line: false,
         },
         other => {
             return Response::error(

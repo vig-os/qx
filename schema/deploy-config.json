@@ -1,0 +1,54 @@
+{
+  "$schema": "./deploy-config.schema.json",
+
+  "repo": {
+    "dataRepo": "exo-pet/exopet-registry-sandbox",
+    "codeRepo": "MorePET/part-registry",
+    "defaultBranch": "main"
+  },
+
+  "labels": {
+    "allowedCodeTypes": ["standard_qr", "micro_qr", "data_matrix"],
+    "defaultCodeType": "standard_qr",
+    "defaultEcLevel": "M",
+    "defaultSizeMm": 11,
+    "allowedLayouts": ["horz", "vert", "flag"],
+    "defaultLayout": "horz",
+    "allowedTextFormats": ["auto", "4/4", "4/4/4", "5/5/4"],
+    "defaultTextFormat": "auto",
+    "allowedPayloadFormats": ["id_only", "prefixed_id", "id_type", "url"],
+    "defaultPayloadFormat": "id_only",
+    "printerDpi": 300
+  },
+
+  "scanner": {
+    "allowedFormats": ["qr_code", "micro_qr_code", "data_matrix"]
+  },
+
+  "print": {
+    "defaultOutputMode": "dk-continuous",
+    "defaultCopies": 1
+  },
+
+  "features": {
+    "enableScanner": true,
+    "enableMintTab": true,
+    "enablePrintTab": true,
+    "enableBindTab": true,
+    "enablePrSubmission": true
+  },
+
+  "presentation": {
+    "appTitle": "part-registry",
+    "defaultTab": "lookup",
+    "defaultTheme": "system"
+  },
+
+  "auth": {
+    "mode": "pat"
+  },
+
+  "validation": {
+    "strictMode": false
+  }
+}

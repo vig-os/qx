@@ -16,7 +16,7 @@
 # Source: ADR-028, SOUP audit report 2026-05-11 (agent a909e6ce).
 
 schema_version = 1
-last_full_review = "2026-05-11"
+last_full_review = "2026-05-15"
 
 # -----------------------------------------------------------------------------
 # Class 1 — battle-tested foundational
@@ -27,7 +27,7 @@ name = "serde"
 version = "=1.0"               # major-pinned; minor/patch upgrade allowed
 class = 1
 role = "(de)serialization derive macros and runtime"
-used_by = ["domain", "config", "storage", "storage_csv_git", "transport", "validators", "observability", "wasm"]
+used_by = ["domain", "config", "storage", "storage_csv_git", "transport", "validators", "observability", "wasm", "identity_github_oauth", "transport_github_pr", "cli"]
 maintenance_url = "https://github.com/serde-rs/serde"
 last_release_check = "2026-05-11"
 upstream_status = "active"
@@ -39,7 +39,7 @@ name = "serde_json"
 version = "=1.0"
 class = 1
 role = "JSON serialization for AuditEntry signature columns + WASM glue"
-used_by = ["domain", "port_tests", "wasm"]
+used_by = ["domain", "port_tests", "wasm", "storage_csv_git", "identity_github_oauth", "transport_github_pr", "observability", "cli"]
 maintenance_url = "https://github.com/serde-rs/json"
 last_release_check = "2026-05-11"
 upstream_status = "active"
@@ -83,7 +83,7 @@ name = "tempfile"
 version = "=3"
 class = 1
 role = "test-only tempdir helper"
-used_by = ["storage_csv_git", "identity_git_config", "identity_github_oauth", "signing_git_commit"]
+used_by = ["storage_csv_git", "identity_git_config", "identity_github_oauth", "signing_git_commit", "observability", "cli"]
 maintenance_url = "https://github.com/Stebalien/tempfile"
 last_release_check = "2026-05-11"
 upstream_status = "active"
@@ -103,11 +103,59 @@ revalidation_trigger = "major-bump"
 notes = "Dev-dependency only; never in production path"
 
 [[crate]]
+name = "base64"
+version = "=0.22"
+class = 1
+role = "base64 encode/decode for GitHub Contents API payloads"
+used_by = ["transport_github_pr"]
+maintenance_url = "https://github.com/marshallpierce/rust-base64"
+last_release_check = "2026-05-15"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+notes = "Encode file contents for GitHub PUT Contents; decode existing file contents from GET. Failures are loud (immediate deserialization errors)."
+
+[[crate]]
+name = "getrandom"
+version = "=0.2"
+class = 1
+role = "platform entropy source re-exported by uuid; declared explicitly for crate-local discipline"
+used_by = ["cli"]
+maintenance_url = "https://github.com/rust-random/getrandom"
+last_release_check = "2026-05-15"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+notes = "Re-uses the same getrandom build already pulled via uuid. Named in cli/Cargo.toml so the CSPRNG dependency is explicit, not hidden behind a transitive."
+
+[[crate]]
+name = "image"
+version = "=0.25"
+class = 1
+role = "PNG image creation for QR label rendering in tests"
+used_by = ["codec", "cli"]
+maintenance_url = "https://github.com/image-rs/image"
+last_release_check = "2026-05-15"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+notes = "Dev-dependency only; used in codec SVG→PNG roundtrip tests and cli label-parity tests. Never in production path. Features restricted to png."
+
+[[crate]]
+name = "roxmltree"
+version = "=0.20"
+class = 1
+role = "XML/SVG DOM parsing for label SVG structure assertions in tests"
+used_by = ["codec"]
+maintenance_url = "https://github.com/RazrFalcon/roxmltree"
+last_release_check = "2026-05-15"
+upstream_status = "active"
+revalidation_trigger = "major-bump"
+notes = "Dev-dependency only; parses SVG output in codec tests to assert structural correctness. Never in production path."
+
+[[crate]]
 name = "dirs"
 version = "=5"
 class = 1
-role = "platform config-directory lookup for token cache"
-used_by = ["identity_github_oauth"]
+role = "platform config-directory lookup for token cache + config paths"
+used_by = ["identity_github_oauth", "config"]
 maintenance_url = "https://github.com/dirs-dev/dirs-rs"
 last_release_check = "2026-05-11"
 upstream_status = "active"
@@ -161,7 +209,7 @@ name = "time"
 version = "=0.3"
 class = 2
 role = "Timestamp + duration arithmetic; CSV-stable formatting"
-used_by = ["domain", "config", "storage_csv_git", "validators"]
+used_by = ["domain", "config", "storage_csv_git", "validators", "identity_github_oauth", "signing_git_commit", "transport_github_pr", "observability", "cli"]
 maintenance_url = "https://github.com/time-rs/time"
 last_release_check = "2026-05-11"
 upstream_status = "active"
@@ -174,7 +222,7 @@ name = "uuid"
 version = "=1"
 class = 2
 role = "RequestId (UUIDv7) for ADR-022 cross-surface traceability"
-used_by = ["domain"]
+used_by = ["domain", "storage_csv_git", "observability", "cli"]
 maintenance_url = "https://github.com/uuid-rs/uuid"
 last_release_check = "2026-05-11"
 upstream_status = "active"
@@ -212,7 +260,7 @@ name = "csv"
 version = "=1"
 role = "CSV reader/writer for registry.csv + print_log.csv + audit_log.csv"
 class = 2
-used_by = ["storage_csv_git", "observability"]
+used_by = ["storage_csv_git"]
 maintenance_url = "https://github.com/BurntSushi/rust-csv"
 last_release_check = "2026-05-11"
 upstream_status = "active"

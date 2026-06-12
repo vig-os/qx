@@ -147,7 +147,12 @@ export function renderLabelSync(
   layout: WasmLayoutId,
   sizeMm: number,
   format: WasmFormatId,
-  options: { micro?: boolean; cableOdMm?: number } = {},
+  options: {
+    micro?: boolean;
+    cableOdMm?: number;
+    noMarkers?: boolean;
+    alignmentLine?: boolean;
+  } = {},
 ): string {
   return requireReady().renderLabel(
     canonical,
@@ -156,6 +161,8 @@ export function renderLabelSync(
     format,
     options.micro ?? false,
     options.cableOdMm ?? 0,
+    options.noMarkers ?? false,
+    options.alignmentLine ?? false,
   );
 }
 
@@ -167,6 +174,15 @@ export function validateDiffSync(input: unknown): ValidateResult {
 /** Synchronous `classifyDiff`. Requires `await loadWasm()` to have completed. */
 export function classifyDiffSync(diff: unknown): Action[] {
   return requireReady().classifyDiff(JSON.stringify(diff)) as Action[];
+}
+
+/** Synchronous `policyDecision`. Requires `await loadWasm()` to have completed. */
+export function policyDecisionSync(input: {
+  diff: unknown;
+  operator: unknown;
+  policy?: unknown;
+}): AuthDecision {
+  return requireReady().policyDecision(JSON.stringify(input)) as AuthDecision;
 }
 
 /**
@@ -184,7 +200,12 @@ export async function renderLabel(
   layout: WasmLayoutId,
   sizeMm: number,
   format: WasmFormatId,
-  options: { micro?: boolean; cableOdMm?: number } = {},
+  options: {
+    micro?: boolean;
+    cableOdMm?: number;
+    noMarkers?: boolean;
+    alignmentLine?: boolean;
+  } = {},
 ): Promise<string> {
   const wasm = await loadWasm();
   return wasm.renderLabel(
@@ -194,6 +215,8 @@ export async function renderLabel(
     format,
     options.micro ?? false,
     options.cableOdMm ?? 0,
+    options.noMarkers ?? false,
+    options.alignmentLine ?? false,
   );
 }
 

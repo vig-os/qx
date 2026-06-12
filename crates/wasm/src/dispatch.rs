@@ -194,6 +194,13 @@ fn parse_csv(text: &str) -> Result<Vec<Part>, String> {
             part_number: opt("part_number"),
             location: opt("location"),
             notes: opt("notes"),
+            minted_by: opt("minted_by"),
+            bound_by: opt("bound_by"),
+            last_edited_at: opt("last_edited_at"),
+            last_edited_by: opt("last_edited_by"),
+            components: Vec::new(),
+            manufacturer_id: opt("manufacturer_id"),
+            metadata: std::collections::BTreeMap::new(),
             signatures: Vec::new(),
             chain_hash: None,
         });

@@ -1,0 +1,40 @@
+[
+  { "field": "id", "value": "23456789ABCDEF", "expect": "ok" },
+  { "field": "id", "value": "", "expect": "error", "rule": "required" },
+  { "field": "id", "value": "invalid!", "expect": "error", "rule": "pattern" },
+  { "field": "id", "value": "23456789ABCDE", "expect": "error", "rule": "pattern" },
+  { "field": "id", "value": "23456789ABCDEF0", "expect": "error", "rule": "pattern" },
+  { "field": "id", "value": "23456789abcdef", "expect": "error", "rule": "pattern" },
+  { "field": "id", "value": "234567890ABCDE", "expect": "error", "rule": "pattern" },
+  { "field": "id", "value": "2345678IABCDEF", "expect": "error", "rule": "pattern" },
+
+  { "field": "status", "value": "bound", "expect": "ok" },
+  { "field": "status", "value": "unbound", "expect": "ok" },
+  { "field": "status", "value": "void", "expect": "ok" },
+  { "field": "status", "value": "", "expect": "error", "rule": "required" },
+  { "field": "status", "value": "invalid", "expect": "error", "rule": "options" },
+  { "field": "status", "value": "active", "expect": "error", "rule": "options" },
+
+  { "field": "vendor", "value": "TC Direct", "expect": "ok" },
+  { "field": "vendor", "value": "Adafruit", "expect": "ok" },
+  { "field": "vendor", "value": "Mouser", "expect": "ok" },
+  { "field": "vendor", "value": "Unknown Corp", "expect": "warning", "rule": "options" },
+  { "field": "vendor", "value": "My Custom Vendor", "expect": "warning", "rule": "options" },
+  { "field": "vendor", "value": "", "expect": "ok" },
+
+  { "field": "type", "value": "PT100", "expect": "ok" },
+  { "field": "type", "value": "", "expect": "ok" },
+  { "field": "type", "value": "A short type", "expect": "ok" },
+
+  { "field": "description", "value": "Supply temperature sensor", "expect": "ok" },
+  { "field": "description", "value": "", "expect": "ok" },
+
+  { "field": "notes", "value": "Some notes about this part", "expect": "ok" },
+  { "field": "notes", "value": "", "expect": "ok" },
+
+  { "field": "part_number", "value": "402-141", "expect": "ok" },
+  { "field": "part_number", "value": "", "expect": "ok" },
+
+  { "field": "location", "value": "cooling loop / supply-T", "expect": "ok" },
+  { "field": "location", "value": "", "expect": "ok" }
+]

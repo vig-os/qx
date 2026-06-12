@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="part-registry maskable icon">
+  <!-- Maskable variant: same glyph, but the safe-zone (centre 80%)
+       is the only region guaranteed to be visible after platform-
+       specific corner masking (round / squircle / rounded-rect). The
+       rectangle fills the full 512x512 so a platform mask never
+       reveals a transparent edge. Per ADR-013 PWA mandate. -->
+  <rect width="512" height="512" fill="#1f6feb"/>
+  <g fill="#ffffff" transform="translate(76 76) scale(0.703125)">
+    <rect x="64"  y="64"  width="128" height="128" rx="16"/>
+    <rect x="96"  y="96"  width="64"  height="64"  rx="8" fill="#1f6feb"/>
+    <rect x="112" y="112" width="32"  height="32"  fill="#ffffff"/>
+    <rect x="320" y="64"  width="128" height="128" rx="16"/>
+    <rect x="352" y="96"  width="64"  height="64"  rx="8" fill="#1f6feb"/>
+    <rect x="368" y="112" width="32"  height="32"  fill="#ffffff"/>
+    <rect x="64"  y="320" width="128" height="128" rx="16"/>
+    <rect x="96"  y="352" width="64"  height="64"  rx="8" fill="#1f6feb"/>
+    <rect x="112" y="368" width="32"  height="32"  fill="#ffffff"/>
+    <rect x="240" y="64"  width="32" height="32"/>
+    <rect x="240" y="128" width="32" height="32"/>
+    <rect x="240" y="192" width="32" height="32"/>
+    <rect x="64"  y="240" width="32" height="32"/>
+    <rect x="128" y="240" width="32" height="32"/>
+    <rect x="192" y="240" width="32" height="32"/>
+    <rect x="256" y="240" width="32" height="32"/>
+    <rect x="320" y="240" width="32" height="32"/>
+    <rect x="384" y="240" width="32" height="32"/>
+    <rect x="448" y="240" width="32" height="32"/>
+    <rect x="240" y="320" width="32" height="32"/>
+    <rect x="304" y="320" width="32" height="32"/>
+    <rect x="368" y="320" width="32" height="32"/>
+    <rect x="432" y="320" width="32" height="32"/>
+    <rect x="240" y="384" width="32" height="32"/>
+    <rect x="368" y="384" width="32" height="32"/>
+    <rect x="240" y="448" width="32" height="32"/>
+    <rect x="304" y="448" width="32" height="32"/>
+    <rect x="432" y="448" width="32" height="32"/>
+  </g>
+</svg>

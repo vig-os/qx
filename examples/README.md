@@ -6,7 +6,14 @@ Reference renderings at common sizes, generated with the legacy Python
 Both SVG (engraver/printer-ready, mm-native) and PNG (quick inspection)
 are included.
 
-See [`gallery.png`](gallery.png) for a single-image overview.
+Regenerate after renderer changes:
+
+```sh
+tools/regen-examples.sh --update
+```
+
+CI runs the check-mode regression test (`examples_regression`) to catch
+silent drift.
 
 The IDs in these examples were minted purely for the gallery and are
 **not** in `registry.csv`.

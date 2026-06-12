@@ -9,13 +9,37 @@ publish.workspace = true
 [lib]
 path = "src/lib.rs"
 
+[[bin]]
+name = "coverage"
+path = "src/bin/coverage.rs"
+
+[[bin]]
+name = "gen-scanner-fixtures"
+path = "src/bin/gen_scanner_fixtures.rs"
+
 # ADR-027 §Consequences: this crate depends only on `domain` and the
 # trait-defining crates. Adapter crates depend on it as a
 # dev-dependency, never the other way around (would be a cycle).
 [dependencies]
 part-registry-domain = { path = "../domain" }
+part-registry-codec = { path = "../codec" }
 part-registry-storage = { path = "../storage" }
 part-registry-identity = { path = "../identity" }
 part-registry-transport = { path = "../transport" }
 part-registry-signing = { path = "../signing" }
 serde_json = { workspace = true }
+toml = "0.8"
+serde = { workspace = true }
+glob = "0.3"
+
+[dev-dependencies]
+# SSoT enforcement (ssot_contract.rs)
+serde = { workspace = true, features = ["derive"] }
+part-registry-validators = { path = "../validators" }
+# H1: collision + uniformity harness
+rand = "0.8"
+# H2: QR roundtrip + golden-hash harness
+part-registry-codec = { path = "../codec", features = ["decoder"] }
+sha2 = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png"] }
+hex = "0.4"

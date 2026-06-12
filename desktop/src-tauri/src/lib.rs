@@ -83,6 +83,7 @@ fn build_context() -> Result<AppContext, String> {
         stdout_json: cfg.observability.stdout_json,
         stderr_human: cfg.observability.stderr_human,
         audit_csv: cfg.observability.audit_csv,
+        audit_log_path: cfg.observability.audit_log_path.clone(),
     };
     let _ = init_observability(&obs_cfg, wiring.repo.clone());
     let registry_name = part_registry_config::parse_owner_repo(&cfg.repo.data_repo_url)

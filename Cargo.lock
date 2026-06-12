@@ -3316,6 +3316,7 @@ dependencies = [
 name = "part-registry-observability"
 version = "0.1.0"
 dependencies = [
+ "part-registry-config",
  "part-registry-domain",
  "part-registry-storage",
  "part-registry-storage-csv-git",
@@ -3333,12 +3334,21 @@ dependencies = [
 name = "part-registry-port-tests"
 version = "0.1.0"
 dependencies = [
+ "glob",
+ "hex",
+ "image",
+ "part-registry-codec",
  "part-registry-domain",
  "part-registry-identity",
  "part-registry-signing",
  "part-registry-storage",
  "part-registry-transport",
+ "part-registry-validators",
+ "rand 0.8.6",
+ "serde",
  "serde_json",
+ "sha2",
+ "toml 0.8.23",
 ]
 
 [[package]]
@@ -3427,6 +3437,18 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "time",
+ "uuid",
+]
+
+[[package]]
+name = "part-registry-transport-table"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "part-registry-domain",
+ "part-registry-port-tests",
+ "part-registry-transport",
+ "part-registry-transport-github-pr",
  "uuid",
 ]
 

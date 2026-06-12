@@ -6,7 +6,9 @@
 
 import type { OutputMode } from "../core/types";
 import { dkContinuousMode } from "./dk-continuous";
+import { dkStripMode } from "./dk-strip";
 import { dk1201DiecutMode } from "./dk-1201-diecut";
+import { a4SheetMode } from "./a4-sheet";
 
 const MODES: Record<string, OutputMode> = {};
 
@@ -22,6 +24,8 @@ export function allOutputModes(): OutputMode[] {
   return Object.values(MODES);
 }
 
-// Bootstrap.
+// Bootstrap. Order here = order in the Print tab's mode dropdown.
 registerOutputMode(dkContinuousMode);
+registerOutputMode(dkStripMode);
 registerOutputMode(dk1201DiecutMode);
+registerOutputMode(a4SheetMode);

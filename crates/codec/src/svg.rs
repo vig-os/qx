@@ -29,6 +29,16 @@ pub enum Layout {
         /// Cable outer diameter in mm. The wrap-zone width is
         /// `π · cable_od · 1.1` (`label.py:231`).
         cable_od_mm: f64,
+        /// When true, suppress the dashed wrap-zone outline and the
+        /// "wrap dN" caption text. Cleaner for laser engraving where
+        /// extra ink/etch is waste. Default `false`.
+        #[serde(default)]
+        no_markers: bool,
+        /// When true, draw a thin solid vertical alignment line at the
+        /// gutter center as a registration mark for cable-wrap
+        /// positioning. Default `false`.
+        #[serde(default)]
+        alignment_line: bool,
     },
 }
 
@@ -131,12 +141,17 @@ pub fn render_horz(canonical: &str, size_mm: f64, fmt: TextFormat, micro: bool) 
 
 /// Render a cable-flag label: `horz` mirrored around a cable-wrap zone.
 /// Mirrors `label.py:render_flag` (lines 229-251).
+///
+/// - `no_markers`: suppress the dashed wrap-zone outline + caption text.
+/// - `alignment_line`: draw a thin solid vertical line at gutter center.
 pub fn render_flag(
     canonical: &str,
     size_mm: f64,
     cable_od_mm: f64,
     fmt: TextFormat,
     micro: bool,
+    no_markers: bool,
+    alignment_line: bool,
 ) -> String {
     let matrix = encode(canonical, micro).expect("QR encode of canonical ID never fails");
     let horz_w = 2.0 * size_mm;
@@ -152,17 +167,33 @@ pub fn render_flag(
     let right_qr = qr_block(&matrix, rx + size_mm, 0.0, size_mm);
     let right = format!("{right_text}\n{right_qr}");
 
-    let wrap = format!(
-        "<rect x=\"{horz_w:.3}\" y=\"0\" width=\"{wrap_w:.3}\" height=\"{size_mm:.3}\" \
+    let mut parts = vec![left];
+
+    if !no_markers {
+        let wrap = format!(
+            "<rect x=\"{horz_w:.3}\" y=\"0\" width=\"{wrap_w:.3}\" height=\"{size_mm:.3}\" \
 fill=\"none\" stroke=\"#888\" stroke-width=\"0.1\" stroke-dasharray=\"0.6,0.6\"/>\n\
 <text x=\"{wx:.3}\" y=\"{wy:.3}\" \
 font-family=\"monospace\" font-size=\"1.5\" \
 text-anchor=\"middle\" fill=\"#888\">wrap d{cable_od_mm}</text>",
-        wx = horz_w + wrap_w / 2.0,
-        wy = size_mm / 2.0 + 0.5,
-    );
+            wx = horz_w + wrap_w / 2.0,
+            wy = size_mm / 2.0 + 0.5,
+        );
+        parts.push(wrap);
+    }
 
-    let body = [left.as_str(), wrap.as_str(), right.as_str()].join("\n");
+    if alignment_line {
+        let cx = horz_w + wrap_w / 2.0;
+        let line = format!(
+            "<line x1=\"{cx:.3}\" y1=\"0\" x2=\"{cx:.3}\" y2=\"{size_mm:.3}\" \
+stroke=\"#000\" stroke-width=\"0.15\"/>"
+        );
+        parts.push(line);
+    }
+
+    parts.push(right);
+
+    let body = parts.join("\n");
     svg_wrap(total_w, size_mm, &body)
 }
 
@@ -177,7 +208,19 @@ pub fn render(
     match layout {
         Layout::Vert => render_vert(canonical, size_mm, fmt, micro),
         Layout::Horz => render_horz(canonical, size_mm, fmt, micro),
-        Layout::Flag { cable_od_mm } => render_flag(canonical, size_mm, cable_od_mm, fmt, micro),
+        Layout::Flag {
+            cable_od_mm,
+            no_markers,
+            alignment_line,
+        } => render_flag(
+            canonical,
+            size_mm,
+            cable_od_mm,
+            fmt,
+            micro,
+            no_markers,
+            alignment_line,
+        ),
     }
 }
 
@@ -265,7 +308,11 @@ mod tests {
         [
             Layout::Vert,
             Layout::Horz,
-            Layout::Flag { cable_od_mm: 6.0 },
+            Layout::Flag {
+                cable_od_mm: 6.0,
+                no_markers: false,
+                alignment_line: false,
+            },
         ]
     }
 
@@ -425,6 +472,8 @@ mod tests {
             FIXED_ID,
             Layout::Flag {
                 cable_od_mm: cable_od,
+                no_markers: false,
+                alignment_line: false,
             },
             s,
             TextFormat::FourFourFour,
@@ -437,5 +486,131 @@ mod tests {
             "flag width"
         );
         assert!(f.contains(&format!("height=\"{:.3}mm\"", s)), "flag height");
+    }
+
+    // ---------- 7. Flag --no-markers ----------
+
+    #[test]
+    fn flag_no_markers_omits_wrap_rect_and_caption() {
+        let svg = render_flag(
+            FIXED_ID,
+            11.0,
+            6.0,
+            TextFormat::FourFour,
+            false,
+            true,
+            false,
+        );
+        let doc = roxmltree::Document::parse(&svg).expect("SVG well-formed");
+
+        // No dashed stroke rect (the wrap-zone outline).
+        assert!(
+            !svg.contains("stroke-dasharray"),
+            "no_markers should suppress the dashed wrap-zone rect"
+        );
+        // No "wrap d6" caption.
+        let gray_text: Vec<_> = doc
+            .descendants()
+            .filter(|n| n.tag_name().name() == "text" && n.attribute("fill") == Some("#888"))
+            .collect();
+        assert!(
+            gray_text.is_empty(),
+            "no_markers should suppress the wrap caption text, found {gray_text:?}"
+        );
+    }
+
+    #[test]
+    fn flag_default_markers_present() {
+        let svg = render_flag(
+            FIXED_ID,
+            11.0,
+            6.0,
+            TextFormat::FourFour,
+            false,
+            false,
+            false,
+        );
+        assert!(
+            svg.contains("stroke-dasharray"),
+            "default flag should include the dashed wrap-zone rect"
+        );
+        assert!(
+            svg.contains("wrap d6"),
+            "default flag should include the wrap caption"
+        );
+    }
+
+    // ---------- 8. Flag --alignment-line ----------
+
+    #[test]
+    fn flag_alignment_line_adds_center_line() {
+        let svg = render_flag(
+            FIXED_ID,
+            11.0,
+            6.0,
+            TextFormat::FourFour,
+            false,
+            false,
+            true,
+        );
+        assert!(
+            svg.contains("<line"),
+            "alignment_line should add a <line> element"
+        );
+        // The line should be at the gutter center.
+        let horz_w = 2.0 * 11.0;
+        let wrap_w = std::f64::consts::PI * 6.0 * 1.1;
+        let cx = horz_w + wrap_w / 2.0;
+        assert!(
+            svg.contains(&format!("x1=\"{cx:.3}\"")),
+            "alignment line should be at gutter center x={cx:.3}"
+        );
+    }
+
+    #[test]
+    fn flag_no_alignment_line_by_default() {
+        let svg = render_flag(
+            FIXED_ID,
+            11.0,
+            6.0,
+            TextFormat::FourFour,
+            false,
+            false,
+            false,
+        );
+        assert!(
+            !svg.contains("<line"),
+            "default flag should not include an alignment line"
+        );
+    }
+
+    // ---------- 9. Flag options are orthogonal ----------
+
+    #[test]
+    fn flag_no_markers_with_alignment_line() {
+        let svg = render_flag(FIXED_ID, 11.0, 6.0, TextFormat::FourFour, false, true, true);
+        assert!(
+            !svg.contains("stroke-dasharray"),
+            "no_markers should suppress the dashed rect even with alignment_line"
+        );
+        assert!(
+            svg.contains("<line"),
+            "alignment_line should be present even with no_markers"
+        );
+        // SVG should still be well-formed.
+        roxmltree::Document::parse(&svg).expect("SVG well-formed with both options");
+    }
+
+    #[test]
+    fn flag_render_dispatch_respects_no_markers_and_alignment_line() {
+        let layout = Layout::Flag {
+            cable_od_mm: 6.0,
+            no_markers: true,
+            alignment_line: true,
+        };
+        let svg = render(FIXED_ID, layout, 11.0, TextFormat::FourFour, false);
+        assert!(!svg.contains("stroke-dasharray"));
+        assert!(svg.contains("<line"));
+        roxmltree::Document::parse(&svg).expect("SVG well-formed via render()");
     }
 }

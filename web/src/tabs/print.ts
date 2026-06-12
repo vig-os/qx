@@ -27,8 +27,17 @@ import type {
 import { allLayouts, getLayout } from "../layouts";
 import { allOutputModes, getOutputMode } from "../output";
 import {
+  loadLabelSettings,
+  saveLabelSettings,
+  type CodeType,
+  type FormatSetting,
+} from "../layouts/label-settings";
+import { getAllowedPrintCodeTypes, getConfig, toMm } from "../config/deploy-config";
+import { getAllPayloadFormats, getPayloadFormat } from "../labels/payload-formats";
+import {
   events,
   EVENT_REPRINT_REQUEST,
+  EVENT_PLAN_CHANGED,
   type ReprintRequest,
 } from "../core/events";
 import {
@@ -41,8 +50,12 @@ import {
 } from "../ui/dom";
 import { icon } from "../ui/icons";
 import { openScanner } from "../ui/scanner";
+import { isWasmReady } from "../wasm/loader";
+import { renderDataMatrixAsync, clearCache as clearDmCache } from "../wasm/datamatrix-writer";
+import { loadSession } from "../registry/session";
+import { uncommittedPrintIds } from "../registry/session-registry";
 
-interface JobItem {
+export interface JobItem {
   id: string;
   layoutId: string;
   size: number;
@@ -55,7 +68,13 @@ const MODE_KEY = "part-registry.print-output-mode";
 const MODE_OPTS_KEY = "part-registry.print-output-mode-opts";
 const DEFAULT_MODE_ID = "dk-continuous";
 
-function loadPlan(): JobItem[] {
+/** Brother QL-820NWBc prints at 300 DPI (dots per inch). */
+export const PRINTER_DPI = 300;
+export const MM_PER_INCH = 25.4;
+/** 1 printer pixel = MM_PER_INCH / PRINTER_DPI mm. */
+export const PX_TO_MM = MM_PER_INCH / PRINTER_DPI;
+
+export function loadPlan(): JobItem[] {
   try {
     const raw = localStorage.getItem(PLAN_KEY);
     if (!raw) return [];
@@ -65,8 +84,9 @@ function loadPlan(): JobItem[] {
   }
 }
 
-function savePlan(plan: JobItem[]): void {
+export function savePlan(plan: JobItem[]): void {
   localStorage.setItem(PLAN_KEY, JSON.stringify(plan));
+  events.emit(EVENT_PLAN_CHANGED, { count: plan.length });
 }
 
 function loadModeId(): string {
@@ -123,7 +143,15 @@ export const printTab: Tab = {
   label: "Print",
   mount(container, ctx) {
     container.innerHTML = "";
-    container.append(buildUI(ctx));
+    try {
+      container.append(buildUI(ctx));
+    } catch (e) {
+      // Guard against corrupted plan data crashing the tab render.
+      console.error("Print tab render failed:", e);
+      savePlan([]); // reset corrupted plan
+      container.innerHTML = "";
+      container.append(buildUI(ctx)); // retry with empty plan
+    }
   },
 };
 
@@ -154,11 +182,90 @@ function buildUI(ctx: AppContext): HTMLElement {
     pendingReprint = [];
   }
 
+  // ---- Global label settings (code type, text format, show text) ----
+  let labelSettings = loadLabelSettings();
+
+  /** Merge global label settings into a per-item extras object. */
+  const withLabelSettings = (extras: Record<string, unknown>): Record<string, unknown> => ({
+    ...extras,
+    codeType: labelSettings.codeType,
+    micro: labelSettings.codeType === "micro",
+    format: labelSettings.format === "auto" ? undefined : labelSettings.format,
+    showText: labelSettings.showText,
+  });
+
   const summary = el("div", { class: "muted small" });
   const tableWrap = el("div");
+  const livePreviewArea = el("div", { class: "label-preview label-preview--live" });
   const previewArea = el("div", { class: "label-preview" });
   const modeOptsArea = el("div", { class: "form-row" });
   const planSummaryEl = el("div", { class: "muted small" });
+
+  // Issue #87: debounced live SVG preview of the first plan item.
+  let livePreviewTimer: ReturnType<typeof setTimeout> | undefined;
+  const refreshLivePreview = () => {
+    clearTimeout(livePreviewTimer);
+    livePreviewTimer = setTimeout(() => {
+      requestAnimationFrame(() => {
+        livePreviewArea.innerHTML = "";
+        const plan = loadPlan();
+        if (plan.length === 0) return;
+        const first = plan[0];
+        if (!isWasmReady()) {
+          livePreviewArea.append(
+            el("p", { class: "muted small" }, "Loading preview..."),
+          );
+          return;
+        }
+        try {
+          const layout = getLayout(first.layoutId);
+          if (!layout) return;
+          const extras = withLabelSettings(first.extras);
+          const wrap = el("div", { class: "label-preview__item" });
+
+          // DataMatrix: async render, then update
+          if (extras.codeType === "datamatrix") {
+            wrap.innerHTML = `<p class="muted small">Rendering DataMatrix...</p>`;
+            livePreviewArea.append(wrap);
+            void renderDataMatrixAsync(
+              first.id,
+              first.size,
+              extras.showText !== false,
+            ).then((svg) => {
+              wrap.innerHTML = svg;
+              wrap.append(
+                el("div", { class: "muted small" },
+                  `Live preview: ${fmtId(first.id)} \u00b7 ${first.layoutId} \u00b7 ${first.size}mm \u00b7 DataMatrix`),
+              );
+            }).catch(() => {
+              wrap.innerHTML = "";
+              wrap.append(el("p", { class: "muted small" }, "DataMatrix preview failed."));
+            });
+            return;
+          }
+
+          wrap.innerHTML = layout.renderSvg(first.id, {
+            size: first.size,
+            extra: extras,
+          });
+          // Show payload info
+          const payloadFmt = getPayloadFormat(labelSettings.payloadFormat);
+          const payloadStr = payloadFmt ? payloadFmt.render(first.id) : first.id;
+          wrap.append(
+            el("div", { class: "muted small" },
+              `Live preview: ${fmtId(first.id)} \u00b7 ${first.layoutId} \u00b7 ${first.size}mm`),
+            el("code", { class: "muted small", style: "display:block;font-size:11px;margin-top:2px;" },
+              `Payload: ${payloadStr} (${payloadStr.length} chars)`),
+          );
+          livePreviewArea.append(wrap);
+        } catch {
+          livePreviewArea.append(
+            el("p", { class: "muted small" }, "Preview unavailable."),
+          );
+        }
+      });
+    }, 200);
+  };
 
   // Output mode state.
   let activeModeId = loadModeId();
@@ -244,7 +351,7 @@ function buildUI(ctx: AppContext): HTMLElement {
         const wrap = el("div", { class: "label-preview__item" });
         wrap.innerHTML = layout.renderSvg(item.id, {
           size: item.size,
-          extra: { ...item.extras },
+          extra: withLabelSettings(item.extras),
         });
         wrap.append(
           el(
@@ -278,6 +385,84 @@ function buildUI(ctx: AppContext): HTMLElement {
     refreshPlanSummary();
   });
 
+  // #117: warning when print plan references unsubmitted session IDs
+  const printWarning = el("div", { class: "print-warning" });
+  printWarning.style.display = "none";
+
+  const refreshPrintWarning = () => {
+    printWarning.style.display = "none";
+    printWarning.innerHTML = "";
+    const plan = loadPlan();
+    if (plan.length === 0) return;
+    const planIds = plan.map((p) => p.id);
+    void loadSession().then((session) => {
+      const uncommitted = uncommittedPrintIds(
+        planIds,
+        ctx.registry.all(),
+        session,
+      );
+      if (uncommitted.length > 0) {
+        printWarning.style.display = "";
+        printWarning.textContent =
+          `${uncommitted.length} label${uncommitted.length > 1 ? "s" : ""} reference${uncommitted.length === 1 ? "s" : ""} unsubmitted IDs. Submit your session first.`;
+      }
+    });
+  };
+
+  // ---- Bulk edit toolbar ----
+  const bulkEditBar = el("div", { class: "bulk-edit-bar", style: "display:none;" });
+
+  const buildBulkEditBar = () => {
+    bulkEditBar.innerHTML = "";
+    const plan = loadPlan();
+    if (plan.length < 2) {
+      bulkEditBar.style.display = "none";
+      return;
+    }
+    bulkEditBar.style.display = "";
+
+    const bulkLayoutSel = select([
+      { value: "", label: "— layout —" },
+      ...allLayouts().map((l) => ({ value: l.id, label: l.label })),
+    ]);
+    const bulkSizeIn = numberInput({ value: 0, min: 4, max: 100, step: 0.5 });
+    bulkSizeIn.placeholder = "size";
+    bulkSizeIn.style.width = "70px";
+    const bulkUnitSel = select([
+      { value: "mm", label: "mm" },
+      { value: "pt", label: "pt" },
+      { value: "px", label: "px" },
+    ]);
+    bulkUnitSel.style.width = "55px";
+
+    const applyBtn = button({ class: "secondary small" }, "Apply to all");
+    applyBtn.addEventListener("click", () => {
+      const plan = loadPlan();
+      let changed = false;
+      for (const item of plan) {
+        if (bulkLayoutSel.value) {
+          item.layoutId = bulkLayoutSel.value;
+          changed = true;
+        }
+        const rawSize = parseFloat(bulkSizeIn.value);
+        if (rawSize > 0) {
+          item.size = toMm(rawSize, bulkUnitSel.value as "mm" | "pt" | "px");
+          changed = true;
+        }
+      }
+      if (changed) {
+        savePlan(plan);
+        renderPlan();
+      }
+    });
+
+    bulkEditBar.append(
+      el("span", { class: "muted small" }, "Bulk edit: "),
+      bulkLayoutSel, bulkSizeIn, bulkUnitSel,
+      applyBtn,
+    );
+  };
+
   const renderPlan = () => {
     const plan = loadPlan();
     summary.textContent = planSummary(plan);
@@ -286,13 +471,16 @@ function buildUI(ctx: AppContext): HTMLElement {
       renderPlan();
       refreshPlanSummary();
     }));
+    buildBulkEditBar();
     refreshPlanSummary();
+    refreshLivePreview();
+    refreshPrintWarning();
   };
   renderPlan();
   renderModeOpts();
 
   // Bulk-add from a registry batch.
-  const bulkBtn = button({}, icon("plus"), " Bulk add from batch…");
+  const bulkBtn = button({ class: "secondary" }, icon("plus"), " Bulk add from batch…");
   bulkBtn.addEventListener("click", () => {
     const wrap = el("div", { class: "bulk-add" });
     const batchSel = select([
@@ -305,20 +493,60 @@ function buildUI(ctx: AppContext): HTMLElement {
     layoutSel.value = "horz";
     const tapeSel = makeTapeSelect();
     const sizeIn = numberInput({ value: DEFAULT_SIZE_MM, min: 4, max: 100, step: 0.5 });
+    const bulkUnitSel = select([
+      { value: "mm", label: "mm" },
+      { value: "px", label: "px" },
+    ]);
+    bulkUnitSel.value = "mm";
+    const bulkSizeHint = el("span", { class: "muted small size-hint" });
+    const updateBulkSizeHint = () => {
+      if (bulkUnitSel.value === "px") {
+        const px = parseFloat(sizeIn.value) || 0;
+        bulkSizeHint.textContent = `= ${(px * PX_TO_MM).toFixed(2)} mm`;
+      } else {
+        bulkSizeHint.textContent = "";
+      }
+    };
+    bulkUnitSel.addEventListener("change", updateBulkSizeHint);
+    sizeIn.addEventListener("input", updateBulkSizeHint);
     tapeSel.addEventListener("change", () => {
-      if (tapeSel.value) sizeIn.value = String(TAPE_SIZES[tapeSel.value]);
+      if (tapeSel.value) {
+        sizeIn.value = String(TAPE_SIZES[tapeSel.value]);
+        bulkUnitSel.value = "mm";
+        updateBulkSizeHint();
+      }
     });
     const copiesIn = numberInput({ value: 1, min: 1, max: 100, step: 1 });
-    const cableOdIn = numberInput({ value: 6, min: 1, max: 50, step: 0.5 });
-    const cableOdLabel = el("label", { class: "muted small" }, "Cable OD (mm)");
-    const cableOdRow = formRow([cableOdLabel, cableOdIn]);
-    const updateExtras = () => {
+    const bulkExtrasArea = el("div");
+    const bulkExtraInputs: Record<string, HTMLInputElement> = {};
+    const updateBulkExtras = () => {
       const layout = getLayout(layoutSel.value);
-      const showCableOd = layout?.optionFields?.().some((f) => f.key === "cableOd") ?? false;
-      cableOdRow.style.display = showCableOd ? "" : "none";
+      const fields = layout?.optionFields?.() ?? [];
+      bulkExtrasArea.innerHTML = "";
+      for (const f of fields) {
+        if (f.type === "checkbox") {
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.checked = false;
+          const lbl = el("label", { class: "muted small" });
+          lbl.append(cb, " " + f.label);
+          bulkExtrasArea.append(formRow([lbl]));
+          bulkExtraInputs[f.key] = cb;
+        } else {
+          const inp = numberInput({
+            value: f.default as number,
+            min: f.min,
+            max: f.max,
+            step: f.step,
+          });
+          const lbl = el("label", { class: "muted small" }, f.label);
+          bulkExtrasArea.append(formRow([lbl, inp]));
+          bulkExtraInputs[f.key] = inp;
+        }
+      }
     };
-    layoutSel.addEventListener("change", updateExtras);
-    updateExtras();
+    layoutSel.addEventListener("change", updateBulkExtras);
+    updateBulkExtras();
 
     const confirm = button({ class: "primary" }, icon("plus"), " Add to plan");
     const cancel = button({}, icon("x"), " Cancel");
@@ -333,17 +561,29 @@ function buildUI(ctx: AppContext): HTMLElement {
         alert("Empty batch.");
         return;
       }
-      const layout = getLayout(layoutSel.value);
-      const extras: Record<string, number> = {};
-      if (layout?.optionFields?.().some((f) => f.key === "cableOd")) {
-        extras.cableOd = parseFloat(cableOdIn.value);
+      if (!window.confirm(`Add ${rows.length} labels from batch '${batchSel.value}' to the plan?`)) {
+        return;
       }
+      const layout = getLayout(layoutSel.value);
+      const fields = layout?.optionFields?.() ?? [];
+      const extras: Record<string, number> = {};
+      for (const f of fields) {
+        const inp = bulkExtraInputs[f.key];
+        if (!inp) continue;
+        if (f.type === "checkbox") {
+          extras[f.key] = inp.checked ? 1 : 0;
+        } else {
+          extras[f.key] = parseFloat(inp.value) || (f.default as number);
+        }
+      }
+      const rawSize = parseFloat(sizeIn.value);
+      const sizeMm = bulkUnitSel.value === "px" ? rawSize * PX_TO_MM : rawSize;
       const plan = loadPlan();
       for (const r of rows) {
         plan.push({
           id: r.id,
           layoutId: layoutSel.value,
-          size: parseFloat(sizeIn.value),
+          size: sizeMm,
           copies: parseInt(copiesIn.value, 10),
           extras,
         });
@@ -357,15 +597,15 @@ function buildUI(ctx: AppContext): HTMLElement {
       el("h3", {}, `Bulk add from batch`),
       formRow([el("label", {}, "Batch"), batchSel]),
       formRow([el("label", {}, "Layout"), layoutSel]),
-      formRow([el("label", {}, "Tape"), tapeSel, el("label", {}, "Size (mm)"), sizeIn]),
-      cableOdRow,
+      formRow([el("label", {}, "Tape"), tapeSel, el("label", {}, "Size"), sizeIn, bulkUnitSel, bulkSizeHint]),
+      bulkExtrasArea,
       formRow([el("label", {}, "Copies / ID"), copiesIn]),
       formRow([confirm, cancel]),
     );
     root.insertBefore(wrap, tableWrap);
   });
 
-  const clearBtn = button({}, icon("trash"), " Clear plan");
+  const clearBtn = button({ class: "destructive" }, icon("trash"), " Clear plan");
   clearBtn.addEventListener("click", () => {
     if (loadPlan().length === 0) return;
     if (!confirm("Clear the print plan?")) return;
@@ -373,7 +613,7 @@ function buildUI(ctx: AppContext): HTMLElement {
     renderPlan();
   });
 
-  const previewBtn = button({}, icon("search"), " Preview");
+  const previewBtn = button({ class: "outline" }, icon("search"), " Preview");
   const printBtn = button({ class: "primary" }, icon("printer"), " Print");
 
   previewBtn.addEventListener("click", refreshPreview);
@@ -397,10 +637,22 @@ function buildUI(ctx: AppContext): HTMLElement {
     openPrintWindow(mode.renderPrintHtml(pages));
   });
 
+  // ---- Label settings section (code type, text format, show text) ----
+  const labelSettingsSection = buildLabelSettingsUI(labelSettings, () => {
+    labelSettings = loadLabelSettings();
+    clearDmCache(); // invalidate DataMatrix SVG cache on settings change
+    renderPlan();
+    refreshPreview();
+  });
+
   root.append(
     formRow([bulkBtn, clearBtn]),
     summary,
+    bulkEditBar,
     tableWrap,
+    livePreviewArea,
+    labelSettingsSection,
+    printWarning,
     el("h3", {}, "Paper format"),
     formRow([el("label", {}, "Output"), modeSel]),
     modeOptsArea,
@@ -571,7 +823,7 @@ function renderTable(
 function renderJobRow(item: JobItem, index: number, onChange: () => void): HTMLElement {
   const tr = el("tr");
 
-  const idCell = el("td", { class: "id-cell" }, fmtId(item.id));
+  const idCell = el("td", { class: "id-cell", title: item.id }, fmtId(item.id));
   tr.append(idCell);
 
   const layoutSel = select(
@@ -583,28 +835,82 @@ function renderJobRow(item: JobItem, index: number, onChange: () => void): HTMLE
   tr.append(layoutCell);
 
   const sizeIn = numberInput({ value: item.size, min: 4, max: 100, step: 0.5 });
+  sizeIn.title = "Short side in mm. Does not change when switching layout.";
   tr.append(el("td", {}, sizeIn));
 
-  // Extras cell: cableOd input visible only when layout is flag.
+  // Extras cell: layout-specific option fields (cableOd, noMarkers, etc.).
   const extrasCell = el("td");
-  const cableOdIn = numberInput({
-    value: item.extras.cableOd ?? 6,
-    min: 1,
-    max: 50,
-    step: 0.5,
-  });
-  cableOdIn.title = "Cable OD (mm)";
+  const extraInputs: Record<string, HTMLInputElement> = {};
   const updateExtras = () => {
     const layout = getLayout(layoutSel.value);
-    const wantCableOd = layout?.optionFields?.().some((f) => f.key === "cableOd") ?? false;
+    const fields = layout?.optionFields?.() ?? [];
     extrasCell.innerHTML = "";
-    if (wantCableOd) extrasCell.append(cableOdIn);
+    for (const f of fields) {
+      if (f.type === "checkbox") {
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = Boolean(item.extras[f.key]);
+        cb.title = f.label;
+        const lbl = el("label", { class: "muted small", style: "display:inline-flex;align-items:center;gap:2px;margin-right:6px;" });
+        lbl.append(cb, f.label);
+        extrasCell.append(lbl);
+        extraInputs[f.key] = cb;
+        cb.addEventListener("change", persist);
+      } else {
+        const inp = numberInput({
+          value: (item.extras[f.key] as number) ?? f.default,
+          min: f.min,
+          max: f.max,
+          step: f.step,
+        });
+        inp.title = f.label;
+        extrasCell.append(inp);
+        extraInputs[f.key] = inp;
+        inp.addEventListener("change", persist);
+      }
+    }
   };
   updateExtras();
   tr.append(extrasCell);
 
   const copiesIn = numberInput({ value: item.copies, min: 1, max: 100, step: 1 });
   tr.append(el("td", {}, copiesIn));
+
+  // Matrix-add (#11): duplicate this row for the same ID with the next
+  // layout in the registry. Lets the operator stack a `horz` housing
+  // label + `flag` cable label for one part with a single click.
+  const matrixBtn = button(
+    {
+      class: "icon-only matrix-add",
+      title: "Add another layout for this ID",
+    },
+    icon("plus"),
+  );
+  matrixBtn.addEventListener("click", () => {
+    const plan = loadPlan();
+    const current = plan[index];
+    if (!current) return;
+    const layouts = allLayouts();
+    const idx = layouts.findIndex((l) => l.id === current.layoutId);
+    const next = layouts[(idx + 1) % layouts.length];
+    if (!next) return;
+    const nextLayout = getLayout(next.id);
+    const fields = nextLayout?.optionFields?.() ?? [];
+    const extras: Record<string, number> = {};
+    for (const f of fields) {
+      // Carry forward matching extras from current row, else default.
+      extras[f.key] = current.extras[f.key] ?? (f.default as number);
+    }
+    plan.splice(index + 1, 0, {
+      id: current.id,
+      layoutId: next.id,
+      size: current.size,
+      copies: current.copies,
+      extras,
+    });
+    savePlan(plan);
+    onChange();
+  });
 
   const trashBtn = button({ class: "icon-only", title: "Remove" }, icon("trash"));
   trashBtn.addEventListener("click", () => {
@@ -613,7 +919,7 @@ function renderJobRow(item: JobItem, index: number, onChange: () => void): HTMLE
     savePlan(plan);
     onChange();
   });
-  tr.append(el("td", { class: "row-actions" }, trashBtn));
+  tr.append(el("td", { class: "row-actions" }, matrixBtn, trashBtn));
 
   // Persist any field change.
   const persist = () => {
@@ -624,8 +930,18 @@ function renderJobRow(item: JobItem, index: number, onChange: () => void): HTMLE
     target.size = parseFloat(sizeIn.value) || target.size;
     target.copies = Math.max(1, parseInt(copiesIn.value, 10) || target.copies);
     const layout = getLayout(target.layoutId);
-    const wantCableOd = layout?.optionFields?.().some((f) => f.key === "cableOd") ?? false;
-    target.extras = wantCableOd ? { cableOd: parseFloat(cableOdIn.value) || 6 } : {};
+    const fields = layout?.optionFields?.() ?? [];
+    const extras: Record<string, number> = {};
+    for (const f of fields) {
+      const inp = extraInputs[f.key];
+      if (!inp) continue;
+      if (f.type === "checkbox") {
+        extras[f.key] = inp.checked ? 1 : 0;
+      } else {
+        extras[f.key] = parseFloat(inp.value) || (f.default as number);
+      }
+    }
+    target.extras = extras;
     savePlan(plan);
     onChange();
   };
@@ -633,7 +949,7 @@ function renderJobRow(item: JobItem, index: number, onChange: () => void): HTMLE
     persist();
     updateExtras();
   });
-  for (const inp of [sizeIn, copiesIn, cableOdIn]) {
+  for (const inp of [sizeIn, copiesIn]) {
     inp.addEventListener("change", persist);
   }
 
@@ -659,7 +975,16 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
   });
   const idWrap = el("div", { style: "display:flex; gap:4px;" });
   idWrap.append(idIn, scanBtn);
-  tr.append(el("td", { class: "id-cell" }, idWrap));
+  const idCell = el("td", { class: "id-cell" });
+  idCell.append(idWrap);
+  tr.append(idCell);
+
+  // Update title on the ID cell whenever the input changes, so
+  // hovering shows the raw canonical ID for copy.
+  idIn.addEventListener("input", () => {
+    const raw = idIn.value.trim().toUpperCase().replace(/-/g, "");
+    idCell.title = raw.length === 14 ? raw : "";
+  });
 
   const layoutSel = select(
     allLayouts().map((l) => ({ value: l.id, label: l.label })),
@@ -668,16 +993,56 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
   tr.append(el("td", {}, layoutSel));
 
   const sizeIn = numberInput({ value: DEFAULT_SIZE_MM, min: 4, max: 100, step: 0.5 });
-  tr.append(el("td", {}, sizeIn));
+  const unitSel = select([
+    { value: "mm", label: "mm" },
+    { value: "px", label: "px" },
+  ]);
+  unitSel.value = "mm";
+  const sizeHint = el("div", { class: "muted small size-hint" });
+  const updateSizeHint = () => {
+    if (unitSel.value === "px") {
+      const px = parseFloat(sizeIn.value) || 0;
+      sizeHint.textContent = `= ${(px * PX_TO_MM).toFixed(2)} mm`;
+    } else {
+      sizeHint.textContent = "";
+    }
+  };
+  unitSel.addEventListener("change", updateSizeHint);
+  sizeIn.addEventListener("input", updateSizeHint);
+  const sizeWrap = el("div");
+  const sizeRow = el("div", { style: "display:flex;gap:4px;align-items:center;" });
+  sizeRow.append(sizeIn, unitSel);
+  sizeWrap.append(sizeRow, sizeHint);
+  tr.append(el("td", {}, sizeWrap));
 
-  const cableOdIn = numberInput({ value: 6, min: 1, max: 50, step: 0.5 });
-  cableOdIn.title = "Cable OD (mm)";
   const extrasCell = el("td");
+  const entryExtraInputs: Record<string, HTMLInputElement> = {};
   const updateExtras = () => {
     const layout = getLayout(layoutSel.value);
-    const wantCableOd = layout?.optionFields?.().some((f) => f.key === "cableOd") ?? false;
+    const fields = layout?.optionFields?.() ?? [];
     extrasCell.innerHTML = "";
-    if (wantCableOd) extrasCell.append(cableOdIn);
+    for (const f of fields) {
+      if (f.type === "checkbox") {
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = false;
+        cb.title = f.label;
+        const lbl = el("label", { class: "muted small", style: "display:inline-flex;align-items:center;gap:2px;margin-right:6px;" });
+        lbl.append(cb, f.label);
+        extrasCell.append(lbl);
+        entryExtraInputs[f.key] = cb;
+      } else {
+        const inp = numberInput({
+          value: f.default as number,
+          min: f.min,
+          max: f.max,
+          step: f.step,
+        });
+        inp.title = f.label;
+        extrasCell.append(inp);
+        entryExtraInputs[f.key] = inp;
+      }
+    }
   };
   layoutSel.addEventListener("change", updateExtras);
   updateExtras();
@@ -694,14 +1059,26 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
       return;
     }
     const layout = getLayout(layoutSel.value);
-    const wantCableOd = layout?.optionFields?.().some((f) => f.key === "cableOd") ?? false;
+    const fields = layout?.optionFields?.() ?? [];
+    const extras: Record<string, number> = {};
+    for (const f of fields) {
+      const inp = entryExtraInputs[f.key];
+      if (!inp) continue;
+      if (f.type === "checkbox") {
+        extras[f.key] = inp.checked ? 1 : 0;
+      } else {
+        extras[f.key] = parseFloat(inp.value) || (f.default as number);
+      }
+    }
+    const rawSize = parseFloat(sizeIn.value);
+    const sizeMm = unitSel.value === "px" ? rawSize * PX_TO_MM : rawSize;
     const plan = loadPlan();
     plan.push({
       id,
       layoutId: layoutSel.value,
-      size: parseFloat(sizeIn.value),
+      size: sizeMm,
       copies: parseInt(copiesIn.value, 10),
-      extras: wantCableOd ? { cableOd: parseFloat(cableOdIn.value) } : {},
+      extras,
     });
     savePlan(plan);
     idIn.value = "";
@@ -726,9 +1103,86 @@ function renderEntryRow(ctx: AppContext, onAdd: () => void): HTMLElement {
   return tr;
 }
 
-function fmtId(id: string): string {
+export function fmtId(id: string): string {
   if (id.length < 8) return id;
-  return `${id.slice(0, 4)}-${id.slice(4, 8)}`;
+  // Full 14-char ID in 4-4-4-2 grouping: ABCD-EFGH-JKMN-PQ
+  return `${id.slice(0, 4)}-${id.slice(4, 8)}-${id.slice(8, 12)}-${id.slice(12, 14)}`;
+}
+
+/** Build the label settings section: code type, text format, payload, show text. */
+function buildLabelSettingsUI(
+  initial: { codeType: CodeType; format: FormatSetting; showText: boolean; payloadFormat: string },
+  onChange: () => void,
+): HTMLElement {
+  const section = el("div", { class: "label-settings" });
+  section.append(el("h3", {}, "Label settings"));
+
+  // Code type dropdown — driven by deploy config + code-types.json
+  const allowedTypes = getAllowedPrintCodeTypes();
+  const codeTypeSel = select(
+    allowedTypes.map((ct) => ({ value: ct.id, label: ct.displayLabel })),
+  );
+  // Disable dropdown if only one option (locked by admin)
+  if (allowedTypes.length <= 1) codeTypeSel.disabled = true;
+  codeTypeSel.value = initial.codeType;
+
+  // Text format — from deploy config
+  const deployCfg = getConfig();
+  const fmtOptions = deployCfg.labels.allowedTextFormats.map((f: string) => ({
+    value: f,
+    label: f === "auto" ? "Auto (by size)"
+      : f === "4/4" ? "4/4 (8 chars, 2 rows)"
+      : f === "4/4/4" ? "4/4/4 (12 chars, 3 rows)"
+      : f === "5/5/4" ? "5/5/4 (14 chars, full ID)"
+      : f,
+  }));
+  const formatSel = select(fmtOptions);
+  formatSel.value = initial.format;
+
+  // Payload format — from deploy config
+  const allowedPayloads = deployCfg.labels.allowedPayloadFormats ?? ["id_only"];
+  const payloadFmts = getAllPayloadFormats().filter((f) => allowedPayloads.includes(f.id));
+  const payloadSel = select(
+    payloadFmts.map((f) => ({ value: f.id, label: `${f.label} (${f.example})` })),
+  );
+  payloadSel.value = initial.payloadFormat;
+  if (payloadFmts.length <= 1) payloadSel.disabled = true;
+
+  // Show text toggle
+  const showTextCb = document.createElement("input");
+  showTextCb.type = "checkbox";
+  showTextCb.checked = initial.showText;
+  const showTextLabel = el("label", { class: "muted small", style: "display:inline-flex;align-items:center;gap:4px;" });
+  showTextLabel.append(showTextCb, "Show human-readable text");
+
+  const persist = () => {
+    saveLabelSettings({
+      codeType: codeTypeSel.value as CodeType,
+      format: formatSel.value as FormatSetting,
+      showText: showTextCb.checked,
+      payloadFormat: payloadSel.value,
+    });
+    onChange();
+  };
+  codeTypeSel.addEventListener("change", persist);
+  formatSel.addEventListener("change", persist);
+  payloadSel.addEventListener("change", persist);
+  showTextCb.addEventListener("change", persist);
+
+  // Compact inline layout — not full-width selectors
+  codeTypeSel.style.width = "auto";
+  formatSel.style.width = "auto";
+  payloadSel.style.width = "auto";
+  const settingsRow = el("div", { class: "label-settings__row" });
+  settingsRow.append(
+    el("label", { class: "label-settings__field" }, "Code type ", codeTypeSel),
+    el("label", { class: "label-settings__field" }, "Payload ", payloadSel),
+    el("label", { class: "label-settings__field" }, "Text format ", formatSel),
+    showTextLabel,
+  );
+  section.append(settingsRow);
+
+  return section;
 }
 
 // Open a print-only window with the HTML produced by the active output

@@ -106,18 +106,26 @@ pub fn wasm_init() {
 // -------------------------------------------------------------------
 
 /// Parse a layout identifier (`"vert"`, `"horz"`, or `"flag"`) plus
-/// an optional `cable_od_mm` (only used by `"flag"`) into a
-/// `codec::Layout`.
+/// optional flag-specific parameters into a `codec::Layout`.
 ///
 /// `cable_od_mm` ≤ 0 falls back to the Python default of 6 mm so the
 /// FE can call without bothering to set it for non-flag layouts.
-fn parse_layout(layout: &str, cable_od_mm: f64) -> Result<Layout, String> {
+fn parse_layout(
+    layout: &str,
+    cable_od_mm: f64,
+    no_markers: bool,
+    alignment_line: bool,
+) -> Result<Layout, String> {
     match layout {
         "vert" => Ok(Layout::Vert),
         "horz" => Ok(Layout::Horz),
         "flag" => {
             let od = if cable_od_mm > 0.0 { cable_od_mm } else { 6.0 };
-            Ok(Layout::Flag { cable_od_mm: od })
+            Ok(Layout::Flag {
+                cable_od_mm: od,
+                no_markers,
+                alignment_line,
+            })
         }
         other => Err(format!(
             "unknown layout {other:?}: expected one of vert/horz/flag"
@@ -148,7 +156,10 @@ fn parse_format(fmt: &str) -> Result<TextFormat, String> {
 /// `micro` selects Micro QR M4 over Standard QR V1.
 /// `cable_od_mm` is consumed only by the flag layout; pass `0.0` for
 /// vert/horz.
+/// `no_markers` suppresses the flag wrap-zone outline + caption.
+/// `alignment_line` adds a center registration line to the flag gutter.
 #[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
 pub fn render_label(
     canonical: &str,
     layout: &str,
@@ -156,8 +167,11 @@ pub fn render_label(
     format: &str,
     micro: bool,
     cable_od_mm: f64,
+    no_markers: bool,
+    alignment_line: bool,
 ) -> Result<String, JsError> {
-    let layout = parse_layout(layout, cable_od_mm).map_err(|e| JsError::new(&e))?;
+    let layout = parse_layout(layout, cable_od_mm, no_markers, alignment_line)
+        .map_err(|e| JsError::new(&e))?;
     let fmt = parse_format(format).map_err(|e| JsError::new(&e))?;
     Ok(codec_render(canonical, layout, size_mm, fmt, micro))
 }
@@ -394,22 +408,47 @@ mod tests {
 
     #[test]
     fn parse_layout_known_variants() {
-        assert!(parse_layout("vert", 0.0).is_ok());
-        assert!(parse_layout("horz", 0.0).is_ok());
-        match parse_layout("flag", 8.0).unwrap() {
-            Layout::Flag { cable_od_mm } => assert!((cable_od_mm - 8.0).abs() < 1e-9),
+        assert!(parse_layout("vert", 0.0, false, false).is_ok());
+        assert!(parse_layout("horz", 0.0, false, false).is_ok());
+        match parse_layout("flag", 8.0, false, false).unwrap() {
+            Layout::Flag {
+                cable_od_mm,
+                no_markers,
+                alignment_line,
+            } => {
+                assert!((cable_od_mm - 8.0).abs() < 1e-9);
+                assert!(!no_markers);
+                assert!(!alignment_line);
+            }
             other => panic!("expected Flag, got {other:?}"),
         }
         // cable_od ≤ 0 → 6 mm fallback.
-        match parse_layout("flag", 0.0).unwrap() {
-            Layout::Flag { cable_od_mm } => assert!((cable_od_mm - 6.0).abs() < 1e-9),
+        match parse_layout("flag", 0.0, false, false).unwrap() {
+            Layout::Flag { cable_od_mm, .. } => assert!((cable_od_mm - 6.0).abs() < 1e-9),
             other => panic!("expected Flag, got {other:?}"),
         }
     }
 
     #[test]
+    fn parse_layout_flag_options() {
+        match parse_layout("flag", 6.0, true, true).unwrap() {
+            Layout::Flag {
+                no_markers,
+                alignment_line,
+                ..
+            } => {
+                assert!(no_markers);
+                assert!(alignment_line);
+            }
+            other => panic!("expected Flag, got {other:?}"),
+        }
+        // Options are ignored for non-flag layouts.
+        assert_eq!(parse_layout("vert", 0.0, true, true).unwrap(), Layout::Vert);
+    }
+
+    #[test]
     fn parse_layout_rejects_unknown() {
-        assert!(parse_layout("circle", 0.0).is_err());
+        assert!(parse_layout("circle", 0.0, false, false).is_err());
     }
 
     #[test]
@@ -425,7 +464,7 @@ mod tests {
         // Pure native call — bypasses #[wasm_bindgen] glue.
         for &layout in &["vert", "horz", "flag"] {
             for &fmt in &["4/4", "4/4/4", "5/5/4"] {
-                let layout_enum = parse_layout(layout, 6.0).unwrap();
+                let layout_enum = parse_layout(layout, 6.0, false, false).unwrap();
                 let fmt_enum = parse_format(fmt).unwrap();
                 let svg = codec_render(FIXED_ID, layout_enum, 11.0, fmt_enum, false);
                 assert!(
@@ -487,7 +526,9 @@ mod tests {
         let input: ValidateInput = serde_json::from_value(serde_json::json!({
             "registry_header": [
                 "id", "status", "minted_at", "batch", "bound_at", "type",
-                "description", "vendor", "part_number", "location", "notes"
+                "description", "vendor", "part_number", "location", "notes",
+                "minted_by", "bound_by", "last_edited_at", "last_edited_by",
+                "components", "manufacturer_id", "metadata"
             ],
             "print_log_header": [
                 "id", "printed_at", "printed_by", "layout", "size_mm",
