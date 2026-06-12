@@ -501,12 +501,12 @@ fn print_px_true_deduces_module_from_exact_canvas() {
     assert_eq!(label["symbology"], json!("micro-m4-m"));
     assert_eq!(label["height_px"], json!(64), "exact canvas");
     assert_eq!(label["id"], json!("23456789ABCDEF"));
-    // ADR-031 §8 bitmap typography (Spleen verdict): the selected
-    // cell and its integer scale ride the response — budget 64, 2
-    // rows → the 16×32 cell at k=1 — and the SVG is one font-free
-    // binary raster.
-    assert_eq!(label["glyph_cell"], json!(32), "16×32 Spleen cell");
-    assert_eq!(label["glyph_px"], json!(1), "k=1 native resolution");
+    // ADR-031 §8 bitmap typography (nx75 anchor font): the 7-row
+    // glyph cell and the g-law scale ride the response — module part
+    // 51, 2 rows → g = min(51/15, m) = 3 — and the SVG is one
+    // font-free binary raster.
+    assert_eq!(label["glyph_cell"], json!(7), "nx75 7-row cell");
+    assert_eq!(label["glyph_px"], json!(3), "g-law scale");
     let svg = label["svg"].as_str().expect("svg");
     assert!(svg.contains("shape-rendering=\"crispEdges\""));
     assert!(!svg.contains("<text"), "no <text> in px output");
@@ -642,10 +642,10 @@ fn print_px_symbology_pin_resolves_and_flows_into_the_deduction() {
     assert_eq!(label["symbology"], json!("micro-m3-l"));
     assert_eq!(label["module_px"], json!(4), "clip@64 on 15 modules");
     assert_eq!(label["data_px"], json!(60));
-    // Typography is decoupled from module px (§8 Spleen verdict):
-    // the 64px budget selects the 16×32 cell at k=1 either way.
-    assert_eq!(label["glyph_cell"], json!(32));
-    assert_eq!(label["glyph_px"], json!(1));
+    // Typography follows the module part under the g-law: a 2-row
+    // block needs 15g ≤ 60, so the bigger M3 dots carry g to 4.
+    assert_eq!(label["glyph_cell"], json!(7));
+    assert_eq!(label["glyph_px"], json!(4));
     assert_eq!(label["height_px"], json!(64), "exact canvas");
 
     // Version-only pin: EC auto-falls to the strongest feasible (L at

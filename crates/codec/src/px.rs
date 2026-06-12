@@ -35,35 +35,27 @@
 //!   pixel on the bottom/right edge — deterministic.
 //! - QR→text gap = `max(round(1.5 · white), quiet·m)` over the white
 //!   on the QR's text side (right for `horz`, bottom for `vert`).
-//! - The id-text is **bitmap typography rendered as rects** (§8
-//!   typography verdict, 2026-06-11, superseding the same-day
-//!   5×7-only call): no `<text>`, no fonts, no rasterizer variance.
-//!   For `horz` the renderer picks a vendored Spleen cell
-//!   ([`crate::glyphs_spleen`], cells {12, 16, 24, 32, 64}) by the
-//!   better-res law — `nominal = rows·cell·k` fitted closest into the
-//!   label's **overall** controlling dimension (`size_px`, not
-//!   `data_px`); ties favor the larger cell at lower `k`, because
-//!   native resolution beats integer upscaling. Rows draw from the
-//!   cell's alphabet-wide cap-ink band at integer scale `k` — every
-//!   glyph pixel a k-px `<rect>` in the same crispEdges group as the
-//!   QR modules; per-char advance is `dwidth·k`. The vertical slack
-//!   (`size − cap ink`) distributes as top/between/bottom gaps:
-//!   `top = slack/3`, the rest split evenly across the between-gaps
-//!   and the bottom with the remainder on the bottom edge —
-//!   deterministic, mirroring the validated Spleen-v2 prototype.
-//!   Glyph px is hereby **decoupled** from module px (a k=1 native
-//!   cell may be finer than the QR modules — the one-lattice
-//!   principle holds per element, not across them).
-//! - The first-party 5×7 table ([`crate::glyphs`]) is the documented
-//!   **floor**: `horz` labels too small for the 12-cell at k=1
-//!   (`rows·12 > size`) fall back to the pre-verdict g-law (largest
-//!   integer `g` with the block `rows·7g + (rows−1)·g` inside
-//!   `data_px`, capped at `module_px`; advance `6g`, row pitch `8g`,
-//!   block centered in the module part). The `vert` layout stays on
-//!   that floor path entirely for now — the verdict specifies the
-//!   selection against the controlling budget and `horz` is the
-//!   shipping layout; vert moves over once its width-bound selection
-//!   is benched (documented choice, ADR-031 §8).
+//! - The id-text is **bitmap typography rendered as rects**: no
+//!   `<text>`, no fonts, no rasterizer variance. The glyphs are the
+//!   first-party **nx75 anchor font** ([`crate::glyph_font`], baked
+//!   from `design/glyph-font.v1.json`), rasterised here at integer
+//!   scale `k = glyph_px` by the sweep law (see [`raster_glyph`]):
+//!   every anchor's kernel is pulled along each of its active edges
+//!   to the edge midpoint — orthogonal sweeps cover a round width-k
+//!   envelope, diagonal sweeps an anti-diagonal band of exactly k px
+//!   per band row, one-sided on the low-ink side of the anchor line
+//!   or split inner/outer when the ink balances (k=3 gains one extra
+//!   outside row) — plus a rest-stamp of the kernel at every
+//!   non-band-owned anchor, all clipped to the anchor cells and the
+//!   bridge cells of active diagonal edges. Ink emits as
+//!   horizontal-run `<rect>`s in the same crispEdges group as the QR
+//!   modules.
+//! - Text-block placement is the g-law: the glyph scale `g` is the
+//!   largest integer with the block `rows·7g + (rows−1)·g` inside
+//!   `data_px`, capped at `module_px` (text dots never coarser than
+//!   QR dots); advance `6g`, row pitch `8g`. `horz` centers the
+//!   block vertically in the module part; `vert` centers each row
+//!   horizontally in it.
 //! - Modules and glyphs draw at their canvas offsets on a `crispEdges`
 //!   grid; the quiet zone is **not** drawn — the white background
 //!   supplies it.
@@ -81,8 +73,7 @@ use std::fmt::Write as _;
 use serde::{Deserialize, Serialize};
 
 use crate::format::TextFormat;
-use crate::glyphs;
-use crate::glyphs_spleen::{self, SpleenCell};
+use crate::glyph_font::{self, Glyph};
 use crate::svg::Layout;
 use crate::symbology::Symbology;
 use crate::CodecError;
@@ -196,16 +187,13 @@ pub struct PxLabel {
     /// The module part (data modules only) in device px
     /// (= `data modules * module_px`).
     pub data_px: u32,
-    /// Device px per bitmap-glyph dot (§8 typography). On the Spleen
-    /// path this is the integer scale `k` of the selected cell —
-    /// decoupled from `module_px`; on the 5×7 floor path it is the
-    /// pre-verdict `g` (largest integer keeping the block inside the
+    /// Device px per nx75 anchor cell — the raster scale `k` and the
+    /// g-law result (largest integer keeping the block inside the
     /// module part, capped at `module_px`).
     pub glyph_px: u32,
-    /// The selected glyph cell (§8 typography verdict): 12, 16, 24,
-    /// 32, or 64 for the vendored Spleen cells, or 7 for the
-    /// first-party 5×7 floor (tiny `horz` labels and the `vert`
-    /// layout, which stays on the floor path for now).
+    /// The glyph cell height in anchor rows — always 7 for the nx75
+    /// anchor font ([`crate::glyph_font::GRID_ROWS`]); kept for
+    /// response-shape stability.
     pub glyph_cell: u32,
     /// Actual per-side white, canvas edge → module part: the floors
     /// plus the controlling axis's remainder (extra px bottom/right).
@@ -245,87 +233,273 @@ fn qr_text_gap(white_side: u32, quiet: u32, module_px: u32) -> u32 {
     (white_side + white_side.div_ceil(2)).max(quiet * module_px)
 }
 
-/// The §8 better-res Spleen selection: for each vendored cell and
-/// integer scale `k ≥ 1`, the nominal block `n_rows·cell·k` is fitted
-/// closest into `budget` (the label's OVERALL controlling dimension);
-/// ties favor the larger cell at the lower `k` — native resolution
-/// beats integer upscaling. `None` when even the 12-cell at k=1
-/// overflows (`n_rows·12 > budget`): the caller falls back to the 5×7
-/// floor.
-fn select_spleen(n_rows: u32, budget: u32) -> Option<(&'static SpleenCell, u32)> {
-    let mut best: Option<(&'static SpleenCell, u32, u32)> = None;
-    for cell in glyphs_spleen::CELLS {
-        let unit = n_rows * cell.cell;
-        if unit > budget {
-            continue;
-        }
-        let k = budget / unit;
-        let nominal = unit * k;
-        let better = match best {
-            None => true,
-            Some((b, _, n)) => nominal > n || (nominal == n && cell.cell > b.cell),
-        };
-        if better {
-            best = Some((cell, k, nominal));
+/// One half-edge sweep of the nx75 raster law: an anchor's kernel
+/// pulled from its center `(ax, ay)` along `(vx, vy)` to the edge
+/// midpoint (the far half belongs to the far anchor's kernel).
+/// Diagonal sweeps carry the edge's CANONICAL a->b frame — `(nx,
+/// ny)` is the normal of the stored a->b orientation and `out` the
+/// outward sign derived from the baked balance, shared by BOTH
+/// half-sweeps so the band can never flip sides at the midpoint.
+struct Sweep {
+    ax: f64,
+    ay: f64,
+    vx: f64,
+    vy: f64,
+    diag: bool,
+    nx: f64,
+    ny: f64,
+    out: f64,
+    one_sided: bool,
+}
+
+/// `true` when the rest-stamp kernel covers offset `(dx, dy)` from
+/// the anchor center: the L1 diamond unconditionally, the square
+/// quadrants per `mask` corner bit (bit order per
+/// [`crate::glyph_font::Anchor::corner_mask`]).
+fn kern_covers(mask: u8, dx: f64, dy: f64, half: f64) -> bool {
+    if dx.abs() + dy.abs() <= half {
+        return true;
+    }
+    if dx.abs() > half || dy.abs() > half {
+        return false;
+    }
+    let ci = if dy < 0.0 { 0 } else { 2 } + if dx < 0.0 { 0 } else { 1 };
+    mask >> ci & 1 == 1
+}
+
+/// Rasterise one nx75 glyph at integer scale `k` into a row-major
+/// `5k × 7k` ink bitmap — THE renderer for the anchor font, matching
+/// the reference implementation and the bake-time checksums bit for
+/// bit ([`crate::glyph_font`]).
+///
+/// The law: every anchor's kernel is pulled along each of its active
+/// edges to the edge midpoint. The pulled body of an ORTHOGONAL
+/// sweep is round (L2 ≤ k/2 of the segment — a uniform width-k
+/// envelope at every angle); a DIAGONAL sweep covers an
+/// anti-diagonal band of exactly k px per band row, measured as the
+/// signed perpendicular distance `dsig` in the edge's CANONICAL a->b
+/// frame times the baked outward sign (outside = negative dsig):
+/// at k ≤ 2 the full perpendicular width `|dsig| ≤ k/2`; one-sided
+/// edges (baked balance ≠ 0) hug the OUTSIDE of the anchor line —
+/// the inner boundary IS the line; balanced edges split the rows
+/// inner/outer by parity — and k=3 gains one extra outside row
+/// either way. At rest, every non-band-owned anchor stamps its
+/// kernel ([`kern_covers`]) — except pure diagonal tips, whose stamp
+/// is corners-only (no L1 diamond term); pass-through diagonal
+/// anchors are band-owned and stamp nothing (the
+/// constant-derivative law). Everything clips to the anchor cells
+/// plus the two bridge cells of each active diagonal edge.
+fn raster_glyph(g: &Glyph, k: u32) -> Vec<bool> {
+    let kf = f64::from(k);
+    let half = kf / 2.0;
+    let sq2 = std::f64::consts::SQRT_2;
+    // Diagonal band windows: k anti-diagonal rows total, with k=3
+    // gaining one bonus row on the outside. A one-sided band hugs
+    // the outside of the anchor line; a centered band splits the
+    // rows inner/outer by parity.
+    let odd = k % 2 == 1;
+    let rows_one = kf + if k == 3 { 1.0 } else { 0.0 };
+    let lo_one = -((rows_one - if odd { 1.0 } else { 0.5 }) / sq2 + 1e-6);
+    let inner = if odd {
+        (kf - 1.0) / 2.0
+    } else {
+        kf / 2.0 - 1.0
+    };
+    let outer = if odd { (kf - 1.0) / 2.0 } else { kf / 2.0 } + if k == 3 { 1.0 } else { 0.0 };
+    let lo_cen = -(outer / sq2 + 1e-6);
+    let hi_cen = inner / sq2 + 1e-6;
+
+    let cell_at = |r: u8, c: u8| (r as usize) * glyph_font::GRID_COLS as usize + c as usize;
+    let mut allowed = [false; (glyph_font::GRID_ROWS * glyph_font::GRID_COLS) as usize];
+    for a in g.anchors {
+        allowed[cell_at(a.r, a.c)] = true;
+    }
+    for e in g.edges {
+        if e.diag {
+            let (a, b) = (&g.anchors[e.a as usize], &g.anchors[e.b as usize]);
+            allowed[cell_at(a.r, b.c)] = true;
+            allowed[cell_at(b.r, a.c)] = true;
         }
     }
-    best.map(|(cell, k, _)| (cell, k))
+
+    let mut sweeps = Vec::with_capacity(g.edges.len() * 2);
+    for e in g.edges {
+        let ea = &g.anchors[e.a as usize];
+        let eb = &g.anchors[e.b as usize];
+        let mut nx = 0.0;
+        let mut ny = 0.0;
+        let mut out = 1.0;
+        let mut one_sided = false;
+        if e.diag {
+            // Canonical a->b frame: one normal and one outward sign
+            // for BOTH half-sweeps — outside is the negative-dsig
+            // side (the baked out_sign is the canonical-frame ink
+            // balance, so balance > 0 keeps the frame, anything else
+            // flips it).
+            let ax0 = (f64::from(ea.c) + 0.5) * kf;
+            let ay0 = (f64::from(ea.r) + 0.5) * kf;
+            let bx0 = (f64::from(eb.c) + 0.5) * kf;
+            let by0 = (f64::from(eb.r) + 0.5) * kf;
+            let len = ((bx0 - ax0) * (bx0 - ax0) + (by0 - ay0) * (by0 - ay0)).sqrt();
+            nx = -(by0 - ay0) / len;
+            ny = (bx0 - ax0) / len;
+            out = if e.out_sign > 0 { 1.0 } else { -1.0 };
+            one_sided = e.out_sign != 0;
+        }
+        for (me, ot) in [(ea, eb), (eb, ea)] {
+            let ax = (f64::from(me.c) + 0.5) * kf;
+            let ay = (f64::from(me.r) + 0.5) * kf;
+            let mx = ((f64::from(me.c) + f64::from(ot.c)) / 2.0 + 0.5) * kf;
+            let my = ((f64::from(me.r) + f64::from(ot.r)) / 2.0 + 0.5) * kf;
+            sweeps.push(Sweep {
+                ax,
+                ay,
+                vx: mx - ax,
+                vy: my - ay,
+                diag: e.diag,
+                nx,
+                ny,
+                out,
+                one_sided,
+            });
+        }
+    }
+    let stamps: Vec<(f64, f64, u8, bool)> = g
+        .anchors
+        .iter()
+        .filter(|a| a.has_stamp)
+        .map(|a| {
+            (
+                (f64::from(a.c) + 0.5) * kf,
+                (f64::from(a.r) + 0.5) * kf,
+                a.corner_mask,
+                a.diag_tip,
+            )
+        })
+        .collect();
+
+    let w = (glyph_font::GRID_COLS * k) as usize;
+    let h = (glyph_font::GRID_ROWS * k) as usize;
+    let mut img = vec![false; w * h];
+    for j in 0..h {
+        let cr = j as u32 / k;
+        let y = j as f64 + 0.5;
+        for i in 0..w {
+            let cc = i as u32 / k;
+            if !allowed[(cr * glyph_font::GRID_COLS + cc) as usize] {
+                continue;
+            }
+            let x = i as f64 + 0.5;
+            let mut on = false;
+            for s in &sweeps {
+                let l2 = s.vx * s.vx + s.vy * s.vy;
+                let t = (((x - s.ax) * s.vx + (y - s.ay) * s.vy) / l2).clamp(0.0, 1.0);
+                if t <= 0.0 {
+                    continue;
+                }
+                if s.diag {
+                    let dsig = ((x - s.ax) * s.nx + (y - s.ay) * s.ny) * s.out;
+                    let hit = if k <= 2 {
+                        dsig.abs() <= half + 1e-6
+                    } else if s.one_sided {
+                        dsig >= lo_one && dsig <= 1e-6
+                    } else {
+                        dsig >= lo_cen && dsig <= hi_cen
+                    };
+                    if hit {
+                        on = true;
+                        break;
+                    }
+                } else {
+                    let dx = x - (s.ax + t * s.vx);
+                    let dy = y - (s.ay + t * s.vy);
+                    if (dx * dx + dy * dy).sqrt() <= half {
+                        on = true;
+                        break;
+                    }
+                }
+            }
+            if !on {
+                for &(sx, sy, mask, tip) in &stamps {
+                    let dx = x - sx;
+                    let dy = y - sy;
+                    if tip {
+                        // Pure diagonal tip: corners-only endplate —
+                        // the band end is the cap, the chip is the
+                        // outward block, no L1 diamond term
+                        if dx.abs() <= half && dy.abs() <= half {
+                            let ci = if dy < 0.0 { 0 } else { 2 } + if dx < 0.0 { 0 } else { 1 };
+                            if mask >> ci & 1 == 1 {
+                                on = true;
+                                break;
+                            }
+                        }
+                    } else if kern_covers(mask, dx, dy, half) {
+                        on = true;
+                        break;
+                    }
+                }
+            }
+            if on {
+                img[j * w + i] = true;
+            }
+        }
+    }
+    img
 }
 
-/// The §8 slack distribution, mirroring the validated Spleen-v2
-/// prototype: of the vertical slack (`budget − cap ink`) the top gap
-/// takes `slack/3` and the rest splits evenly across the `n_rows − 1`
-/// between-gaps and the bottom, with the integer remainder landing on
-/// the bottom edge — deterministic, top → between(s) → bottom.
-/// Returns `(top, between, bottom)`.
-fn spleen_gaps(slack: u32, n_rows: u32) -> (u32, u32, u32) {
-    let top = slack / 3;
-    let rest = slack - top;
-    let between = rest / n_rows;
-    let bottom = rest - (n_rows - 1) * between;
-    (top, between, bottom)
-}
-
-/// Append `c`'s Spleen cap-band ink to `out` as `k`-px rects, band
-/// top-left at `(x0, y0)` — the same `<rect>` emitter shape the QR
-/// modules use. Returns the advance, `dwidth·k`.
+/// Append `c`'s nx75 ink to `out`, glyph box top-left at `(x0, y0)`,
+/// rasterised at scale `k` ([`raster_glyph`]) and emitted as
+/// horizontal-run `<rect>`s (height 1 device px) — the same emitter
+/// shape the QR modules use, so glyphs and modules share one fill
+/// group and one integer-px lattice.
 ///
 /// Errors with [`CodecError::Render`] for a char outside the nano14
 /// alphabet (defensive: nano14 payloads cannot contain one).
-fn write_spleen_rects(
+fn write_glyph_rects(
     out: &mut String,
-    cell: &SpleenCell,
     c: char,
     x0: u32,
     y0: u32,
     k: u32,
-) -> Result<u32, CodecError> {
-    let (dwidth, rows) = cell.glyph(c).ok_or_else(|| {
+) -> Result<(), CodecError> {
+    let g = glyph_font::glyph(c).ok_or_else(|| {
         CodecError::Render(format!(
-            "no spleen glyph for {c:?}: the vendored {cell}-cell table covers \
+            "no nx75 glyph for {c:?}: the baked anchor font covers \
              the nano14 alphabet {alphabet}",
-            cell = cell.cell,
-            alphabet = glyphs::ALPHABET,
+            alphabet = glyph_font::ALPHABET,
         ))
     })?;
-    for (ry, row) in rows.iter().enumerate() {
-        for rx in 0..dwidth {
-            if (row >> (dwidth - 1 - rx)) & 1 == 1 {
-                let x = x0 + rx * k;
-                let y = y0 + ry as u32 * k;
-                let _ = write!(
-                    out,
-                    "<rect x=\"{x}\" y=\"{y}\" width=\"{k}\" height=\"{k}\"/>"
-                );
+    let img = raster_glyph(g, k);
+    let w = (glyph_font::GRID_COLS * k) as usize;
+    let h = (glyph_font::GRID_ROWS * k) as usize;
+    for j in 0..h {
+        let row = &img[j * w..(j + 1) * w];
+        let mut i = 0;
+        while i < w {
+            if !row[i] {
+                i += 1;
+                continue;
             }
+            let start = i;
+            while i < w && row[i] {
+                i += 1;
+            }
+            let x = x0 + start as u32;
+            let y = y0 + j as u32;
+            let run = (i - start) as u32;
+            let _ = write!(
+                out,
+                "<rect x=\"{x}\" y=\"{y}\" width=\"{run}\" height=\"1\"/>"
+            );
         }
     }
-    Ok(dwidth * k)
+    Ok(())
 }
 
-/// The 5×7 floor geometry (the pre-verdict g-law): all values in
-/// device px, derived from the module part. See the module docs.
-struct FloorBlock {
+/// The id-text block geometry (the g-law): all values in device px,
+/// derived from the module part. See the module docs.
+struct TextBlock {
     glyph_px: u32,
     block_h: u32,
     advance: u32,
@@ -333,18 +507,18 @@ struct FloorBlock {
     max_row_w: u32,
 }
 
-/// Deduce the 5×7 floor block for `layout`: the glyph pixel `g` is
-/// the largest integer keeping the id-text block — `n_rows` rows of
-/// 7g glyphs with 1g gaps between rows — inside `data_px`, capped at
-/// `module_px` so text dots equal QR dots when they fit. In `vert`
-/// the rows must also fit the module-part width.
-fn floor_block(
+/// Deduce the id-text block for `layout`: the glyph scale `g` is the
+/// largest integer keeping the block — `n_rows` rows of 7g glyph
+/// boxes with 1g gaps between rows — inside `data_px`, capped at
+/// `module_px` so text dots are never coarser than QR dots. In
+/// `vert` the rows must also fit the module-part width.
+fn text_block(
     layout: Layout,
     data_px: u32,
     module_px: u32,
     n_rows: u32,
     max_chars: u32,
-) -> Result<FloorBlock, CodecError> {
+) -> Result<TextBlock, CodecError> {
     // Block height in g-units: 8 per row minus the missing last gap.
     let block_units = 8 * n_rows - 1;
     // Widest-row width in g-units: 6 per char (5 glyph + 1 spacing)
@@ -373,7 +547,7 @@ fn floor_block(
              a larger size"
         )));
     }
-    Ok(FloorBlock {
+    Ok(TextBlock {
         glyph_px,
         block_h: block_units * glyph_px,
         advance: 6 * glyph_px,
@@ -406,7 +580,7 @@ fn floor_block(
 ///   id-text block at one device px per glyph dot (the message
 ///   suggests fewer rows via `--chars` or a larger size), and — purely
 ///   defensively, nano14 payloads cannot trigger it — for a char
-///   outside the [`crate::glyphs`] alphabet.
+///   outside the [`crate::glyph_font`] alphabet.
 /// - [`CodecError::Unsupported`] for [`Layout::Flag`] — the px-true
 ///   flag geometry (wrap-zone width in device px) is not specified yet;
 ///   ADR-031 §5 lists it, this renderer covers `horz`/`vert` first.
@@ -488,26 +662,13 @@ pub fn render_label_px(
         Layout::Flag { .. } => unreachable!("rejected above"),
     };
 
-    // §8 typography verdict: horz selects a vendored Spleen cell by
-    // the better-res law against the OVERALL controlling dimension —
-    // the 5×7 floor catches horz labels too small for the 12-cell at
-    // k=1 and the whole vert layout (documented choice, module docs).
+    // The g-law text block (module docs): the nx75 anchor font draws
+    // at scale g inside the module-part budget for both layouts.
     let rows = text_format.split(canonical);
     let n_rows = rows.len() as u32;
     let max_chars = rows.iter().map(|r| r.chars().count()).max().unwrap_or(0) as u32;
-    let spleen = match layout {
-        Layout::Horz => select_spleen(n_rows, size_px),
-        _ => None,
-    };
-    let floor = match spleen {
-        Some(_) => None,
-        None => Some(floor_block(layout, data_px, module_px, n_rows, max_chars)?),
-    };
-    let (glyph_px, glyph_cell) = match (spleen, &floor) {
-        (Some((cell, k)), _) => (k, cell.cell),
-        (None, Some(f)) => (f.glyph_px, glyphs::GLYPH_ROWS),
-        (None, None) => unreachable!("either the spleen or the floor path is computed"),
-    };
+    let block = text_block(layout, data_px, module_px, n_rows, max_chars)?;
+    let glyph_px = block.glyph_px;
 
     // Module rects at their canvas offsets — every coordinate an
     // integer device px. The quiet zone is not drawn; the white
@@ -532,65 +693,39 @@ pub fn render_label_px(
     // the whole label is one deterministic binary raster.
     let (width_px, height_px) = match layout {
         Layout::Horz => {
-            // Height is EXACTLY size_px; the text sits right of the QR
-            // at the clamped gap.
+            // Height is EXACTLY size_px; the text sits right of the
+            // QR at the clamped gap, the block centers vertically in
+            // the module part span, and the canvas ends exactly at
+            // the widest row plus the right white floor — no trailing
+            // white.
             let tx = white.left + data_px + gap;
-            if let Some((cell, k)) = spleen {
-                // §8 Spleen path: rows draw from the cell's cap-ink
-                // band at scale k; the vertical slack distributes
-                // top/between/bottom across the FULL canvas height and
-                // the canvas ends at the widest row (the sum of the
-                // dwidth advances) plus the right white floor.
-                let ink_row = cell.band * k;
-                let slack = size_px - n_rows * ink_row;
-                let (top, between, _bottom) = spleen_gaps(slack, n_rows);
-                let mut max_row_w = 0;
-                let mut y0 = top;
-                for row in &rows {
-                    let mut x0 = tx;
-                    for ch in row.chars() {
-                        x0 += write_spleen_rects(&mut rects, cell, ch, x0, y0, k)?;
-                    }
-                    max_row_w = max_row_w.max(x0 - tx);
-                    y0 += ink_row + between;
+            let ty0 = white.top + (data_px - block.block_h) / 2;
+            for (ri, row) in rows.iter().enumerate() {
+                let y0 = ty0 + ri as u32 * block.row_pitch;
+                for (ci, ch) in row.chars().enumerate() {
+                    let x0 = tx + ci as u32 * block.advance;
+                    write_glyph_rects(&mut rects, ch, x0, y0, glyph_px)?;
                 }
-                (tx + max_row_w + white.right, size_px)
-            } else {
-                // 5×7 floor: the block centers vertically in the
-                // module part span and the canvas ends exactly at the
-                // widest row plus the right white floor — no trailing
-                // white.
-                let f = floor.as_ref().expect("floor computed when spleen is None");
-                let ty0 = white.top + (data_px - f.block_h) / 2;
-                for (ri, row) in rows.iter().enumerate() {
-                    let y0 = ty0 + ri as u32 * f.row_pitch;
-                    for (ci, ch) in row.chars().enumerate() {
-                        let x0 = tx + ci as u32 * f.advance;
-                        glyphs::write_glyph_rects(&mut rects, ch, x0, y0, f.glyph_px)?;
-                    }
-                }
-                (tx + f.max_row_w + white.right, size_px)
             }
+            (tx + block.max_row_w + white.right, size_px)
         }
         Layout::Vert => {
             // Width is EXACTLY size_px; the text sits below the QR at
             // the clamped gap, each row centers horizontally in the
             // module part span, and the canvas ends exactly at the
-            // block bottom plus the bottom white floor. Vert stays on
-            // the 5×7 floor path (module docs).
-            let f = floor.as_ref().expect("vert always computes the floor");
+            // block bottom plus the bottom white floor.
             let ty0 = white.top + data_px + gap;
             for (ri, row) in rows.iter().enumerate() {
                 let chars = row.chars().count() as u32;
-                let row_w = (chars * f.advance).saturating_sub(f.glyph_px);
+                let row_w = (chars * block.advance).saturating_sub(glyph_px);
                 let x_row = white.left + (data_px - row_w) / 2;
-                let y0 = ty0 + ri as u32 * f.row_pitch;
+                let y0 = ty0 + ri as u32 * block.row_pitch;
                 for (ci, ch) in row.chars().enumerate() {
-                    let x0 = x_row + ci as u32 * f.advance;
-                    glyphs::write_glyph_rects(&mut rects, ch, x0, y0, f.glyph_px)?;
+                    let x0 = x_row + ci as u32 * block.advance;
+                    write_glyph_rects(&mut rects, ch, x0, y0, glyph_px)?;
                 }
             }
-            (size_px, ty0 + f.block_h + white.bottom)
+            (size_px, ty0 + block.block_h + white.bottom)
         }
         Layout::Flag { .. } => unreachable!("rejected above"),
     };
@@ -612,7 +747,7 @@ viewBox=\"0 0 {width_px} {height_px}\">\
         modules,
         data_px,
         glyph_px,
-        glyph_cell,
+        glyph_cell: glyph_font::GRID_ROWS,
         white,
         padding_mode,
         symbology: resolved.compact(),
@@ -867,27 +1002,25 @@ mod tests {
         assert_eq!(l.height_px, 64, "exact canvas");
         // Remainder 4 splits 2/2 on the controlling axis.
         assert_eq!((l.white.top, l.white.bottom), (2, 2));
-        // Typography is DECOUPLED from module px under the §8 verdict:
-        // the 64px budget selects the 16×32 Spleen cell at k=1
-        // regardless of what the symbology's module deduction yields.
-        assert_eq!((l.glyph_cell, l.glyph_px), (32, 1));
-        // The cap-ink rows span the FULL canvas under the slack law:
-        // ink 2·24 = 48, slack 16 → top 5 / between 5 / bottom 6, and
-        // row 2 of FIXED_ID holds the descending Q, so the last ink
-        // row touches the bottom gap exactly.
+        // The g-law follows the module part: a 2-row block needs 15g
+        // ≤ data 60 → g=4 (the module_px cap also allows 4), so the
+        // bigger dots carry into the typography too.
+        assert_eq!((l.glyph_cell, l.glyph_px), (7, 4));
+        // The block centers in the module part: 15·4 = 60 fills it
+        // exactly, so the top ink row sits at white.top + bearing of
+        // the rows' topmost ink.
         let (_, glyph_dots) = split_rects(&l, Layout::Horz);
-        assert_eq!(glyph_dots.iter().map(|r| r.1).min(), Some(5), "top gap");
         assert_eq!(
-            glyph_dots.iter().map(|r| r.1 + r.3).max(),
-            Some(58),
-            "5 + 24 + 5 + 24 = 64 − bottom 6"
+            glyph_area(&glyph_dots),
+            expected_ink(TextFormat::FourFour, 4),
+            "ink-area ledger at k=4"
         );
         let m4 = render_mode(64, 0, true, PaddingMode::Clip);
         assert_eq!(m4.module_px, 3, "M4 (17 modules) reaches only 3px");
         assert_eq!(
             (m4.glyph_cell, m4.glyph_px),
-            (32, 1),
-            "same budget, same cell — typography no longer follows m"
+            (7, 3),
+            "data 51 → 15g ≤ 51 caps g at 3 alongside m"
         );
     }
 
@@ -945,13 +1078,13 @@ mod tests {
         assert_eq!((l.white.left, l.white.right), (6, 10));
         assert_eq!(l.height_px, 64, "exact canvas");
         // Gap follows the RIGHT side's white: max(round(1.5·10), 6) =
-        // 15 → tx = 6 + 51 + 15 = 72; the first Spleen ink rect sits
-        // the cell's left bearing (16×32 at k=1: 2 dots) inside that.
-        assert_eq!((l.glyph_cell, l.glyph_px), (32, 1));
+        // 15 → tx = 6 + 51 + 15 = 72; the first ink rect sits the
+        // rows' left bearing inside that.
+        assert_eq!((l.glyph_cell, l.glyph_px), (7, 3));
         let (_, glyph_dots) = split_rects(&l, Layout::Horz);
         assert_eq!(
             glyph_dots.iter().map(|r| r.0).min(),
-            Some(72 + spleen_left_bearing(32, TextFormat::FourFour)),
+            Some(72 + left_bearing(TextFormat::FourFour, 3)),
             "tx + left bearing"
         );
     }
@@ -1035,40 +1168,43 @@ mod tests {
             .sum()
     }
 
-    /// Total ink dots of FIXED_ID's text rows under `fmt` — the glyph
-    /// side of the rect-count ledger, counted from the table the
-    /// label selected: the vendored Spleen cell for `glyph_cell` in
-    /// {12, 16, 24, 32, 64}, the first-party 5×7 floor for 7.
-    fn expected_ink(fmt: TextFormat, glyph_cell: u32) -> usize {
+    /// Ink-pixel count of `c`'s nx75 raster at scale `k` — recomputed
+    /// through [`raster_glyph`], not read from the baked checksums.
+    fn glyph_ink(c: char, k: u32) -> usize {
+        let g = glyph_font::glyph(c).expect("nano14 alphabet");
+        raster_glyph(g, k).iter().filter(|&&p| p).count()
+    }
+
+    /// Total ink pixels of FIXED_ID's text rows under `fmt` at scale
+    /// `k` — the glyph side of the ink-area ledger.
+    fn expected_ink(fmt: TextFormat, k: u32) -> usize {
         fmt.split(FIXED_ID)
             .iter()
             .flat_map(|r| r.chars())
-            .map(|c| match glyphs_spleen::cell(glyph_cell) {
-                Some(cell) => cell.ink_bits(c).expect("nano14 alphabet") as usize,
-                None => crate::glyphs::ink_bits(c).expect("nano14 alphabet") as usize,
-            })
+            .map(|c| glyph_ink(c, k))
             .sum()
     }
 
-    /// Leftmost ink column, in glyph dots, across the first chars of
-    /// FIXED_ID's rows under `fmt` in the selected Spleen cell. The
-    /// Spleen glyphs carry a left bearing inside their dwidth box, so
-    /// the first ink rect sits at `tx + bearing·k` (the 5×7 floor
-    /// glyphs ink column 0, hence bearing 0 on that path).
-    fn spleen_left_bearing(glyph_cell: u32, fmt: TextFormat) -> u32 {
-        let Some(cell) = glyphs_spleen::cell(glyph_cell) else {
-            return 0;
-        };
+    /// Total glyph ink area in px² from the emitted run rects.
+    fn glyph_area(rects: &[Rect]) -> usize {
+        rects.iter().map(|r| (r.2 * r.3) as usize).sum()
+    }
+
+    /// Leftmost ink column, in device px, across the first chars of
+    /// FIXED_ID's rows under `fmt` at scale `k`: the first ink rect
+    /// sits at `tx + bearing` (nx75 glyphs may rest their leftmost
+    /// anchors off column 0).
+    fn left_bearing(fmt: TextFormat, k: u32) -> u32 {
+        let w = (glyph_font::GRID_COLS * k) as usize;
         fmt.split(FIXED_ID)
             .iter()
             .filter_map(|r| r.chars().next())
             .map(|c| {
-                let (dwidth, rows) = cell.glyph(c).expect("nano14 alphabet");
-                rows.iter()
-                    .filter(|r| **r != 0)
-                    .map(|r| dwidth - (32 - r.leading_zeros()))
-                    .min()
-                    .expect("glyph has ink")
+                let g = glyph_font::glyph(c).expect("nano14 alphabet");
+                let img = raster_glyph(g, k);
+                (0..w)
+                    .find(|&i| img.iter().skip(i).step_by(w).any(|&p| p))
+                    .expect("glyph has ink") as u32
             })
             .min()
             .expect("rows present")
@@ -1111,9 +1247,9 @@ mod tests {
             // gap = max(round(1.5·white.right), quiet·m), half up.
             let gap = (l.white.right + l.white.right.div_ceil(2)).max(MICRO_QUIET * l.module_px);
             let expected_tx = l.white.left + l.data_px + gap;
-            // The Spleen cells carry a left bearing inside the dwidth
-            // box, so the first ink rect sits bearing·k after tx.
-            let bearing = spleen_left_bearing(l.glyph_cell, TextFormat::FourFour) * l.glyph_px;
+            // nx75 glyphs may rest their leftmost ink off column 0,
+            // so the first ink rect sits the bearing after tx.
+            let bearing = left_bearing(TextFormat::FourFour, l.glyph_px);
             let (_, glyph_dots) = split_rects(&l, Layout::Horz);
             let min_x = glyph_dots.iter().map(|r| r.0).min().expect("glyph dots");
             assert_eq!(
@@ -1132,7 +1268,7 @@ mod tests {
         assert_eq!((l.module_px, l.white.right), (3, 0));
         let gap = MICRO_QUIET * l.module_px;
         let tx = l.white.left + l.data_px + gap;
-        let bearing = spleen_left_bearing(l.glyph_cell, TextFormat::FourFour) * l.glyph_px;
+        let bearing = left_bearing(TextFormat::FourFour, l.glyph_px);
         let (_, glyph_dots) = split_rects(&l, Layout::Horz);
         assert_eq!(
             glyph_dots.iter().map(|r| r.0).min(),
@@ -1190,77 +1326,87 @@ mod tests {
     }
 
     #[test]
-    fn spleen_selection_better_res_table() {
-        // (budget, rows) → (cell, k): the max nominal rows·cell·k that
-        // fits the budget wins; nominal ties break toward the larger
-        // cell at the lower k (native resolution beats upscaling).
-        let cases = [
-            // 16-cell k=2 ties the 32-cell k=1 at nominal 64 → 32.
-            (64_u32, 2_u32, Some((32_u32, 1_u32))),
-            // 12-cell k=2 ties the 24-cell k=1 at nominal 48 → 24.
-            (60, 2, Some((24, 1))),
-            // 32-cell k=2 ties the 64-cell k=1 at nominal 128 → 64.
-            (128, 2, Some((64, 1))),
-            // 2·12 = 24 > 20: even the 12-cell at k=1 overflows → the
-            // 5×7 floor.
-            (20, 2, None),
-            // Three-way nominal-96 tie (12·k4 / 16·k3 / 24·k2); the
-            // 32-cell reaches only 64 here → 24 at k=2.
-            (100, 2, Some((24, 2))),
-            // 3 rows: 16·k2 and 32·k1 tie at nominal 96 → 32.
-            (100, 3, Some((32, 1))),
-        ];
-        for (budget, rows, want) in cases {
-            let got = select_spleen(rows, budget).map(|(c, k)| (c.cell, k));
-            assert_eq!(got, want, "budget {budget} rows {rows}");
-        }
-    }
-
-    #[test]
-    fn spleen_selection_rides_the_rendered_label() {
-        // The §8 selection through the public API: the budget is the
-        // OVERALL controlling dimension, independent of module px
-        // (clip/pad 0 micro so every size renders).
-        for (size, cell, k) in [(64_u32, 32_u32, 1_u32), (60, 24, 1), (128, 64, 1)] {
-            let l = render_mode(size, 0, true, PaddingMode::Clip);
-            assert_eq!((l.glyph_cell, l.glyph_px), (cell, k), "size {size}");
-            assert_eq!(l.height_px, size, "exact canvas");
-        }
-        // Below the 12-cell the 5×7 g-law takes over: clip@20 → m=1,
-        // module part 17, block 15g ≤ 17 → g=1.
-        let tiny = render_mode(20, 0, true, PaddingMode::Clip);
-        assert_eq!((tiny.glyph_cell, tiny.glyph_px), (7, 1), "the floor");
-        let (_, glyph_dots) = split_rects(&tiny, Layout::Horz);
-        assert_eq!(glyph_dots.len(), expected_ink(TextFormat::FourFour, 7));
-    }
-
-    #[test]
-    fn spleen_slack_distribution_is_deterministic() {
-        // top = slack/3, the rest split across the between-gaps and
-        // the bottom, integer remainder on the bottom edge — the
-        // validated prototype's arithmetic, generalized to 3 rows.
-        assert_eq!(spleen_gaps(16, 2), (5, 5, 6));
-        assert_eq!(spleen_gaps(19, 2), (6, 6, 7));
-        assert_eq!(spleen_gaps(0, 2), (0, 0, 0));
-        assert_eq!(spleen_gaps(28, 3), (9, 6, 7));
-        // Gaps + ink always reconstruct the budget exactly.
-        for slack in 0..96_u32 {
-            for n_rows in [1_u32, 2, 3] {
-                let (top, between, bottom) = spleen_gaps(slack, n_rows);
-                assert_eq!(
-                    top + (n_rows - 1) * between + bottom,
-                    slack,
-                    "slack {slack} rows {n_rows}"
-                );
+    fn nx75_checksums_lock_the_renderer_to_the_bake() {
+        // 31 glyphs × k ∈ {2, 3, 4, 6}: the Rust raster must
+        // reproduce the bake-time ink counts exactly — any drift in
+        // the sweep law (or the baked data) trips here.
+        for g in &glyph_font::GLYPHS {
+            for (i, &k) in glyph_font::CHECKSUM_KS.iter().enumerate() {
+                let got = raster_glyph(g, k).iter().filter(|&&p| p).count() as u32;
+                assert_eq!(got, g.ink_bits[i], "glyph {} at k={k}", g.ch);
             }
         }
     }
 
     #[test]
-    fn floor_glyph_px_is_maximal_inside_the_module_part() {
-        // The pre-verdict g-law still governs the floor path. horz, 3
-        // rows below the 36px 12-cell threshold: clip@35 → m=2, data
-        // 34; the block needs 23g ≤ 34 → g=1 (the m cap not binding).
+    fn nx75_covers_exactly_the_nano14_alphabet() {
+        assert_eq!(glyph_font::ALPHABET.chars().count(), 31);
+        assert_eq!(glyph_font::GLYPHS.len(), 31);
+        for c in glyph_font::ALPHABET.chars() {
+            let g = glyph_font::glyph(c).expect("glyph in alphabet");
+            assert_eq!(g.ch, c);
+            assert!(!g.anchors.is_empty(), "{c} has anchors");
+        }
+        for c in ['0', 'O', '1', 'I', 'L', ' ', '-', 'a'] {
+            assert!(glyph_font::glyph(c).is_none(), "{c} outside the alphabet");
+        }
+    }
+
+    #[test]
+    fn nx75_unknown_char_names_the_char_and_the_alphabet() {
+        let mut out = String::new();
+        let err = write_glyph_rects(&mut out, 'O', 0, 0, 2).expect_err("O has no glyph");
+        let msg = err.to_string();
+        assert!(matches!(err, CodecError::Render(_)));
+        assert!(msg.contains("'O'"), "char named: {msg}");
+        assert!(msg.contains(glyph_font::ALPHABET), "alphabet listed: {msg}");
+        assert!(out.is_empty(), "nothing emitted on error");
+    }
+
+    #[test]
+    fn nx75_runs_emit_inside_the_glyph_box() {
+        // The run emitter reproduces the raster exactly: per-row
+        // x-sorted runs, height 1, never crossing the 5k box.
+        for (c, k) in [('K', 2_u32), ('Q', 3), ('W', 4), ('2', 6)] {
+            let mut out = String::new();
+            write_glyph_rects(&mut out, c, 10, 20, k).expect("renders");
+            let svg = format!("<svg xmlns=\"http://www.w3.org/2000/svg\"><g>{out}</g></svg>");
+            let rects = content_rects(&svg);
+            assert_eq!(
+                rects.iter().map(|r| (r.2 * r.3) as usize).sum::<usize>(),
+                glyph_ink(c, k),
+                "{c} at k={k}: run area == raster ink"
+            );
+            for (x, y, w, h) in rects {
+                assert_eq!(h, 1, "runs are 1px tall");
+                assert!(x >= 10 && x + w <= 10 + 5 * k, "{c} inside 5k width");
+                assert!(y >= 20 && y < 20 + 7 * k, "{c} inside 7k height");
+            }
+        }
+    }
+
+    #[test]
+    fn g_law_rides_the_rendered_label() {
+        // The g-law through the public API (clip/pad 0 micro so every
+        // size renders): g = min(data/15, m) for the 2-row block.
+        for (size, m, g) in [(64_u32, 3_u32, 3_u32), (60, 3, 3), (128, 7, 7), (20, 1, 1)] {
+            let l = render_mode(size, 0, true, PaddingMode::Clip);
+            assert_eq!(l.module_px, m, "size {size}");
+            assert_eq!((l.glyph_cell, l.glyph_px), (7, g), "size {size}");
+            assert_eq!(l.height_px, size, "exact canvas");
+            let (_, glyph_dots) = split_rects(&l, Layout::Horz);
+            assert_eq!(
+                glyph_area(&glyph_dots),
+                expected_ink(TextFormat::FourFour, g),
+                "ink-area ledger at size {size}"
+            );
+        }
+    }
+
+    #[test]
+    fn glyph_px_is_maximal_inside_the_module_part() {
+        // The g-law. horz, 3 rows: clip@35 → m=2, data 34; the block
+        // needs 23g ≤ 34 → g=1 (the m cap not binding).
         let l = render_label_px(
             FIXED_ID,
             Layout::Horz,
@@ -1272,7 +1418,7 @@ mod tests {
         )
         .expect("renders");
         assert_eq!((l.glyph_cell, l.glyph_px), (7, 1));
-        // vert stays on the floor at EVERY size (documented choice):
+        // vert adds the row-width cap:
         // g = min(data/block_units, data/row_units, module_px).
         let formats = [
             (TextFormat::FourFour, 2_u32, 4_u32),
@@ -1291,7 +1437,7 @@ mod tests {
                     PaddingMode::Overlap,
                 )
                 .expect("renders");
-                assert_eq!(l.glyph_cell, 7, "vert is the documented floor");
+                assert_eq!(l.glyph_cell, 7, "the nx75 cell is 7 rows");
                 let want = (l.data_px / (8 * rows - 1))
                     .min(l.data_px / (6 * chars - 1))
                     .min(l.module_px);
@@ -1302,31 +1448,32 @@ mod tests {
     }
 
     #[test]
-    fn horz_spleen_rows_distribute_the_slack_across_the_canvas() {
+    fn horz_block_centers_in_the_module_part() {
         // 64/2 micro 44: m=3, data 51, white (6,6,7,6), tx = 6 + 51 +
-        // max(round(1.5·6), 6) = 66. Budget 64 selects 16×32 @ k=1:
-        // cap band 24, ink 48, slack 16 → top 5 / between 5 / bottom 6.
+        // max(round(1.5·6), 6) = 66. g = min(51/15, 3) = 3, block
+        // 15·3 = 45 centers at ty0 = 6 + (51 − 45)/2 = 9; both rows
+        // of FIXED_ID ink their full 7g box, so the ink spans
+        // [9, 9 + 45) exactly.
         let l = render(64, true);
-        assert_eq!((l.glyph_cell, l.glyph_px), (32, 1));
+        assert_eq!((l.glyph_cell, l.glyph_px), (7, 3));
         let (_, glyph_dots) = split_rects(&l, Layout::Horz);
-        assert_eq!(glyph_dots.len(), expected_ink(TextFormat::FourFour, 32));
-        assert_eq!(glyph_dots.iter().map(|r| r.1).min(), Some(5), "top gap");
-        // Row 2 (PQ9R) holds the descending Q, which inks the band's
-        // last row: 5 + 24 + 5 + 24 = 58 = 64 − bottom 6.
-        assert_eq!(glyph_dots.iter().map(|r| r.1 + r.3).max(), Some(58));
-        // Every dot is k-sized on the k lattice anchored at (66, 5) —
-        // trivially so at k=1; the left bearing keeps min x at 66 + 2.
-        for (_, _, w, h) in &glyph_dots {
-            assert_eq!((*w, *h), (1, 1), "dot == glyph_px == k");
-        }
         assert_eq!(
-            glyph_dots.iter().map(|r| r.0).min(),
-            Some(66 + spleen_left_bearing(32, TextFormat::FourFour)),
+            glyph_area(&glyph_dots),
+            expected_ink(TextFormat::FourFour, 3)
         );
-        // Exact width: the widest row is the sum of the dwidth
-        // advances (4·16·1 = 64) — the advance carries the cell's own
-        // inter-char spacing, so the canvas is 66 + 64 + 6 = 136.
-        assert_eq!(l.width_px, 66 + 64 + l.white.right);
+        assert_eq!(glyph_dots.iter().map(|r| r.1).min(), Some(9), "block top");
+        assert_eq!(
+            glyph_dots.iter().map(|r| r.1 + r.3).max(),
+            Some(54),
+            "block bottom 9 + 45"
+        );
+        // FIXED_ID's first chars (K, P) ink column 0, so the first
+        // ink rect sits exactly at tx.
+        assert_eq!(left_bearing(TextFormat::FourFour, 3), 0);
+        assert_eq!(glyph_dots.iter().map(|r| r.0).min(), Some(66));
+        // Exact width: the widest row is 4 advances of 6g minus the
+        // trailing g gap (69), so the canvas is 66 + 69 + 6 = 141.
+        assert_eq!(l.width_px, 66 + 69 + l.white.right);
         assert!(
             glyph_dots.iter().map(|r| r.0 + r.2).max() <= Some(l.width_px - l.white.right),
             "ink never crosses the right white floor"
@@ -1352,22 +1499,19 @@ mod tests {
                     PaddingMode::Overlap,
                 )
                 .expect("renders");
-                // horz at 100px rides the Spleen path; vert stays on
-                // the 5×7 floor — the ledger counts from whichever
-                // table glyph_cell names.
-                match layout {
-                    Layout::Horz => assert_ne!(l.glyph_cell, 7, "{spec} {fmt:?}"),
-                    _ => assert_eq!(l.glyph_cell, 7, "{spec} {fmt:?}"),
-                }
+                // Both layouts draw nx75 at the label's g — the QR
+                // side counts rects, the glyph side counts ink AREA
+                // (the emitter merges horizontal runs).
+                assert_eq!(l.glyph_cell, 7, "{spec} {fmt:?}");
                 let (qr, glyph_dots) = split_rects(&l, layout);
                 assert_eq!(qr.len(), dark_modules(spec), "{spec} {layout:?}");
                 assert_eq!(
-                    glyph_dots.len(),
-                    expected_ink(fmt, l.glyph_cell),
+                    glyph_area(&glyph_dots),
+                    expected_ink(fmt, l.glyph_px),
                     "{spec} {fmt:?} {layout:?}"
                 );
-                for (_, _, w, h) in &glyph_dots {
-                    assert_eq!((*w, *h), (l.glyph_px, l.glyph_px), "dot == glyph_px");
+                for (_, _, _, h) in &glyph_dots {
+                    assert_eq!(*h, 1, "glyph runs are 1px tall");
                 }
             }
         }
@@ -1528,8 +1672,15 @@ mod tests {
             for (_, _, w, h) in qr {
                 assert_eq!((w, h), (l.module_px, l.module_px), "rect == module_px");
             }
+            let ink: usize = glyph_dots.iter().map(|r| (r.2 * r.3) as usize).sum();
+            assert_eq!(
+                ink,
+                expected_ink(TextFormat::FiveFiveFour, l.glyph_px),
+                "glyph ink area for {layout:?}"
+            );
             for (_, _, w, h) in glyph_dots {
-                assert_eq!((w, h), (l.glyph_px, l.glyph_px), "dot == glyph_px");
+                assert_eq!(h, 1, "glyph runs are 1px tall");
+                assert!(w >= 1 && w <= 5 * l.glyph_px, "run inside the glyph box");
             }
             assert!(l.svg.contains("shape-rendering=\"crispEdges\""));
         }
@@ -1551,11 +1702,14 @@ mod tests {
         // gap = max(round(1.5·6), 6) = 9. The row-width cap binds: a
         // 4-char row is 23g wide, 23·3 > 51, so g=2 (block cap is 3).
         assert_eq!((l.module_px, l.data_px, l.glyph_px), (3, 51, 2));
-        assert_eq!(l.glyph_cell, 7, "vert stays on the 5×7 floor");
+        assert_eq!(l.glyph_cell, 7, "the nx75 cell is 7 rows");
         let ty0 = l.white.top + l.data_px + 9;
         let block_h = 15 * l.glyph_px;
         let (_, glyph_dots) = split_rects(&l, Layout::Vert);
-        assert_eq!(glyph_dots.len(), expected_ink(TextFormat::FourFour, 7));
+        assert_eq!(
+            glyph_area(&glyph_dots),
+            expected_ink(TextFormat::FourFour, 2)
+        );
         assert_eq!(
             glyph_dots.iter().map(|r| r.1).min(),
             Some(ty0),
@@ -1582,30 +1736,33 @@ mod tests {
         // data 51, controlling floors 6/6, remainder 4 lands as top 8
         // and bottom 8, non-controlling sides at their floors (6/6).
         // gap = max(round(1.5·6), 6) = 9 → text at x = 6+51+9 = 66.
-        // Typography: budget 67 → 16×32 @ k=1 (nominal 64), cap band
-        // 24, ink 48, slack 19 → top 6 / between 6 / bottom 7; widest
-        // row 4·16 = 64 → width 66 + 64 + 6 = 136.
+        // Typography: g = min(51/15, 3) = 3, block 45 centers at
+        // ty0 = 8 + (51 − 45)/2 = 11; widest row 4·18 − 3 = 69 →
+        // width 66 + 69 + 6 = 141.
         let l = render_pad(67, 2, true);
-        assert_eq!((l.width_px, l.height_px), (136, 67));
+        assert_eq!((l.width_px, l.height_px), (141, 67));
         assert_eq!((l.data_px, l.module_px), (51, 3));
-        assert_eq!((l.glyph_cell, l.glyph_px), (32, 1));
+        assert_eq!((l.glyph_cell, l.glyph_px), (7, 3));
         assert_eq!(l.white, Padding::sides(8, 6, 8, 6));
         assert_eq!((l.qr_px, l.modules), (63, 21));
         let (qr, glyph_dots) = split_rects(&l, Layout::Horz);
         assert_eq!(qr.len(), dark_modules("micro"), "QR side of the ledger");
-        assert_eq!(glyph_dots.len(), expected_ink(TextFormat::FourFour, 32));
+        assert_eq!(
+            glyph_area(&glyph_dots),
+            expected_ink(TextFormat::FourFour, 3)
+        );
         assert_eq!(
             glyph_dots.iter().map(|r| r.0).min(),
-            Some(66 + spleen_left_bearing(32, TextFormat::FourFour)),
+            Some(66 + left_bearing(TextFormat::FourFour, 3)),
             "tx + left bearing"
         );
-        assert_eq!(glyph_dots.iter().map(|r| r.1).min(), Some(6), "top gap");
-        // Row 2 (PQ9R) holds the descending Q, which inks the band's
-        // last row: 6 + 24 + 6 + 24 = 60 = 67 − bottom 7.
+        assert_eq!(glyph_dots.iter().map(|r| r.1).min(), Some(11), "block top");
+        // Both rows ink their full 7g boxes, so the last ink row is
+        // the block bottom: 11 + 45 = 56.
         assert_eq!(
             glyph_dots.iter().map(|r| r.1 + r.3).max(),
-            Some(60),
-            "bottom gap"
+            Some(56),
+            "block bottom"
         );
         assert!(
             glyph_dots.iter().map(|r| r.0 + r.2).max() <= Some(l.width_px - l.white.right),

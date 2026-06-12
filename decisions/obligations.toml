@@ -221,7 +221,7 @@ adr = "ADR-031"
 statement = "px-true render: size = exact output canvas, padding = floor, module_px DEDUCED from (size-2*pad)/N, ERROR on impossible fit; symbol_px % N == 0"
 kind = "test"
 status = "pending"
-tracking = "ADR-031 §8 geometry landing (codec px.rs: overlap/additive deduction, module-grid text, uniform white, 1.5x gap — agent in flight); REMAINING: padding_mode=clip (zero embedded quiet zone, m=floor((size-2pad)/data), profile-verified safe space), per-side CSS padding, --size <N>[px|mm] suffix, gap clamp >= quiet*m, profile intrinsic-margin/cut-tolerance checks"
+tracking = "px geometry + clip + per-side padding + --type + --size suffix + nx75 typography ALL LANDED; REMAINING: --size-mode snap, --align, combination validation, printer profiles (task #13)"
 
 [[obligation]]
 id = "print-contracts"

@@ -303,6 +303,30 @@ and registries declare:
   table is the px print contract's typography, period. Bench artifacts:
   `labels/typography-bench/bench3-*` (coarse 5×7 vs threshold-
   rasterized JetBrainsMono vs AA control, lookalike pairs included).
+  **FINAL typography (2026-06-12): nx75 — the part-registry anchor
+  font.** Supersedes the Spleen multi-cell verdict (Spleen removed
+  from runtime and SOUP; generator retained as bench tooling). The
+  font is first-party, interactively authored: source of truth is
+  `design/glyph-font.v1.json` (31 glyphs: 7x5 anchor pixels, edge
+  overrides, per-anchor corner-kernels) clicked in the checked-in
+  editor (`tools/font_editor_gen.py`, which doubles as the REFERENCE
+  render implementation). Design grammar mined from the authored data
+  — four rules: (1) diagonal-touching anchors are diamond; (2)
+  orth-only anchors square; (3) diagonal tips keep the outward corner;
+  (4) diagonals carry into their corner anchor, orth stubs yield.
+  Render law (every clause traceable to a printed/pointed-at
+  artifact): half-edge kernel sweeps to edge midpoints; orth bodies
+  width k; diagonal bands k anti-diagonal rows with parity remainder
+  and the k=3 bonus row on the OUTSIDE; k<=2 floor = full
+  perpendicular width; near ink (nonzero balance, canonical edge
+  frame) bands hug the outside of the anchor line — overshoot
+  structurally impossible, no guards; band-owned pass-through anchors
+  carry no stamp (constant-derivative law); pure diagonal tips cap
+  corners-only; cell mask clips. Baked via `tools/bake_glyph_font.py`
+  (drift-gated --check) into `crates/codec/src/glyph_font.rs` with
+  per-glyph ink checksums at k=2/3/4/6 locking the Rust renderer to
+  the reference bit-for-bit (cross-language A/B verified at zero
+  pixel mismatches).
   Supersession trigger: label formats with ink heights well beyond
   5mm where letterform aesthetics matter — re-run the bench before
   reconsidering tier 2. **Typography verdict (2026-06-11, superseding
