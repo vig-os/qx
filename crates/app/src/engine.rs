@@ -893,6 +893,25 @@ fn print_mm(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
             ),
         );
     }
+    // §10 repeat primitives compose on the px-true path only — the
+    // mm renderer would silently drop them, which is worse than
+    // refusing (same staging rule as the symbology pin above).
+    if options.repeat.is_some()
+        || options.repeat_axis.is_some()
+        || options.repeat_gap_px.is_some()
+        || options.repeat_orient.is_some()
+        || options.length_px.is_some()
+        || options.spacing.is_some()
+        || options.rotate.is_some()
+        || options.length_excess_px.is_some()
+        || options.excess_at.is_some()
+    {
+        return Response::error(
+            ErrorKind::Validation,
+            "repeat/rotate/length compose on the px-true renderer only (ADR-031 §10) \
+             — switch to a px size (8mm @300dpi ≈ 94px) or drop the repeat flags",
+        );
+    }
     let micro = symbology.family == Family::Micro;
     // The mm renderer's fixed pins, reported as resolved evidence.
     let resolved = if micro { "micro-m4-m" } else { "qr-v1-m" };
@@ -1043,6 +1062,8 @@ fn mm_receipt(
         bg: bg.svg.clone(),
         font: "Consolas".into(),
         generator: part_registry_codec::receipt::generator(),
+        // The mm path refuses repeat flags outright (px-only).
+        repeat: None,
     }
 }
 

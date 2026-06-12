@@ -1127,6 +1127,8 @@ fn receipt_for(
         bg: bg.svg.clone(),
         font: "nx75".into(),
         generator: crate::receipt::generator(),
+        // The repeat composer enriches this on composed strips.
+        repeat: None,
     }
 }
 

@@ -397,6 +397,24 @@ viewBox=\"0 0 {canvas_w} {canvas_h}\">{bg_rect}{groups}</svg>\n"
         length_px: total_main,
     };
     let _ = length_used;
+
+    // One receipt per ARTIFACT: every copy dragged the source label's
+    // <metadata> along — strip them all, then inscribe a single
+    // receipt enriched with the resolved repeat geometry.
+    let mut svg = svg;
+    while let Some(start) = svg.find("<metadata") {
+        match svg[start..].find("</metadata>") {
+            Some(rel_end) => svg.replace_range(start..start + rel_end + "</metadata>".len(), ""),
+            None => break,
+        }
+    }
+    let mut strip_receipt = label.receipt.clone();
+    strip_receipt.repeat = Some(resolved.clone());
+    let meta = crate::receipt::metadata_element(&strip_receipt);
+    if let Some(pos) = svg.rfind("</svg>") {
+        svg.insert_str(pos, &meta);
+    }
+
     Ok(RepeatComposed {
         svg,
         width_px: canvas_w,
@@ -595,6 +613,7 @@ viewBox=\"0 0 {w} {h}\"><rect width=\"{w}\" height=\"{h}\" fill=\"white\"/>\
             bg: "white".into(),
             font: "nx75".into(),
             generator: "test".into(),
+            repeat: None,
         };
         PxLabel {
             svg,
@@ -798,6 +817,30 @@ viewBox=\"0 0 {w} {h}\"><rect width=\"{w}\" height=\"{h}\" fill=\"white\"/>\
         let c = compose(&l, &opts).expect("composes");
         assert!(c.svg.contains("rotate(180)"));
         assert_eq!(c.resolved.orient, "alternate");
+    }
+
+    #[test]
+    fn composed_strip_carries_one_receipt_enriched_with_repeat() {
+        let mut l = fake_label(20, 10);
+        // Inscribe a receipt the way the real renderer does — each
+        // copy would otherwise drag its own stale <metadata> along.
+        let meta = crate::receipt::metadata_element(&l.receipt);
+        l.svg = l.svg.replace("</svg>", &format!("{meta}</svg>"));
+        let opts = RepeatOpts {
+            count: RepeatCount::N(3),
+            gap_px: Some(2),
+            ..Default::default()
+        };
+        let c = compose(&l, &opts).expect("composes");
+        assert_eq!(
+            c.svg.matches("<metadata").count(),
+            1,
+            "one receipt per artifact"
+        );
+        let r = crate::receipt::extract_metadata(&c.svg).expect("receipt parses");
+        let rep = r.repeat.expect("repeat geometry rides the receipt");
+        assert_eq!((rep.n, rep.gap_px), (3, 2));
+        assert_eq!(rep.length_px, c.width_px);
     }
 
     #[test]

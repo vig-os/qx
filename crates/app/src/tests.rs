@@ -811,6 +811,27 @@ fn print_mm_takes_symbology_family_but_rejects_pins() {
     assert!(e.message.contains("px"), "points at px: {}", e.message);
 }
 
+// Repeat primitives compose on the px path only; the mm renderer
+// refuses them instead of silently rendering a single copy.
+#[test]
+fn print_mm_rejects_repeat_flags_instead_of_ignoring_them() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"symbology":"micro","chars":"44","log":false,
+                          "repeat":"3","repeat_orient":"alternate"}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(
+        e.message.contains("px-true"),
+        "points at the px path: {}",
+        e.message
+    );
+}
+
 // The one CSS-shorthand expansion rule, text form (the CLI value
 // parser) and wire form (serde-untagged) — plus old-wire compat.
 #[test]
