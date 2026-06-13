@@ -1,0 +1,88 @@
+{
+  "contract_version": 1,
+  "change_control": {
+    "version": 1,
+    "effective_from": "2026-06-12T00:00:00Z",
+    "change_rationale": "Initial canonical-form contract (ADR-039). Demonstrates the §2 scalar set: reference, decimal+unit, timestamp, enum closed-policy, object(schema), and the required_to_enter transition gate.",
+    "approved_by": ["github:gerchowl", "github:MorePET-reviewer"]
+  },
+  "compat": { "min": 1, "max": 1 },
+  "unknown_type_policy": "reject",
+  "unknown_field_policy": "warn",
+  "collections": [
+    {
+      "name": "parts",
+      "id": { "scheme": "nano14", "default": true, "mintable": true, "prefix_length": 8 },
+      "lifecycle": {
+        "statuses": ["unbound", "bound", "void"],
+        "transitions": { "unbound": ["bound", "void"], "bound": ["void"], "void": [] },
+        "initial": "unbound"
+      },
+      "open_properties": true,
+      "render": { "label_fields": ["id", "type"] },
+      "fields": [
+        {
+          "key": "type", "type": "string", "label": "Type",
+          "editable": true, "required_to_enter": "bound", "maxLength": 100,
+          "render": { "widget": "text", "order": 1 }
+        },
+        {
+          "key": "description", "type": "string", "label": "Description",
+          "editable": true, "meaningful_from": "bound", "maxLength": 500,
+          "render": { "widget": "textarea", "order": 2 }
+        },
+        {
+          "key": "vendor", "type": "reference", "label": "Vendor",
+          "editable": true, "meaningful_from": "bound",
+          "collection": "vendors", "display": "label", "on_unknown": "reject",
+          "render": { "widget": "picker", "order": 3 }
+        },
+        {
+          "key": "part_number", "type": "string", "label": "Part number",
+          "editable": true, "meaningful_from": "bound", "maxLength": 100,
+          "render": { "widget": "text", "order": 4 }
+        },
+        {
+          "key": "torque_spec", "type": "decimal", "label": "Torque spec",
+          "editable": true, "meaningful_from": "bound",
+          "precision": 6, "scale": 2, "unit": "N·m", "min": 0,
+          "render": { "widget": "number", "order": 5 }
+        },
+        {
+          "key": "calibration_due", "type": "timestamp", "label": "Calibration due",
+          "editable": true, "meaningful_from": "bound",
+          "render": { "widget": "date", "order": 6 }
+        },
+        {
+          "key": "datasheet", "type": "attachment", "label": "Datasheet",
+          "editable": true, "constraint": "pdf|png",
+          "render": { "widget": "file", "order": 7 }
+        },
+        {
+          "key": "measurement", "type": "object", "label": "Acceptance measurement",
+          "editable": true, "meaningful_from": "bound",
+          "schema": [
+            { "key": "value", "type": "decimal", "label": "Value", "precision": 8, "scale": 4 },
+            { "key": "unit", "type": "string", "label": "Unit" },
+            { "key": "passed", "type": "bool", "label": "Within tolerance" }
+          ],
+          "render": { "widget": "textarea", "order": 8 }
+        }
+      ]
+    },
+    {
+      "name": "vendors",
+      "id": { "scheme": "nano14", "default": false, "mintable": true },
+      "render": { "label_fields": ["label"] },
+      "fields": [
+        { "key": "label", "type": "string", "label": "Name", "editable": true, "required": true, "maxLength": 200 },
+        {
+          "key": "status", "type": "enum", "label": "Qualification",
+          "editable": true,
+          "values": ["candidate", "qualified", "suspended"], "closed": true,
+          "render": { "widget": "dropdown" }
+        }
+      ]
+    }
+  ]
+}
