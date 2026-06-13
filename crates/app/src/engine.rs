@@ -13,10 +13,11 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use part_registry_codec::{
-    check_format_warning, color, fill_to_max, payload as payload_dsl, recommend_format,
-    render_label, render_label_px_with_opts, solver as solver_mod, svg as svg_mod, CodecError,
-    Color, Family, IdBlock, Layout, Padding, PaddingMode, PayloadShape, PxLabel, RenderOpts,
-    SizeMode, SolverInputs, Symbology, TextFormat,
+    check_format_warning, color, compose_repeat, deprecated_flag_sugar, fill_to_max,
+    payload as payload_dsl, recommend_format, render_label, render_label_px_with_opts,
+    solver as solver_mod, svg as svg_mod, CodecError, Color, ExcessAt, Family, IdBlock, Layout,
+    Orient, Padding, PaddingMode, PayloadShape, PxLabel, RenderOpts, RepeatAxis, RepeatCount,
+    RepeatOpts, Rotate, SizeMode, SolverInputs, Spacing, Symbology, TextFormat,
 };
 use part_registry_domain::{
     Diff, DiffEdit, DiffRow, Operator, OperatorRef, Part, PartId, PartStatus, PrintEvent, Proposal,
@@ -892,6 +893,25 @@ fn print_mm(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
             ),
         );
     }
+    // §10 repeat primitives compose on the px-true path only — the
+    // mm renderer would silently drop them, which is worse than
+    // refusing (same staging rule as the symbology pin above).
+    if options.repeat.is_some()
+        || options.repeat_axis.is_some()
+        || options.repeat_gap_px.is_some()
+        || options.repeat_orient.is_some()
+        || options.length_px.is_some()
+        || options.spacing.is_some()
+        || options.rotate.is_some()
+        || options.length_excess_px.is_some()
+        || options.excess_at.is_some()
+    {
+        return Response::error(
+            ErrorKind::Validation,
+            "repeat/rotate/length compose on the px-true renderer only (ADR-031 §10) \
+             — switch to a px size (8mm @300dpi ≈ 94px) or drop the repeat flags",
+        );
+    }
     let micro = symbology.family == Family::Micro;
     // The mm renderer's fixed pins, reported as resolved evidence.
     let resolved = if micro { "micro-m4-m" } else { "qr-v1-m" };
@@ -1042,6 +1062,8 @@ fn mm_receipt(
         bg: bg.svg.clone(),
         font: "Consolas".into(),
         generator: part_registry_codec::receipt::generator(),
+        // The mm path refuses repeat flags outright (px-only).
+        repeat: None,
     }
 }
 
@@ -1074,15 +1096,51 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
             );
         }
     };
-    // ADR-031 §10 payload DSL (stage 1: flat list).
-    let payload_elements = match options
+    // ADR-031 §10 payload DSL (stage 2: nested groups + canvas at
+    // root). Parse the structured tree once and dispatch.
+    let payload_tree = match options
         .payload
         .as_deref()
-        .map(payload_dsl::parse)
+        .map(payload_dsl::parse_tree)
         .transpose()
     {
         Ok(p) => p,
         Err(e) => return Response::error(ErrorKind::Validation, e),
+    };
+    // Stage 2 canvas: validate + surface as Unsupported for the
+    // composed render (the resolved tree is the receipt). Full
+    // canvas-aware rendering is the future ROI step.
+    if let Some(part_registry_codec::PayloadNode::Canvas {
+        width,
+        height,
+        children,
+    }) = &payload_tree
+    {
+        let resolved = match part_registry_codec::resolve_canvas(*width, *height, children, dpi) {
+            Ok(r) => r,
+            Err(e) => return Response::error(ErrorKind::Validation, e),
+        };
+        return Response::ok(json!({
+            "labels": [],
+            "unit": "px",
+            "canvas": resolved,
+            "warning": if resolved.overlaps.is_empty() {
+                None
+            } else {
+                Some(resolved.overlaps.join("; "))
+            },
+            "note": "canvas geometry validated; full render is a future step (ADR-031 §10 stage 2 minimum-viable surface)",
+        }));
+    }
+    // For non-canvas trees, flatten into the existing flat-list path —
+    // the regression-pin "qr id" still parses to the same byte-
+    // identical render.
+    let payload_elements = match payload_tree.as_ref() {
+        Some(tree) => match payload_dsl::flatten(tree) {
+            Ok(v) => Some(v),
+            Err(e) => return Response::error(ErrorKind::Validation, e),
+        },
+        None => None,
     };
     // §3: size_px (the EXACT output canvas) is direct; otherwise
     // mm → px at `dpi` defines the canvas. The codec deduces the
@@ -1119,10 +1177,14 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
     };
     // px mode does not require cable_od_mm up front: the codec rejects
     // the flag layout itself (Unsupported, ADR-031 §5) with the
-    // authoritative message.
+    // authoritative message — UNLESS the deprecated --layout flag +
+    // --cable-od sugar is firing (ADR-031 §10), in which case the
+    // per-label render is `horz` and the repeat composer materializes
+    // the flag geometry from repeat 2 / linear / alternate.
     let layout = match options.layout.as_str() {
         "vert" => Layout::Vert,
         "horz" => Layout::Horz,
+        "flag" if options.cable_od_mm.is_some() => Layout::Horz,
         "flag" => Layout::Flag {
             cable_od_mm: options.cable_od_mm.unwrap_or(0.0),
             no_markers: false,
@@ -1197,15 +1259,46 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
     // so a mixed batch comes out physically uniform.
     fill_to_max(&mut rendered, padding);
 
+    // §10 repeat primitives: compose copies (orthogonal to single-label
+    // sizing). Also handles deprecated `--layout flag` + `--cable-od`
+    // sugar, which expands to repeat 2 / linear / alternate.
+    let (repeat_opts, deprecation_warning) = match resolve_repeat_opts(options, dpi) {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    let mut composed: Vec<Option<part_registry_codec::RepeatComposed>> =
+        Vec::with_capacity(rendered.len());
+    if let Some(opts) = &repeat_opts {
+        for l in &rendered {
+            match compose_repeat(l, opts) {
+                Ok(c) => composed.push(Some(c)),
+                Err(e) => return px_codec_error(e),
+            }
+        }
+    }
+
     let labels: Vec<serde_json::Value> = targets
         .iter()
         .zip(&rendered)
-        .map(|(p, l)| {
+        .enumerate()
+        .map(|(i, (p, l))| {
+            // When repeat is active, swap in the composed SVG + dims
+            // — the per-label receipt records the resolved repeat object.
+            let (svg, width_px, height_px, repeat_field) =
+                match composed.get(i).and_then(|c| c.as_ref()) {
+                    Some(c) => (
+                        c.svg.clone(),
+                        c.width_px,
+                        c.height_px,
+                        Some(c.resolved.clone()),
+                    ),
+                    None => (l.svg.clone(), l.width_px, l.height_px, None),
+                };
             json!({
                 "id": p.id.as_str(),
-                "svg": l.svg,
-                "width_px": l.width_px,
-                "height_px": l.height_px,
+                "svg": svg,
+                "width_px": width_px,
+                "height_px": height_px,
                 "qr_px": l.qr_px,
                 "module_px": l.module_px,
                 "data_px": l.data_px,
@@ -1215,6 +1308,7 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
                 "padding_mode": l.padding_mode,
                 "symbology": l.symbology,
                 "receipt": l.receipt,
+                "repeat": repeat_field,
             })
         })
         .collect();
@@ -1256,7 +1350,10 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
         }
     }
 
-    let combined_warning = combine_warnings(warning.as_deref(), color_warning.as_deref());
+    let mut combined_warning = combine_warnings(warning.as_deref(), color_warning.as_deref());
+    if let Some(w) = deprecation_warning {
+        combined_warning = combine_warnings(combined_warning.as_deref(), Some(w.as_str()));
+    }
     Response::ok(json!({
         "labels": labels,
         "unit": "px",
@@ -1418,6 +1515,118 @@ fn resolve_solver_block(
         Ok(b) => Ok(Some(b)),
         Err(e) => Err(Response::error(ErrorKind::Validation, e.message)),
     }
+}
+
+/// Resolve the ADR-031 §10 repeat primitives from the request
+/// options. Returns `(Some(opts), Some(warning))` when the deprecated
+/// `--layout flag` + `--cable-od` sugar fires; `(None, None)` when no
+/// repeat is requested.
+fn resolve_repeat_opts(
+    options: &PrintOptions,
+    dpi: f64,
+) -> Result<(Option<RepeatOpts>, Option<String>), Response> {
+    // Deprecated sugar: layout=flag + cable_od_mm → repeat 2 alternate.
+    // Only fires on the px path (where this fn runs); when the user
+    // ALSO sets --repeat explicitly, the explicit form wins (the
+    // deprecation note still rides as a warning).
+    let flag_sugar = if options.layout == "flag" {
+        options.cable_od_mm.map(|od| deprecated_flag_sugar(od, dpi))
+    } else {
+        None
+    };
+    if options.repeat.is_none()
+        && options.repeat_gap_px.is_none()
+        && options.length_px.is_none()
+        && options.rotate.is_none()
+        && options.length_excess_px.is_none()
+        && flag_sugar.is_none()
+    {
+        return Ok((None, None));
+    }
+    let (mut opts, deprecation) = match flag_sugar {
+        Some((o, w)) => (o, Some(w)),
+        None => (RepeatOpts::default(), None),
+    };
+    if let Some(s) = options.repeat.as_deref() {
+        opts.count =
+            parse_repeat_count(s).map_err(|e| Response::error(ErrorKind::Validation, e))?;
+    }
+    if let Some(s) = options.repeat_axis.as_deref() {
+        opts.axis = match s {
+            "along" => RepeatAxis::Along,
+            "across" => RepeatAxis::Across,
+            other => {
+                return Err(Response::error(
+                    ErrorKind::Validation,
+                    format!("unknown --repeat-axis {other:?}; values: along, across"),
+                ));
+            }
+        };
+    }
+    if let Some(g) = options.repeat_gap_px {
+        opts.gap_px = Some(g);
+    }
+    if let Some(s) = options.repeat_orient.as_deref() {
+        opts.orient = match s {
+            "same" => Orient::Same,
+            "alternate" => Orient::Alternate,
+            other => {
+                return Err(Response::error(
+                    ErrorKind::Validation,
+                    format!("unknown --repeat-orient {other:?}; values: same, alternate"),
+                ));
+            }
+        };
+    }
+    if let Some(l) = options.length_px {
+        opts.length_px = Some(l);
+    }
+    if let Some(s) = options.spacing.as_deref() {
+        opts.spacing = match s {
+            "linear" => Spacing::Linear,
+            "cyclic" => Spacing::Cyclic,
+            other => {
+                return Err(Response::error(
+                    ErrorKind::Validation,
+                    format!("unknown --spacing {other:?}; values: linear, cyclic"),
+                ));
+            }
+        };
+    }
+    if let Some(r) = options.rotate {
+        opts.rotate = Rotate::from_deg(r).map_err(|e| Response::error(ErrorKind::Validation, e))?;
+    }
+    if let Some(ex) = options.length_excess_px {
+        opts.excess_px = ex;
+    }
+    if let Some(s) = options.excess_at.as_deref() {
+        opts.excess_at = match s {
+            "start" => ExcessAt::Start,
+            "end" => ExcessAt::End,
+            other => {
+                return Err(Response::error(
+                    ErrorKind::Validation,
+                    format!("unknown --excess-at {other:?}; values: start, end"),
+                ));
+            }
+        };
+    }
+    Ok((Some(opts), deprecation))
+}
+
+/// `--repeat <n|fill>` parser. `n` must be ≥ 1.
+fn parse_repeat_count(s: &str) -> Result<RepeatCount, String> {
+    let t = s.trim();
+    if t == "fill" {
+        return Ok(RepeatCount::Fill);
+    }
+    let n: u32 = t
+        .parse()
+        .map_err(|_| format!("--repeat {t:?}: expected a positive integer or \"fill\""))?;
+    if n < 1 {
+        return Err(format!("--repeat {n}: must be >= 1"));
+    }
+    Ok(RepeatCount::N(n))
 }
 
 fn padding_mode_name(m: PaddingMode) -> &'static str {

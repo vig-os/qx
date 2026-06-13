@@ -81,11 +81,24 @@
         # bump there propagates to `nix develop` without a flake edit.
         rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
-        # wasm-bindgen-cli's version must match the `wasm-bindgen`
-        # crate version pinned in workspace `Cargo.toml` (currently
-        # 0.2.121 per Foundation #33 + #54). nixpkgs nightly tracks
-        # the latest; pin by hash if the unstable channel ever drifts.
-        wasmBindgenCli = pkgs.wasm-bindgen-cli;
+        # wasm-bindgen-cli's version must EXACTLY match the
+        # `wasm-bindgen` crate version in Cargo.lock (0.2.121, the
+        # same prebuilt release.yml ships) — the bindgen schema is
+        # unstable across versions. nixpkgs' default binary trails
+        # the lock (0.2.117 at the current pin), so build the exact
+        # CLI from crates.io.
+        wasmBindgenCli = pkgs.buildWasmBindgenCli rec {
+          src = pkgs.fetchCrate {
+            pname = "wasm-bindgen-cli";
+            version = "0.2.121";
+            hash = "sha256-ZOMgFNOcGkO66Jz/Z83eoIu+DIzo3Z/vq6Z5g6BDY/w=";
+          };
+          cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+            inherit src;
+            inherit (src) pname version;
+            hash = "sha256-DPdCDPTAPBrbqLUqnCwQu1dePs9lGg85JCJOCIr9qjU=";
+          };
+        };
 
         # Workspace builds with the same pinned toolchain the dev shell uses.
         rustPlatformPinned = pkgs.makeRustPlatform {
@@ -127,6 +140,13 @@
               || (pkgs.lib.hasInfix "/decisions/" p)
               || (pkgs.lib.hasInfix "/labels/" p)
               || (pkgs.lib.hasInfix "/web/test-fixtures/" p)
+              # label.py parity goldens the cli test suite reads
+              || (pkgs.lib.hasInfix "/tests/golden/" p)
+              # storage conformance fixtures (registry.csv etc.)
+              || (pkgs.lib.hasInfix "/tests/fixtures/" p)
+              # committed example SVGs the codec regression suite
+              # diffs against (root examples/)
+              || (pkgs.lib.hasInfix "/examples/" p)
               || (pkgs.lib.hasSuffix ".toml" base)
               || (pkgs.lib.hasSuffix ".lock" base);
         };
@@ -144,7 +164,12 @@
           # fixture we missed in a prior pass). Build vendored deps with
           # every feature on so the cargoArtifacts cache stays warm for
           # every downstream check.
-          cargoExtraArgs = "--workspace --all-features";
+          # --exclude part-registry-desktop: the Tauri shell drags the
+          # gtk/webkit native closure into every Linux check (glib-sys
+          # build scripts fail without it) for a ~100-line dispatch
+          # wrapper. It is checked by its own lighter `desktop-check`
+          # below instead of taxing the shared deps artifact.
+          cargoExtraArgs = "--workspace --exclude part-registry-desktop --all-features";
           # Native deps a few transitive crates need to LINK during the
           # vendor build (openssl-sys via reqwest, pkg-config consumers).
           nativeBuildInputs = [ pkgs.pkg-config ];
@@ -167,7 +192,8 @@
           inherit cargoArtifacts;
           pname = "part-registry-wasm";
           version = "0.1.0";
-          cargoExtraArgs = "--release --target wasm32-unknown-unknown -p part-registry-wasm";
+          # crane injects --release itself; repeating it errors
+          cargoExtraArgs = "--target wasm32-unknown-unknown -p part-registry-wasm";
           # The default `cargo install` step at the end of buildPackage
           # has nothing to install for a cdylib — skip it; the wasm
           # artifact lands in $cargoBuildLog's target/ dir which we
@@ -316,7 +342,9 @@
           # warnings are errors (matches the old rust.yml).
           clippy = craneLib.cargoClippy (commonArgs // {
             inherit cargoArtifacts;
-            cargoClippyExtraArgs = "--workspace --all-targets --all-features -- -D warnings";
+            # workspace/exclude/features come from commonArgs — repeating
+            # them here makes cargo reject the duplicate flags
+            cargoClippyExtraArgs = "--all-targets -- -D warnings";
           });
 
           # cargo test — every feature ON so feature-gated corners
@@ -324,15 +352,31 @@
           # run in CI.
           test = craneLib.cargoTest (commonArgs // {
             inherit cargoArtifacts;
-            cargoTestExtraArgs = "--workspace --all-features";
+            # workspace/exclude/features inherited from commonArgs
+            cargoTestExtraArgs = "";
+            # the bootstrap e2e tests drive a LOCAL bare repo through
+            # the real git binary (no network)
+            nativeBuildInputs = (commonArgs.nativeBuildInputs or [ ]) ++ [ pkgs.git ];
           });
 
-          # cargo-deny — licenses + RustSec advisories. The advisory-db
-          # input pins the RustSec tree so the check runs OFFLINE inside
-          # the Nix sandbox (no GitHub clone at gate time).
+          # cargo-deny — bans/licenses/sources only: those run from the
+          # vendored lock, fully offline. Advisories live in the `audit`
+          # check below (cargo-deny insists on git-cloning the RustSec
+          # db itself, which the sandbox forbids).
           deny = craneLib.cargoDeny (commonArgs // {
-            inherit advisory-db;
+            # cargo-deny takes its own flags: crane must not forward the
+            # workspace/feature args, and crane already injects `check`
+            # — only the WHICH list goes through cargoDenyChecks.
+            cargoExtraArgs = "";
+            cargoDenyChecks = "bans licenses sources";
           });
+
+          # RustSec advisories — crane's cargoAudit consumes the pinned
+          # advisory-db flake input, so the check is OFFLINE and the db
+          # revision is reproducible (bump via `nix flake update`).
+          audit = craneLib.cargoAudit {
+            inherit src advisory-db;
+          };
 
           # ADR obligations gate — the Rust devtools binary against
           # decisions/obligations.toml.
@@ -436,6 +480,21 @@
             nativeBuildInputs = [ pkgs.nodejs_22 pkgs.playwright-driver.browsers ];
             PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
             PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
+            # The sandbox ships no fonts: chromium renders all text at
+            # zero size, so every text-sized element reads as "hidden"
+            # to playwright's toBeVisible (assembly badge, print tab…).
+            FONTCONFIG_FILE = pkgs.makeFontsConf {
+              fontDirectories = [ pkgs.dejavu_fonts ];
+            };
+            # The bundle is built right here (with the wasm dropped in
+            # from wasmArtifact) — playwright must SERVE it, not re-run
+            # `npm run build`, whose build:wasm step needs cargo +
+            # wasm-bindgen the sandbox doesn't have.
+            E2E_WEB_SERVER_CMD = "./node_modules/.bin/vite preview --port 4173 --strictPort --base /";
+            # Baked into the bundle at build time — the same values
+            # playwright.config.ts sets for its own webServer build.
+            VITE_DATA_REPO = "exo-pet/exopet-registry-sandbox";
+            VITE_BASE = "/";
           } ''
             mkdir -p $TMPDIR/repo/web $TMPDIR/repo/schema
             cp -r ${webSrc}/. $TMPDIR/repo/web/
@@ -457,7 +516,8 @@
           release-binary = craneLib.buildPackage (commonArgs // {
             inherit cargoArtifacts;
             pname = "pr";
-            cargoExtraArgs = "--release -p part-registry-cli --bin pr";
+            # crane injects --release itself; repeating it errors
+            cargoExtraArgs = "-p part-registry-cli --bin pr";
             doCheck = false;
           });
         };

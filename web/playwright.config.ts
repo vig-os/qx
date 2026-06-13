@@ -13,7 +13,7 @@ const PORT = 4173;
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  // Each spec runs in its own browser context. Sequential by default;
+  // Each spec runs in its own browser context. Sequential by default —
   // bump to parallel once we have > 1 spec that's safe to parallelise.
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
@@ -27,9 +27,13 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   // Build once + serve via `vite preview` so we exercise the same
-  // bundle CI deploys, not the dev server.
+  // bundle CI deploys, not the dev server. E2E_WEB_SERVER_CMD lets a
+  // caller that has ALREADY built the bundle (the Nix web-e2e check —
+  // no cargo/wasm-bindgen in its sandbox) serve it directly.
   webServer: {
-    command: `npm run build && npm exec -- vite preview --port ${PORT} --strictPort --base /`,
+    command:
+      process.env.E2E_WEB_SERVER_CMD ??
+      `npm run build && npm exec -- vite preview --port ${PORT} --strictPort --base /`,
     url: `http://localhost:${PORT}/`,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,

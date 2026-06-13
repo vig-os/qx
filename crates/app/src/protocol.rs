@@ -239,6 +239,40 @@ pub struct PrintOptions {
     /// in device px (mm rides the value like `--size`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id_size_px: Option<u32>,
+    /// `--repeat <n|fill>` (ADR-031 §10): compose the rendered label
+    /// into N copies along the canvas axis. `"fill"` fits as many as
+    /// `--length` allows at the gap floor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeat: Option<String>,
+    /// `--repeat-axis along|across` (default along = canvas flow).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeat_axis: Option<String>,
+    /// `--repeat-gap <N>[px|mm]` — explicit inter-copy gap in device px.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeat_gap_px: Option<u32>,
+    /// `--repeat-orient same|alternate` (alternate rotates every
+    /// second copy 180°). Default `same`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeat_orient: Option<String>,
+    /// `--length <N>[px|mm]` — required for `fill` and for derived
+    /// gaps.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length_px: Option<u32>,
+    /// `--spacing linear|cyclic` — linear has n-1 gaps; cyclic has
+    /// n gaps (closed loops). Default linear.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spacing: Option<String>,
+    /// `--rotate 0|90|180|270` — whole-label rotation applied BEFORE
+    /// repeating.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotate: Option<u32>,
+    /// `--length-excess <N>[px|mm]` — BLANK leader/tail in device px.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length_excess_px: Option<u32>,
+    /// `--excess-at start|end` — which end carries the excess zone.
+    /// Default `end`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub excess_at: Option<String>,
 }
 
 fn default_layout() -> String {
@@ -283,6 +317,15 @@ impl Default for PrintOptions {
             id_chars: None,
             rows: None,
             id_size_px: None,
+            repeat: None,
+            repeat_axis: None,
+            repeat_gap_px: None,
+            repeat_orient: None,
+            length_px: None,
+            spacing: None,
+            rotate: None,
+            length_excess_px: None,
+            excess_at: None,
         }
     }
 }

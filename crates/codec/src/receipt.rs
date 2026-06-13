@@ -40,6 +40,11 @@ pub struct Receipt {
     /// `concat("pr ", env!("CARGO_PKG_VERSION"))` — the codec's
     /// version stamp.
     pub generator: String,
+    /// Resolved §10 repeat geometry — present only on composed strips
+    /// (`--repeat` and friends); absent on single-label artifacts so
+    /// their receipts stay byte-identical to pre-repeat output.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeat: Option<crate::repeat::RepeatResolved>,
 }
 
 /// Codec version stamp used by [`Receipt::generator`]. Includes the
@@ -111,6 +116,7 @@ mod tests {
             bg: "white".into(),
             font: "nx75".into(),
             generator: "pr 0.1.0".into(),
+            repeat: None,
         }
     }
 

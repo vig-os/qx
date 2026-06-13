@@ -811,6 +811,27 @@ fn print_mm_takes_symbology_family_but_rejects_pins() {
     assert!(e.message.contains("px"), "points at px: {}", e.message);
 }
 
+// Repeat primitives compose on the px path only; the mm renderer
+// refuses them instead of silently rendering a single copy.
+#[test]
+fn print_mm_rejects_repeat_flags_instead_of_ignoring_them() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"symbology":"micro","chars":"44","log":false,
+                          "repeat":"3","repeat_orient":"alternate"}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(
+        e.message.contains("px-true"),
+        "points at the px path: {}",
+        e.message
+    );
+}
+
 // The one CSS-shorthand expansion rule, text form (the CLI value
 // parser) and wire form (serde-untagged) — plus old-wire compat.
 #[test]
@@ -915,8 +936,8 @@ fn poll_proposal_returns_status() {
 // ADR-031 §10 print-contract — stage 1
 // -------------------------------------------------------------------
 
-// Payload DSL rejects nesting (the staged grammar): the engine
-// surfaces the "staged: nesting not yet enabled" error verbatim.
+// Payload DSL: stage 2 opens single-level h/v groups. Two nesting
+// levels remain staged with the explicit message.
 #[test]
 fn print_px_payload_nesting_rejected_with_staged_message() {
     let (ctx, _) = ctx_with(fixture_parts());
@@ -925,12 +946,12 @@ fn print_px_payload_nesting_rejected_with_staged_message() {
         json!({"op":"Print","collection":"parts",
                "selection":{"ids":["23456789ABCDEF"]},
                "options":{"unit":"px","size_px":64,"micro":true,
-                          "payload":"[h: qr id]","log":false}}),
+                          "payload":"[h: [v: qr id]]","log":false}}),
     );
     let e = r.err().expect("err");
     assert_eq!(e.kind, ErrorKind::Validation);
     assert!(
-        e.message.contains("staged: nesting not yet enabled"),
+        e.message.contains("groups inside groups"),
         "got: {}",
         e.message
     );
@@ -1204,4 +1225,446 @@ fn print_px_unknown_color_is_validation() {
     let e = r.err().expect("err");
     assert_eq!(e.kind, ErrorKind::Validation);
     assert!(e.message.contains("BLACK"), "got: {}", e.message);
+}
+
+// ---------- ADR-031 §10 repeat (stage 2) ----------
+
+// --repeat 3 composes three copies along the canvas axis with the
+// explicit gap; the repeat receipt rides the response.
+#[test]
+fn print_px_repeat_composes_n_copies_with_gap() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","repeat":"3","repeat_gap_px":10,
+                          "log":false}}),
+    );
+    let d = r.data().expect("ok");
+    let label = &d["labels"][0];
+    let repeat = &label["repeat"];
+    assert_eq!(repeat["n"], json!(3));
+    assert_eq!(repeat["gap_px"], json!(10));
+    assert_eq!(repeat["axis"], json!("along"));
+    assert_eq!(repeat["spacing"], json!("linear"));
+    // The composed SVG has three translate(...) groups.
+    let svg = label["svg"].as_str().expect("svg");
+    assert_eq!(
+        svg.matches("translate(").count() - svg.matches("translate(-").count(),
+        3,
+        "three positive translates for three copies: {svg}"
+    );
+}
+
+// --repeat fill needs --length to know how many copies fit.
+#[test]
+fn print_px_repeat_fill_resolves_count_from_length() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","repeat":"fill","length_px":400,
+                          "repeat_gap_px":5,"log":false}}),
+    );
+    let d = r.data().expect("ok");
+    let n = d["labels"][0]["repeat"]["n"].as_u64().expect("n");
+    assert!(n >= 2, "fill should pick multiple copies, got {n}");
+}
+
+// fill without --length is a Validation error pointing at --length.
+#[test]
+fn print_px_repeat_fill_without_length_is_validation() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","repeat":"fill","log":false}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(e.message.contains("--length"), "got: {}", e.message);
+}
+
+// Infeasible n quotes feasible alternatives (the §10 contract).
+#[test]
+fn print_px_repeat_infeasible_quotes_feasible() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","repeat":"100","repeat_gap_px":5,
+                          "length_px":200,"log":false}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(e.message.contains("Feasible"), "got: {}", e.message);
+}
+
+// Cyclic spacing with derived gap from length: 4 copies + 4 gaps
+// land at i*length/n offsets.
+#[test]
+fn print_px_repeat_cyclic_derives_gap() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","repeat":"4","spacing":"cyclic",
+                          "length_px":800,"log":false}}),
+    );
+    let d = r.data().expect("ok");
+    let repeat = &d["labels"][0]["repeat"];
+    assert_eq!(repeat["spacing"], json!("cyclic"));
+    assert_eq!(repeat["n"], json!(4));
+}
+
+// --rotate 90 swaps the per-label canvas dims before composition.
+#[test]
+fn print_px_rotate_90_swaps_dims() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let plain = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","log":false}}),
+    );
+    let rotated = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","rotate":90,"log":false}}),
+    );
+    let p = &plain.data().expect("ok")["labels"][0];
+    let r = &rotated.data().expect("ok")["labels"][0];
+    // Rotated canvas: width <-> height swap.
+    assert_eq!(p["width_px"], r["height_px"]);
+    assert_eq!(p["height_px"], r["width_px"]);
+    assert_eq!(r["repeat"]["rotate"], json!(90));
+}
+
+// --excess-at start shifts the first copy to the excess offset.
+#[test]
+fn print_px_repeat_excess_at_start() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","repeat":"1","length_excess_px":40,
+                          "excess_at":"start","log":false}}),
+    );
+    let d = r.data().expect("ok");
+    let svg = d["labels"][0]["svg"].as_str().expect("svg");
+    assert!(svg.contains("translate(40,0)"), "first copy shifted: {svg}");
+}
+
+// Alternate orient flips every second copy.
+#[test]
+fn print_px_repeat_alternate_orient_rotates_odd_copies() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","repeat":"2","repeat_gap_px":0,
+                          "repeat_orient":"alternate","log":false}}),
+    );
+    let d = r.data().expect("ok");
+    let svg = d["labels"][0]["svg"].as_str().expect("svg");
+    assert!(svg.contains("rotate(180)"), "alternate must rotate: {svg}");
+    assert_eq!(d["labels"][0]["repeat"]["orient"], json!("alternate"));
+}
+
+// Deprecated --layout flag + --cable-od expands to repeat 2 / linear
+// / alternate, and emits a deprecation warning.
+#[test]
+fn print_px_deprecated_flag_sugar_expands_to_repeat_2_alternate() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","layout":"flag","cable_od_mm":6.0,
+                          "log":false}}),
+    );
+    let d = r.data().expect("ok");
+    let repeat = &d["labels"][0]["repeat"];
+    assert_eq!(repeat["n"], json!(2));
+    assert_eq!(repeat["spacing"], json!("linear"));
+    assert_eq!(repeat["orient"], json!("alternate"));
+    let warn = d["warning"].as_str().expect("warning string");
+    assert!(warn.contains("deprecated"), "got: {warn}");
+    assert!(warn.contains("--repeat 2"), "got: {warn}");
+}
+
+// Across-axis repeat builds multi-up rows.
+#[test]
+fn print_px_repeat_across_axis_builds_rows() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","repeat":"3","repeat_axis":"across",
+                          "repeat_gap_px":4,"log":false}}),
+    );
+    let d = r.data().expect("ok");
+    let label = &d["labels"][0];
+    assert_eq!(label["repeat"]["axis"], json!("across"));
+}
+
+// Unknown --repeat value is Validation.
+#[test]
+fn print_px_repeat_unknown_count_is_validation() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","repeat":"wibble","log":false}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+}
+
+// Unknown --rotate degree is Validation (non-right-angle).
+#[test]
+fn print_px_rotate_45_is_validation() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","rotate":45,"log":false}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(e.message.contains("right angles"), "got: {}", e.message);
+}
+
+// Plain payload without --repeat keeps the response shape stable:
+// no repeat field is emitted, byte-identical output.
+#[test]
+fn print_px_no_repeat_keeps_response_shape_stable() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","log":false}}),
+    );
+    let label = &r.data().expect("ok")["labels"][0];
+    // serde_json represents missing field as Null when included via
+    // json!; ensure when we DON'T request repeat, the repeat field is
+    // null (no composer ran).
+    assert!(label["repeat"].is_null(), "no repeat means null: {label}");
+}
+
+// ---------- ADR-031 §10 nested groups (stage 2) ----------
+
+// REGRESSION PIN: plain `qr id` payload renders byte-identical to the
+// pre-stage-2 behavior. The new grammar must not perturb the
+// canonical flat-list case.
+#[test]
+fn print_px_plain_qr_id_payload_byte_identical_to_no_payload() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let no_payload = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","log":false}}),
+    );
+    let with_payload = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","payload":"qr id","log":false}}),
+    );
+    let a = no_payload.data().expect("ok");
+    let b = with_payload.data().expect("ok");
+    let svg_a = a["labels"][0]["svg"].as_str().expect("svg");
+    let svg_b = b["labels"][0]["svg"].as_str().expect("svg");
+    assert_eq!(svg_a, svg_b, "plain qr id must be byte-identical");
+}
+
+// Nested h-group flattens to the same SVG as plain qr id.
+#[test]
+fn print_px_h_group_payload_equivalent_to_flat() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let flat = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","payload":"qr id","log":false}}),
+    );
+    let grouped = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","payload":"[h: qr id]","log":false}}),
+    );
+    let a = flat.data().expect("ok")["labels"][0]["svg"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let b = grouped.data().expect("ok")["labels"][0]["svg"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(a, b, "[h: qr id] flattens to qr id");
+}
+
+// Group-inside-group is a Validation error with the staged message.
+#[test]
+fn print_px_groups_inside_groups_rejected_staged() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","payload":"[h: [v: qr id]]",
+                          "log":false}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(
+        e.message.contains("groups inside groups"),
+        "got: {}",
+        e.message
+    );
+}
+
+// Per-node sizing parses into the tree without breaking the flat
+// flatten path (the size is recorded; stage 2 render is the flat case).
+#[test]
+fn print_px_payload_with_node_sizing_parses() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44","payload":"qr@8px id","log":false}}),
+    );
+    // The flat path doesn't act on sizing yet — it parses cleanly
+    // and renders as the qr+id arrangement.
+    assert!(r.data().is_some(), "parses: {r:?}");
+}
+
+// ---------- ADR-031 §10 canvas group (stage 2) ----------
+
+// Canvas at root validates dims + positions and surfaces the resolved
+// tree in the response.
+#[test]
+fn print_px_canvas_root_resolves_to_response() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44",
+                          "payload":"[c 100x50px: qr@(0px,0px)@30px id@(40px,10px)@20px]",
+                          "log":false}}),
+    );
+    let d = r.data().expect("ok");
+    assert_eq!(d["canvas"]["width_px"], json!(100));
+    assert_eq!(d["canvas"]["height_px"], json!(50));
+    let children = d["canvas"]["children"].as_array().expect("children");
+    assert_eq!(children.len(), 2);
+}
+
+// Canvas child overflow is Validation with the overflow px noted.
+#[test]
+fn print_px_canvas_overflow_is_validation_with_overflow_px() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44",
+                          "payload":"[c 50x50px: qr@(40px,0px)@20px]",
+                          "log":false}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(e.message.contains("overflow"), "got: {}", e.message);
+}
+
+// QR-over-QR canvas overlap is ERROR.
+#[test]
+fn print_px_canvas_qr_over_qr_is_validation() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44",
+                          "payload":"[c 100x100px: qr@(0px,0px)@50px qr@(30px,30px)@50px]",
+                          "log":false}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(e.message.contains("qr-over-qr"), "got: {}", e.message);
+}
+
+// QR-over-id canvas overlap is WARN (rides as the response warning).
+#[test]
+fn print_px_canvas_qr_over_id_is_warning() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44",
+                          "payload":"[c 100x100px: qr@(0px,0px)@50px id@(30px,30px)@50px]",
+                          "log":false}}),
+    );
+    let d = r.data().expect("ok");
+    let warning = d["warning"].as_str().expect("warning");
+    assert!(warning.contains("overlaps"), "got: {warning}");
+}
+
+// Canvas inside flow ([qr [c ...]]) is rejected as staged.
+#[test]
+fn print_px_canvas_inside_flow_rejected_staged() {
+    let (ctx, _) = ctx_with(fixture_parts());
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Print","collection":"parts",
+               "selection":{"ids":["23456789ABCDEF"]},
+               "options":{"unit":"px","size_px":64,"micro":true,
+                          "chars":"44",
+                          "payload":"qr [c 100x100px: qr@(0px,0px)]",
+                          "log":false}}),
+    );
+    let e = r.err().expect("err");
+    assert_eq!(e.kind, ErrorKind::Validation);
+    assert!(e.message.contains("root-only"), "got: {}", e.message);
 }
