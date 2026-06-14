@@ -16,9 +16,11 @@
 //!
 //! `serve` / `mcp` / `tui` land behind cargo features per ADR-030 §2.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+
+use serde_json::{Map, Value};
 
 use clap::{Parser, Subcommand};
 
@@ -28,11 +30,13 @@ use part_registry_cli::{
     BindArgs, DryRunTarget, LabelArgs, MintArgs, Wiring,
 };
 use part_registry_config::Config;
+use part_registry_contract::{is_compatible, Contract};
 use part_registry_domain::{
     Diff, DiffEdit, DiffRow, HeaderChange, IdentitySource, Operator, OperatorId, PartId,
     PartStatus, RequestId,
 };
 use part_registry_observability::{request_id_span, ObservabilityConfig};
+use part_registry_validators::record::{validate_record, RecordContext, Severity};
 use part_registry_validators::{
     policy_decision, registry_sort_key, validate_sort_stable, validate_status_transition,
     validate_unique_ids, Policy,
@@ -894,40 +898,59 @@ fn protocol_print(
 // -------------------------------------------------------------------
 
 fn check(path: &Path, base: Option<&str>) -> ExitCode {
-    let registry_path = path.join("registry.csv");
-    let head = match read_csv_rows(&registry_path) {
-        Ok(h) => h,
-        Err(e) => {
-            eprintln!("pr check: read {}: {e}", registry_path.display());
-            return ExitCode::FAILURE;
-        }
-    };
-
     let mut failures: Vec<String> = Vec::new();
     let mut notices: Vec<String> = Vec::new();
+    let mut ran_something = false;
 
-    // Structural validation over the head state.
-    let head_parts = rows_to_parts(&head.rows, &mut failures);
-    if let Err(e) = validate_unique_ids(&head_parts) {
-        failures.push(format!("unique-ids: {e}"));
-    }
-    if let Err(e) = validate_sort_stable(&head_parts, registry_sort_key) {
-        failures.push(format!("sort-stability: {e}"));
-    }
-
-    // Semantic diff vs base (ADR-016).
-    if let Some(base_ref) = base {
-        match git_show(path, base_ref, "registry.csv") {
-            Ok(base_text) => match parse_csv_text(&base_text) {
-                Ok(base_csv) => {
-                    let diff = build_diff(&base_csv, &head);
-                    check_transitions(&diff, &mut failures);
-                    advise_policy(&diff, &mut failures, &mut notices);
+    // --- Legacy CSV path (ADR-013/016) — runs only when registry.csv is
+    //     present, so a canonical JSONL-only repo no longer hard-fails.
+    let registry_path = path.join("registry.csv");
+    let mut csv_rows = 0usize;
+    if registry_path.exists() {
+        ran_something = true;
+        match read_csv_rows(&registry_path) {
+            Ok(head) => {
+                csv_rows = head.rows.len();
+                let head_parts = rows_to_parts(&head.rows, &mut failures);
+                if let Err(e) = validate_unique_ids(&head_parts) {
+                    failures.push(format!("unique-ids: {e}"));
                 }
-                Err(e) => failures.push(format!("parse base registry.csv: {e}")),
-            },
-            Err(e) => failures.push(format!("git show {base_ref}:registry.csv: {e}")),
+                if let Err(e) = validate_sort_stable(&head_parts, registry_sort_key) {
+                    failures.push(format!("sort-stability: {e}"));
+                }
+                if let Some(base_ref) = base {
+                    match git_show(path, base_ref, "registry.csv") {
+                        Ok(base_text) => match parse_csv_text(&base_text) {
+                            Ok(base_csv) => {
+                                let diff = build_diff(&base_csv, &head);
+                                check_transitions(&diff, &mut failures);
+                                advise_policy(&diff, &mut failures, &mut notices);
+                            }
+                            Err(e) => failures.push(format!("parse base registry.csv: {e}")),
+                        },
+                        Err(e) => failures.push(format!("git show {base_ref}:registry.csv: {e}")),
+                    }
+                }
+            }
+            Err(e) => failures.push(format!("read {}: {e}", registry_path.display())),
         }
+    }
+
+    // --- Contract-driven path (ADR-039) — runs when a contract is present.
+    let contract_records = if path.join(".part-registry/contract.json").exists() {
+        ran_something = true;
+        check_contract(path, base, &mut failures, &mut notices)
+    } else {
+        0
+    };
+
+    if !ran_something {
+        eprintln!(
+            "pr check: nothing to check — neither registry.csv nor \
+             .part-registry/contract.json found in {}",
+            path.display()
+        );
+        return ExitCode::FAILURE;
     }
 
     for n in &notices {
@@ -935,8 +958,7 @@ fn check(path: &Path, base: Option<&str>) -> ExitCode {
     }
     if failures.is_empty() {
         println!(
-            "pr check: OK ({} rows{})",
-            head.rows.len(),
+            "pr check: OK ({csv_rows} csv row(s), {contract_records} contract record(s){})",
             if base.is_some() {
                 ", diff classified"
             } else {
@@ -951,6 +973,168 @@ fn check(path: &Path, base: Option<&str>) -> ExitCode {
         eprintln!("pr check: {} failure(s)", failures.len());
         ExitCode::FAILURE
     }
+}
+
+/// Contract-driven validation (ADR-039). Loads the working-tree contract,
+/// then validates each collection's `collections/<name>.jsonl` records
+/// against it through the SSOT record validator. With `base`, only ADDED
+/// or CHANGED records are validated — commit-resolved effective-dating:
+/// untouched merged records were qualified under their contemporaneous
+/// contract and are not re-litigated (ADR-039 §6). Returns the count of
+/// records validated; errors go to `failures`, warnings to `notices`.
+fn check_contract(
+    path: &Path,
+    base: Option<&str>,
+    failures: &mut Vec<String>,
+    notices: &mut Vec<String>,
+) -> usize {
+    // 1. Load + parse + structurally validate the HEAD contract.
+    let contract_path = path.join(".part-registry/contract.json");
+    let bytes = match std::fs::read(&contract_path) {
+        Ok(b) => b,
+        Err(e) => {
+            failures.push(format!("read {}: {e}", contract_path.display()));
+            return 0;
+        }
+    };
+    let contract = match Contract::from_bytes(&bytes) {
+        Ok(c) => c,
+        Err(e) => {
+            failures.push(format!("contract invalid: {e}"));
+            return 0;
+        }
+    };
+    if !is_compatible(&contract) {
+        failures.push(format!(
+            "contract format_version {} is outside this tool's supported range",
+            contract.format_version
+        ));
+        return 0;
+    }
+
+    // 2. Read every collection's HEAD records + build the cross-collection
+    //    id universe for reference FK checks.
+    let mut head_records: BTreeMap<String, Vec<Map<String, Value>>> = BTreeMap::new();
+    let mut universe: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for coll in &contract.collections {
+        let file = format!("collections/{}.jsonl", coll.name);
+        let recs = match read_jsonl_records(&path.join(&file)) {
+            Ok(r) => r,
+            Err(e) => {
+                failures.push(format!("read {file}: {e}"));
+                continue;
+            }
+        };
+        let ids: BTreeSet<String> = recs
+            .iter()
+            .filter_map(|r| r.get("id").and_then(Value::as_str).map(str::to_owned))
+            .collect();
+        universe.insert(coll.name.clone(), ids);
+        head_records.insert(coll.name.clone(), recs);
+    }
+    let ctx = RecordContext::new(universe);
+
+    // 3. Effective-dating filter: with a base, the set of new/changed ids
+    //    per collection (untouched records are skipped).
+    let changed: Option<BTreeMap<String, BTreeSet<String>>> =
+        base.map(|b| changed_record_ids(path, b, &contract));
+
+    // 4. Validate the in-scope records against their collection descriptor.
+    let mut validated = 0usize;
+    for coll in &contract.collections {
+        let Some(recs) = head_records.get(&coll.name) else {
+            continue;
+        };
+        let changed_in = changed.as_ref().map(|m| m.get(&coll.name));
+        for rec in recs {
+            let id = rec.get("id").and_then(Value::as_str).unwrap_or("<no-id>");
+            if let Some(set_opt) = changed_in {
+                let touched = set_opt.map(|s| s.contains(id)).unwrap_or(false);
+                if !touched {
+                    continue; // unchanged since base — already qualified
+                }
+            }
+            let status = rec.get("status").and_then(Value::as_str);
+            for issue in validate_record(coll, rec, status, &ctx) {
+                let line = format!("{}[{id}].{}: {}", coll.name, issue.path, issue.message);
+                match issue.severity {
+                    Severity::Error => failures.push(line),
+                    Severity::Warn => notices.push(line),
+                }
+            }
+            validated += 1;
+        }
+    }
+    validated
+}
+
+/// Read a `collections/*.jsonl` file into generic JSON objects. A missing
+/// file is an empty collection (no records yet), not an error.
+fn read_jsonl_records(path: &Path) -> Result<Vec<Map<String, Value>>, String> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for (i, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<Value>(line) {
+            Ok(Value::Object(m)) => out.push(m),
+            Ok(_) => return Err(format!("line {}: not a JSON object", i + 1)),
+            Err(e) => return Err(format!("line {}: {e}", i + 1)),
+        }
+    }
+    Ok(out)
+}
+
+/// Per-collection set of record ids that are new or whose JSONL line
+/// differs from the base ref — the records this PR actually touches.
+/// A collection file absent at base means every HEAD record is new.
+fn changed_record_ids(
+    path: &Path,
+    base_ref: &str,
+    contract: &Contract,
+) -> BTreeMap<String, BTreeSet<String>> {
+    let mut changed = BTreeMap::new();
+    for coll in &contract.collections {
+        let file = format!("collections/{}.jsonl", coll.name);
+        let base_by_id = git_show(path, base_ref, &file)
+            .map(|t| jsonl_lines_by_id(&t))
+            .unwrap_or_default();
+        let head_text = std::fs::read_to_string(path.join(&file)).unwrap_or_default();
+        let head_by_id = jsonl_lines_by_id(&head_text);
+
+        let mut set = BTreeSet::new();
+        for (id, head_line) in &head_by_id {
+            if base_by_id.get(id) != Some(head_line) {
+                set.insert(id.clone());
+            }
+        }
+        changed.insert(coll.name.clone(), set);
+    }
+    changed
+}
+
+/// Map record id → its raw (trimmed) JSONL line. Raw-line compare is
+/// conservative: a formatting-only change reads as "changed" and the
+/// record is re-validated — the safe direction (never skips a real edit).
+fn jsonl_lines_by_id(text: &str) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Ok(Value::Object(m)) = serde_json::from_str::<Value>(line) {
+            if let Some(id) = m.get("id").and_then(Value::as_str) {
+                out.insert(id.to_string(), line.to_string());
+            }
+        }
+    }
+    out
 }
 
 struct CsvTable {

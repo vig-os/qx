@@ -39,6 +39,7 @@ part-registry-signing = { path = "../signing" }
 part-registry-signing-git-commit = { path = "../signing_git_commit" }
 part-registry-codec = { path = "../codec" }
 part-registry-validators = { path = "../validators" }
+part-registry-contract = { path = "../contract" }
 clap = { workspace = true }
 csv = { workspace = true }
 anyhow = { workspace = true }

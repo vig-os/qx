@@ -3194,6 +3194,7 @@ dependencies = [
  "part-registry-app",
  "part-registry-codec",
  "part-registry-config",
+ "part-registry-contract",
  "part-registry-domain",
  "part-registry-identity",
  "part-registry-identity-git-config",
@@ -3239,6 +3240,15 @@ dependencies = [
  "dirs 5.0.1",
  "figment",
  "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "part-registry-contract"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
  "thiserror 2.0.18",
 ]
 
@@ -3457,6 +3467,7 @@ dependencies = [
 name = "part-registry-validators"
 version = "0.1.0"
 dependencies = [
+ "part-registry-contract",
  "part-registry-domain",
  "serde_json",
  "thiserror 2.0.18",

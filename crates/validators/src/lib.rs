@@ -23,6 +23,12 @@
 
 #![forbid(unsafe_code)]
 
+/// Schema-driven record validation (ADR-039) — the contract-generic
+/// validator that supersedes the `Part`-specific checks below as the FE
+/// and `pr check` migrate onto the canonical form.
+pub mod record;
+pub use record::{validate_record, RecordContext, RecordIssue, Severity};
+
 use std::fmt;
 
 use thiserror::Error;
