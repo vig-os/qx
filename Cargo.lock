@@ -3194,6 +3194,7 @@ dependencies = [
  "part-registry-app",
  "part-registry-codec",
  "part-registry-config",
+ "part-registry-contract",
  "part-registry-domain",
  "part-registry-identity",
  "part-registry-identity-git-config",
