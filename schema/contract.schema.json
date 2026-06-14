@@ -2,35 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://part-registry/schema/contract.schema.json",
   "title": "part-registry contract (ADR-039 canonical form)",
-  "description": "Meta-schema for a registry's .part-registry/contract.json. One canonical form: collection-generic descriptors (ADR-035 §0), the ADR-039 §2 scalar set (type ≠ widget), the §6 change-control header + effective-dated versioning. The tool's Rust types are the SSOT; this JSON Schema mirrors them for editor tooling + the CI meta-schema gate. CI validates the shipped contract against this file AND a fixture instance against the contract on every PR (no stale meta-schema, ADR-039 §4).",
+  "description": "Meta-schema for a registry's .part-registry/contract.json. One canonical form: collection-generic descriptors (ADR-035 §0), the ADR-039 §2 scalar set (type ≠ widget). Governance is git-native (ADR-039 §6, revised): the ONLY in-file version is `format_version` (engine↔contract parse capability); contract identity is its content hash; who/when/why/approved is projected from the host review (PR reviews + merge commit), never stored here; effective-dating is commit-resolved. The tool's Rust types are the SSOT; this JSON Schema mirrors them for editor tooling + the CI meta-schema gate. CI validates the shipped contract against this file AND a fixture instance against the contract on every PR (no stale meta-schema, ADR-039 §4).",
   "type": "object",
-  "required": ["contract_version", "change_control", "compat", "collections"],
+  "required": ["format_version", "collections"],
   "additionalProperties": false,
   "properties": {
-    "contract_version": {
+    "format_version": {
       "type": "integer",
       "minimum": 1,
-      "description": "The registry contract's own version. Stamped onto every record at write time; the gate validates each record against the version in force when written, not HEAD (ADR-039 §6)."
-    },
-    "change_control": { "$ref": "#/$defs/changeControl" },
-    "compat": {
-      "type": "object",
-      "description": "Tool guard ONLY (ADR-039 §6): the engine refuses to operate on a contract whose required engine range excludes it. NOT the governance mechanism — that is effective-dating.",
-      "required": ["min", "max"],
-      "additionalProperties": false,
-      "properties": {
-        "min": { "type": "integer", "minimum": 1 },
-        "max": { "type": "integer", "minimum": 1 }
-      }
-    },
-    "unknown_type_policy": {
-      "const": "reject",
-      "description": "Always reject: a reader that silently treats an unknown scalar as string passes garbage through the gate (ADR-039 §2)."
-    },
-    "unknown_field_policy": {
-      "enum": ["ignore", "warn", "reject"],
-      "default": "warn",
-      "description": "Unknown props on a KNOWN type. Minor versions are additive-only."
+      "description": "Engine↔contract parse capability (ADR-039 §6) — the ONLY in-file version. The tool holds the supported range as a const and refuses a format outside it. NOT a content/edit version (that is the contract's content hash, derived) and NOT governance (projected from the host review). Moves rarely — a format generation, not a content edit."
     },
     "collections": {
       "type": "array",
@@ -40,26 +20,6 @@
     }
   },
   "$defs": {
-    "changeControl": {
-      "type": "object",
-      "description": "ADR-039 §6 change-control header. Bumping `version` without these fields is a gate failure.",
-      "required": ["version", "effective_from", "change_rationale", "approved_by"],
-      "additionalProperties": false,
-      "properties": {
-        "version": { "type": "integer", "minimum": 1 },
-        "effective_from": { "type": "string", "format": "date-time" },
-        "supersedes": { "type": "integer", "minimum": 1 },
-        "change_rationale": { "type": "string", "minLength": 1 },
-        "approved_by": {
-          "type": "array",
-          "minItems": 2,
-          "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1 },
-          "description": "Author + approver, two DISTINCT identities (21 CFR Part 11 §11.200)."
-        },
-        "approval_commit_sha": { "type": "string" }
-      }
-    },
     "collection": {
       "type": "object",
       "required": ["name", "id", "fields"],

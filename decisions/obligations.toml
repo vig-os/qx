@@ -618,7 +618,7 @@ tracking = "ADR-039 §3-4; crates/contract + crates/validators rewrite + conform
 [[obligation]]
 id = "effective-dated-versioning"
 adr = "ADR-039"
-statement = "Records carry an immutable contract_version stamp; the gate validates each record against the contract version in force when written (from git history, not HEAD); the contract carries a dual-signature change-control header; [min,max] is a tool guard only; required_to_enter (transition gate) is distinct from meaningful_from"
+statement = "Effective-dating is commit-resolved (a record is governed by the contract content at its commit; merged records are never re-checked, so a tightening change cannot retroactively invalidate history); contract identity is its content hash (derived); governance — who/when/why/approved — is PROJECTED from the host review (PR reviews + merge commit), never stored in-file; the only in-file version is format_version (engine↔contract parse capability); required_to_enter (transition gate) is distinct from meaningful_from"
 kind = "crate"
 status = "pending"
-tracking = "ADR-039 §6; the record-shape one-way door awaits ratification before wiring (task #20 gated). Meta-schema already requires + enforces the change-control header shape (dual distinct approvers)"
+tracking = "ADR-039 §6 (revised git-native after review, #204); the gate's commit-resolution + host-governance projection + format_version compat range + the content-hash export stamp not yet built (task #20). Meta-schema now carries only format_version (in-file governance fields removed)"

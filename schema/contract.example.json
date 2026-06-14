@@ -1,14 +1,5 @@
 {
-  "contract_version": 1,
-  "change_control": {
-    "version": 1,
-    "effective_from": "2026-06-12T00:00:00Z",
-    "change_rationale": "Initial canonical-form contract (ADR-039). Demonstrates the §2 scalar set: reference, decimal+unit, timestamp, enum closed-policy, object(schema), and the required_to_enter transition gate.",
-    "approved_by": ["github:gerchowl", "github:MorePET-reviewer"]
-  },
-  "compat": { "min": 1, "max": 1 },
-  "unknown_type_policy": "reject",
-  "unknown_field_policy": "warn",
+  "format_version": 1,
   "collections": [
     {
       "name": "parts",

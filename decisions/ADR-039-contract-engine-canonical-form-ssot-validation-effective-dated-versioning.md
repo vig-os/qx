@@ -113,11 +113,13 @@ separate and each has a typed home:
   promotion path to tier-2. This is the escape hatch so capture never
   blocks on schema — *not* a field type.
 
-**Forward-compat policy** at the contract root: `unknown_type_policy:
-reject` (always — a reader that silently treats an unknown scalar as
-`string` passes garbage through the gate) and `unknown_field_policy:
-ignore|warn|reject` for unknown *props on a known type*. Minor versions
-are **additive-only** (§6).
+**Forward-compat is engine behavior keyed on `format_version` (§6), not
+in-contract config:** an unknown *type* is always rejected (a reader
+that silently treats an unknown scalar as `string` passes garbage
+through the gate); an unknown *prop on a known type* warns by default.
+What "known" means is fixed by the `format_version` the engine
+implements, so there is no per-contract `unknown_*_policy` toggle to
+drift. Format generations are additive-only.
 
 ### 3. SSOT validation — one Rust engine, compiled to wasm
 
@@ -133,12 +135,13 @@ Crate split, with the purity boundary drawn so the wasm build *cannot*
 compile anything impure:
 
 - **`crates/contract`** (new) — descriptor types + parser +
-  `[min,max]`/effective-date compat check. Pure: `serde`/`serde_json`
+  `format_version` compat check (§6). Pure: `serde`/`serde_json`
   only, no `std::fs`, no `tokio`, no `git2`. Builds for
   `wasm32-unknown-unknown` with zero features. The **only** parse path
   is `Contract::from_bytes(&[u8])` + `is_compatible(engine_version,
-  contract)` — CLI does `fs::read`, FE does `fetch().arrayBuffer()`,
-  both hand bytes to the same function (one parser, one compat rule).
+  contract)` (= `TOOL_SUPPORTED.contains(contract.format_version)`) —
+  CLI does `fs::read`, FE does `fetch().arrayBuffer()`, both hand bytes
+  to the same function (one parser, one compat rule).
 - **`crates/validators`** — depends on `contract` + `serde` only; takes
   `&Contract` + a record, returns a `Verdict`. No I/O, no time, no
   randomness. Same wasm-clean rules. Kind-dispatching
@@ -199,49 +202,93 @@ weakened** without touching core fields:
   the tier-3 `properties` bag (prevents moving a CAPA disposition into
   the ungated escape hatch).
 - **Relaxation is change-controlled.** Flipping an `enum`'s `closed:
-  true → warn`, or demoting a tier-2 field to tier-3, requires a
-  **validation-relaxation change-control record** (§6 header) with
-  rationale + dual approval — it is not a silent edit.
+  true → warn`, or demoting a tier-2 field to tier-3, requires
+  **host-projected approval** (§6): a PR carrying the relaxation,
+  CODEOWNERS-routed, with ≥ 2 distinct approvers + rationale — it is not
+  a silent edit.
 - **Drift report.** The gate emits a periodic report of fields living in
   tier-3 with regulated-sounding names, so de-facto demotion is visible.
 
-### 6. Versioning + effective-dated validation — THE RATIFICATION GATE
+### 6. Versioning + effective-dated validation — git-native (revised after review, #204)
 
-This is the contested decision the spike exists to settle (issue #204
-"the real decision point"). A `[min,max]` integer range answers *"can
-today's binary read this repo?"* — a **tool-compatibility** question. It
-does **not** answer the only question an auditor asks: *"under which
-contract version, approved by whom, on what date, was this record
-validated when it was created?"* Re-validating a 2024 record against
-today's `HEAD` contract is **retroactive re-qualification of historical
-evidence** — an ALCOA+ "Original/Accurate" failure that will not survive
-inspection (21 CFR Part 11 §11.10(e); ISO 13485 §4.2.5).
+The auditor's question is *"under which contract, approved by whom, on
+what date, was this record validated when written?"* The first draft
+answered it with an in-file change-control header (`version,
+effective_from, approved_by, approval_commit_sha, change_rationale`) +
+an integer `contract_version` stamped on each record. Review (#204)
+showed that **re-stores in-band what git + GitHub already record
+out-of-band, authoritatively and tamper-evidently** — the same
+denormalization failure that retired `batch` (ADR-035 §0) — and the
+in-file copy is *weaker* than the source (an operator can type any name
+into `approved_by`; a host review is authenticated). It also conflated
+two version axes. The revised model leans on the substrate:
+**transaction = PR, constraint = validator, history/WAL = git, ACL =
+host review** (ADR-035 §0 entity-store principle).
 
-The model (the record-shape **one-way door** — cheap now, a migration
-later):
+**Three axes, three homes — only the first is in-file:**
 
-1. **Every record carries an immutable `contract_version` stamp** at
-   write time (git already records *when*; the row must record *against
-   what*).
-2. **The gate validates each record against the version named on the
-   record** — fetched from git history — **not** `HEAD`'s contract. New
-   writes use `HEAD`'s (current effective) version.
-3. **The contract carries a change-control header:**
-   ```
-   version, effective_from (UTC), supersedes,
-   change_rationale, approved_by [author + approver — two DISTINCT
-   identities, Part 11 §11.200], approval_commit_sha
-   ```
-   Bumping `version` without these fields is a gate failure.
-4. **Migrations are forward-only transformations producing a new
-   version** — never silent rewrites of historical rows. ("Migrate
-   outside the range," as earlier framings put it, is rejected: it
-   rewrites evidence.)
-5. **`[min,max]` stays — as the *tool* guard only** (refuse to operate
-   on a contract this binary cannot parse), explicitly **not** the
-   governance mechanism. Minor versions are additive-only (§2).
+1. **`format_version` (integer, in-file) — engine↔contract parse
+   capability.** "Can this *binary* read a contract in this format?" git
+   cannot answer this (it is a capability fact, not history). The
+   **tool** holds the supported range as a const; `is_compatible(engine,
+   contract)` = `TOOL_SUPPORTED.contains(contract.format_version)`;
+   outside → refuse or offer migration. This is the **only** in-file
+   version, and it moves rarely (a format generation, not a content
+   edit).
+2. **Contract identity = its content hash (derived).** The contract *is*
+   `sha256(contract.json)`; no hand-bumped integer to forget, no
+   two-branches-both-claim-v2 collision, and self-certifying offline
+   (verify content == hash with no git). Tamper-evident like attachments
+   (ADR-035 §4): edit the contract, its hash changes, every reference
+   visibly moves in the diff. This hash feeds the **ADR-037 anchor
+   ledger** directly.
+3. **Governance (who/when/why/approved) = projected from the host,
+   never stored.** `effective_from` = the merge commit's host-attested
+   committer time (operator-unsettable — the trusted-clock property
+   ADR-035 §1b wanted, for free); `approved_by` = the PR's authenticated
+   reviews; `change_rationale` = the PR/commit message;
+   `approval_commit_sha` = the merge SHA; "which contract governed this
+   record" = `git show <record-commit>:.part-registry/contract.json`.
 
-And the presence-flag split the compliance review demanded:
+**Effective-dating is commit-resolved — and that gives the ALCOA
+property for free.** A record is governed by the contract content in the
+tree at its commit. The gate validates **changed** records in a PR
+against HEAD-of-PR's contract; already-merged records were validated
+against their commit's contract at merge time (a required status check
+guarantees it) and are **never re-checked**. So a *tightening* contract
+change **cannot retroactively invalidate history** — precisely the
+"don't re-qualify historical evidence" guarantee (21 CFR Part 11
+§11.10(e); ISO 13485 §4.2.5), achieved by git's structure rather than an
+in-file stamp. A **migration** is a forward PR that rewrites old records
+to satisfy the new contract, validated at that PR — forward-only,
+auditable, with zero versioning machinery.
+
+**Records carry no `contract_version` stamp** in the git-resident case
+(the commit resolves it). A **content-hash stamp `contract: sha256:…` is
+added only when data leaves git** — a CSV export, a printed label's
+metadata, a record shipped to an external system — so it self-describes
+which contract governed it; even then it is *derived*, never hand-set.
+
+**Governance is policy-checked, host-projected, host-neutral.** The gate
+enforces the *policy* (≥ 2 distinct approvers, rationale present, gate
+green, CODEOWNERS on `.part-registry/contract.json` satisfied) against
+the host's review record, and may materialize a **read-only receipt**
+(like the print receipt) for offline auditors — but the source of truth
+is the host. Because authority lives with the host (ADR-019/034), the
+contract file stays **host-neutral**; the gate *projects* governance
+from whatever host it runs on: PR reviews + merge commit on GitHub;
+signed commits + commit trailers on `file://`; commit metadata on a Dolt
+backend. Same policy, different projection.
+
+**Why this is better, not just smaller:** authenticated host facts beat
+operator-typed in-file fields; a derived hash beats a hand-bumped
+integer (can't forget, collision-free, verifiable offline); and the
+contract stops carrying a worse copy of what git already holds. The one
+thing genuinely *not* derivable — whether this binary can parse this
+format — stays in-file as `format_version`.
+
+And the presence-flag split the compliance review demanded (this is
+validation semantics, unaffected by the versioning rework):
 
 - **`required_to_enter: <status>`** — a hard **transition gate**: the
   entity cannot advance to `<status>` unless the field is present and
@@ -257,7 +304,8 @@ A field may declare either, both, or neither.
 
 - The contract moves to **`.part-registry/contract.json`** in the data
   repo (ADR-033 §4 anatomy); `bootstrap` seeds it from the tool baseline
-  with the change-control header's first version.
+  at `format_version` 1 (governance for that seed = the bootstrap PR's
+  own host review).
 - **`typeFields` stays embedded in the contract for v1** (synchronous,
   cacheable, no "schema loading…" spinner blocking the bind form), but
   every consumer reaches per-type schemas through an async
@@ -278,12 +326,14 @@ deterministic** (the regulated core, the non-weakenable floor),
 auditable escape hatch** (tier-3) with a **promotion** path. One Rust
 validator → wasm is the only way "same contract ⇒ same verdict" is true
 by construction rather than by hope, and the conformance corpus is what
-keeps it true. Effective-dated validation is the difference between a
-clever git-backed store and a records system an auditor will accept: it
-makes every historical record reconstructable *as it was validated when
-written*. The `[min,max]` guard is kept but demoted to its honest role
-(tool readability), so the governance question is answered by governance
-machinery, not by a version-range heuristic.
+keeps it true. Effective-dated validation — commit-resolved, so every
+historical record is reconstructable *as it was validated when written*
+— is the difference between a clever git-backed store and a records
+system an auditor will accept; deriving it from git + the host review
+(rather than an in-file header) makes the evidence authenticated and
+tamper-evident instead of operator-asserted. The one fact git cannot
+derive — whether this binary can parse this format — stays in-file as
+`format_version`.
 
 ## Consequences
 
@@ -292,12 +342,16 @@ machinery, not by a version-range heuristic.
   `crates/app` `describe` serves the *loaded* contract, `preset.rs`
   becomes the seed baseline, not the runtime source.
 - **The storage port goes collection-generic** (ADR-018 / ADR-033
-  consequence) and records gain a `contract_version` stamp.
+  consequence); records carry **no** `contract_version` stamp
+  (commit-resolved), only an optional derived `contract: sha256:…` when
+  data leaves git (§6).
 - **`schema/contract.schema.json` rewritten** to the canonical scalar
   set and self-validated in CI; `schema/registry-contract.json`
   regenerated to the new form and relocated to `.part-registry/`.
 - **`pr check` becomes contract-driven over JSONL** (today CSV/parts-
-  only) and fetches historical contracts for effective-dated validation.
+  only): it validates changed records against HEAD-of-PR's contract and
+  **never re-checks merged records** (commit-resolved effective-dating);
+  governance is projected from the host review, not read from the file.
 - **The FE** deletes its TS validation rules, consumes the wasm
   validator (cheap-native + semantic-wasm split), drops the silent
   fallback, and gains the message catalog.
