@@ -32,10 +32,16 @@ jobs:
             system: aarch64-darwin
     runs-on: ${{ matrix.os }}
     name: flake-check (${{ matrix.system }})
+    # Guard: a hung step fails in ~90m, not at GitHub's 6h ceiling.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
+      # magic-nix-cache-action removed: Determinate sunset the service
+      # (Feb 2025); the action now stalls indefinitely on the macos-14
+      # runner (6h timeout, nix flake check skipped) while passing on
+      # linux. Correctness is unaffected — it was a cross-run cache only.
+      # Follow-up: evaluate DeterminateSystems/flakehub-cache-action.
       - name: nix flake check
         env:
           PARTREG_TEST_PAT: ${{ secrets.PARTREG_TEST_PAT }}
