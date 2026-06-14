@@ -11,6 +11,8 @@ path = "src/lib.rs"
 
 [dependencies]
 part-registry-domain = { path = "../domain" }
+part-registry-contract = { path = "../contract" }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
