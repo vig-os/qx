@@ -1,7 +1,7 @@
 # ADR-039 — Contract engine: canonical form, SSOT validation, effective-dated versioning
 
-- Status: Proposed
-- Date: 2026-06-12
+- Status: Accepted
+- Date: 2026-06-12 (Accepted 2026-06-14)
 - Component / area: the one canonical `contract.json` form (refines
   ADR-033 §3's scalar set; ADR-035 §0's collection descriptor), the
   validation architecture that makes one engine drive every consumer

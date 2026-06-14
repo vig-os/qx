@@ -23,9 +23,9 @@
           "render": { "widget": "textarea", "order": 2 }
         },
         {
-          "key": "vendor", "type": "reference", "label": "Vendor",
+          "key": "manufacturer", "type": "reference", "label": "Manufacturer",
           "editable": true, "meaningful_from": "bound",
-          "collection": "vendors", "display": "label", "on_unknown": "reject",
+          "collection": "companies", "display": "label", "on_unknown": "reject",
           "render": { "widget": "picker", "order": 3 }
         },
         {
@@ -62,16 +62,97 @@
       ]
     },
     {
-      "name": "vendors",
+      "name": "companies",
       "id": { "scheme": "nano14", "default": false, "mintable": true },
+      "lifecycle": {
+        "statuses": ["active", "archived"],
+        "transitions": { "active": ["archived"], "archived": ["active"] },
+        "initial": "active"
+      },
+      "open_properties": true,
       "render": { "label_fields": ["label"] },
       "fields": [
-        { "key": "label", "type": "string", "label": "Name", "editable": true, "required": true, "maxLength": 200 },
         {
-          "key": "status", "type": "enum", "label": "Qualification",
+          "key": "label", "type": "string", "label": "Name",
+          "editable": true, "required": true, "maxLength": 200,
+          "render": { "widget": "text", "order": 1 }
+        },
+        {
+          "key": "role", "type": "enum", "label": "Role",
+          "editable": true, "required": true,
+          "values": ["manufacturer", "distributor", "both"], "closed": true,
+          "render": { "widget": "dropdown", "order": 2 }
+        },
+        {
+          "key": "qualification", "type": "enum", "label": "Qualification",
           "editable": true,
           "values": ["candidate", "qualified", "suspended"], "closed": true,
-          "render": { "widget": "dropdown" }
+          "render": { "widget": "dropdown", "order": 3 }
+        },
+        {
+          "key": "address", "type": "object", "label": "Address",
+          "editable": true,
+          "schema": [
+            { "key": "street", "type": "string", "label": "Street", "maxLength": 200 },
+            { "key": "city", "type": "string", "label": "City", "maxLength": 100 },
+            { "key": "postal_code", "type": "string", "label": "Postal code", "maxLength": 20 },
+            { "key": "country", "type": "string", "label": "Country", "maxLength": 2, "pattern": "^[A-Z]{2}$" }
+          ],
+          "render": { "widget": "textarea", "order": 4 }
+        },
+        {
+          "key": "website", "type": "string", "label": "Website",
+          "editable": true, "maxLength": 300, "pattern": "^https?://",
+          "render": { "widget": "text", "order": 5 }
+        },
+        {
+          "key": "primary_contact", "type": "reference", "label": "Primary contact",
+          "editable": true,
+          "collection": "contacts", "display": "name", "on_unknown": "warn",
+          "render": { "widget": "picker", "order": 6 }
+        },
+        {
+          "key": "quality_agreement", "type": "attachment", "label": "Quality agreement",
+          "editable": true, "constraint": "pdf",
+          "render": { "widget": "file", "order": 7 }
+        },
+        {
+          "key": "certification", "type": "attachment", "label": "ISO 9001 / 13485 certificate",
+          "editable": true, "constraint": "pdf",
+          "render": { "widget": "file", "order": 8 }
+        }
+      ]
+    },
+    {
+      "name": "contacts",
+      "id": { "scheme": "nano14", "default": false, "mintable": true },
+      "render": { "label_fields": ["name"] },
+      "fields": [
+        {
+          "key": "name", "type": "string", "label": "Name",
+          "editable": true, "required": true, "maxLength": 200,
+          "render": { "widget": "text", "order": 1 }
+        },
+        {
+          "key": "company", "type": "reference", "label": "Company",
+          "editable": true, "required": true,
+          "collection": "companies", "display": "label", "on_unknown": "reject",
+          "render": { "widget": "picker", "order": 2 }
+        },
+        {
+          "key": "email", "type": "string", "label": "Email",
+          "editable": true, "maxLength": 200, "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+          "render": { "widget": "text", "order": 3 }
+        },
+        {
+          "key": "phone", "type": "string", "label": "Phone",
+          "editable": true, "maxLength": 40,
+          "render": { "widget": "text", "order": 4 }
+        },
+        {
+          "key": "function", "type": "string", "label": "Function / role",
+          "editable": true, "maxLength": 100,
+          "render": { "widget": "text", "order": 5 }
         }
       ]
     }
