@@ -24,6 +24,7 @@ fn mint_three_ids_produces_diff_and_audit_entries() {
         batch: Some("B-test-001".into()),
         dry_run: true,
         dry_run_file: None,
+        local: false,
     };
 
     let outcome = run_mint(&args, &wiring).expect("mint succeeds");
@@ -82,6 +83,7 @@ fn mint_zero_count_errors() {
         batch: None,
         dry_run: true,
         dry_run_file: None,
+        local: false,
     };
     assert!(run_mint(&args, &wiring).is_err());
 }
@@ -94,6 +96,7 @@ fn mint_summary_text_matches_python_shape() {
         batch: Some("B-fixture".into()),
         dry_run: true,
         dry_run_file: None,
+        local: false,
     };
     let outcome = run_mint(&args, &wiring).unwrap();
     let s = part_registry_cli::render_mint_summary(&outcome, &wiring.repo_root);
@@ -112,6 +115,7 @@ fn audit_entry_roundtrips_through_storage_with_empty_signatures() {
         batch: Some("B-roundtrip".into()),
         dry_run: true,
         dry_run_file: None,
+        local: false,
     };
     let outcome = run_mint(&args, &wiring).unwrap();
     let entries = wiring
@@ -144,6 +148,7 @@ fn mint_avoids_collisions_with_existing_registry() {
         batch: Some("B-fresh".into()),
         dry_run: true,
         dry_run_file: None,
+        local: false,
     };
     let outcome = run_mint(&args, &wiring).unwrap();
     for id in &outcome.minted {
