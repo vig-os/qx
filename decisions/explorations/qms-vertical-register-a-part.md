@@ -8,6 +8,7 @@
   in-engine). Builds on `platform-vs-registry.md` (the HQ question).
 - Companion: ADR-035 (collections metamodel), ADR-039 (contract engine
   / canonical form), ADR-036 (e-signature rungs), ADR-037 (audit anchor).
+- Tracked for build as **GitHub issue #208** (H2 preset family).
 
 ## The point
 

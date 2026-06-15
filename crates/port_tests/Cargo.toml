@@ -36,6 +36,9 @@ glob = "0.3"
 # SSoT enforcement (ssot_contract.rs)
 serde = { workspace = true, features = ["derive"] }
 part-registry-validators = { path = "../validators" }
+# Conformance corpus runner (conformance.rs) — the native runner of the
+# ADR-039 §4 parity triplet (native / wasm / FE).
+part-registry-contract = { path = "../contract" }
 # H1: collision + uniformity harness
 rand = "0.8"
 # H2: QR roundtrip + golden-hash harness

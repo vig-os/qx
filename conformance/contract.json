@@ -1,0 +1,59 @@
+{
+  "format_version": 1,
+  "collections": [
+    {
+      "name": "parts",
+      "id": { "scheme": "nano14", "default": true, "mintable": true, "prefix_length": 8 },
+      "lifecycle": {
+        "statuses": ["unbound", "bound", "void"],
+        "transitions": { "unbound": ["bound", "void"], "bound": ["void"], "void": [] },
+        "initial": "unbound"
+      },
+      "open_properties": true,
+      "render": { "label_fields": ["id", "type"] },
+      "fields": [
+        { "key": "type", "type": "string", "label": "Type", "required_to_enter": "bound", "maxLength": 40 },
+        { "key": "count", "type": "integer", "label": "Count", "min": 0, "max": 1000 },
+        { "key": "torque", "type": "decimal", "label": "Torque", "precision": 4, "scale": 2, "min": 0 },
+        { "key": "ratio", "type": "number", "label": "Ratio", "min": 0, "max": 1 },
+        { "key": "active", "type": "bool", "label": "Active" },
+        { "key": "made_on", "type": "date", "label": "Made on" },
+        { "key": "checked_at", "type": "timestamp", "label": "Checked at" },
+        { "key": "grade", "type": "enum", "label": "Grade", "values": ["a", "b", "c"], "closed": true },
+        { "key": "tag", "type": "enum", "label": "Tag", "values": ["x", "y"], "closed": "warn" },
+        { "key": "manufacturer", "type": "reference", "label": "Manufacturer",
+          "collection": "companies", "on_unknown": "reject" },
+        { "key": "maybe_contact", "type": "reference", "label": "Contact",
+          "collection": "contacts", "on_unknown": "warn" },
+        { "key": "datasheet", "type": "attachment", "label": "Datasheet", "constraint": "pdf|png" },
+        { "key": "measurement", "type": "object", "label": "Measurement",
+          "schema": [
+            { "key": "value", "type": "decimal", "label": "Value", "precision": 6, "scale": 3 },
+            { "key": "unit", "type": "string", "label": "Unit", "maxLength": 8 },
+            { "key": "passed", "type": "bool", "label": "Passed" }
+          ] }
+      ]
+    },
+    {
+      "name": "companies",
+      "id": { "scheme": "nano14", "default": false, "mintable": true },
+      "lifecycle": {
+        "statuses": ["active", "archived"],
+        "transitions": { "active": ["archived"], "archived": ["active"] },
+        "initial": "active"
+      },
+      "fields": [
+        { "key": "label", "type": "string", "label": "Name", "required": true, "maxLength": 100 },
+        { "key": "website", "type": "string", "label": "Website", "pattern": "^https?://" }
+      ]
+    },
+    {
+      "name": "contacts",
+      "id": { "scheme": "nano14", "default": false, "mintable": true },
+      "fields": [
+        { "key": "name", "type": "string", "label": "Name", "required": true },
+        { "key": "email", "type": "string", "label": "Email", "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$" }
+      ]
+    }
+  ]
+}

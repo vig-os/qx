@@ -184,7 +184,24 @@ fn check_string(field: &Field, value: &Value, path: &str, issues: &mut Vec<Recor
             ));
         }
     }
-    // NOTE: `pattern` regex enforcement is deferred (conformance task).
+    if let Some(pat) = field.pattern.as_deref() {
+        match regex::Regex::new(pat) {
+            Ok(re) => {
+                if !re.is_match(s) {
+                    issues.push(RecordIssue::error(
+                        path,
+                        format!("`{s}` does not match pattern /{pat}/"),
+                    ));
+                }
+            }
+            // A bad pattern is a contract authoring error surfaced here
+            // (the gate has the record in hand, not the contract loader).
+            Err(e) => issues.push(RecordIssue::error(
+                path,
+                format!("contract pattern /{pat}/ is not a valid regex: {e}"),
+            )),
+        }
+    }
 }
 
 fn check_integer(field: &Field, value: &Value, path: &str, issues: &mut Vec<RecordIssue>) {

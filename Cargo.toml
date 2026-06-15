@@ -39,6 +39,10 @@ publish = false
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+# `regex` powers the contract `pattern` facet (ADR-039 §2). The default
+# feature set is wasm32-clean (no `std::time` / threads needed for our
+# match-only use), so the validator stays cross-surface.
+regex = { version = "1", default-features = false, features = ["std", "unicode"] }
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
