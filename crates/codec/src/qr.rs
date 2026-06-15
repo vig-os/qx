@@ -1,7 +1,12 @@
 //! QR encode + decode.
 //!
-//! Encoder: `qrcode` 0.14 (placeholder for `qrcode-rust2` per ADR-017
-//! §References). Version + EC level are contract parameters (ADR-031
+//! Encoder: `qrcode2` (sorairolake fork of `qrcode`; ADR-017/ADR-028
+//! swap — maintained, on crates.io, dual MIT/Apache, adds Micro QR M3
+//! + rMQR; resolves the `qrcode` 0.14 dormancy). NOTE: like its
+//! ancestor it does NOT truncate the Micro-QR terminator, so M3-L
+//! rejects ~3% of 14-char ids with poor digit structure (issue #211);
+//! mitigated by the mint M3-L fence + `pr print --verify`. Version + EC
+//! level are contract parameters (ADR-031
 //! §8): [`encode_pinned`] takes them explicitly; [`encode`] keeps the
 //! pre-contract defaults (Standard QR V1 / Micro QR M4, both EC M)
 //! for the mm-native render path.
@@ -11,7 +16,8 @@
 //! Quiet-zone constants match `label.py:67-70` (Standard: 4 modules,
 //! Micro: 2 modules — both spec minima).
 
-use qrcode::{EcLevel, QrCode, Version};
+use qrcode2::types::{Color, EcLevel, Version};
+use qrcode2::QrCode;
 
 use crate::symbology::{Ec, Family};
 use crate::CodecError;
@@ -107,12 +113,9 @@ pub fn encode_pinned(
         .map_err(|e| CodecError::Encode(format!("{e:?}")))?;
     let size = code.width();
     let colors = code.into_colors();
-    // qrcode::Color is `Light` or `Dark`; map to `bool` so consumers
-    // do not have to pull in the `qrcode` types.
-    let modules: Vec<bool> = colors
-        .into_iter()
-        .map(|c| c != qrcode::Color::Light)
-        .collect();
+    // qrcode2's Color is `Light` or `Dark`; map to `bool` so consumers
+    // do not have to pull in the `qrcode2` types.
+    let modules: Vec<bool> = colors.into_iter().map(|c| c != Color::Light).collect();
     Ok(QrMatrix {
         size,
         modules,

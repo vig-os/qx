@@ -14,10 +14,6 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 # Receipt JSON inscribed into the SVG <metadata> element (ADR-031 §10).
 serde_json = { workspace = true }
-# `qrcode` 0.14 is the dormant-but-functional placeholder per the
-# workspace comment in the root Cargo.toml. Swap to `qrcode-rust2`
-# once published / vendored (ADR-017 §References).
-qrcode = { workspace = true }
 # rxing builds for wasm32 today (verified 2026-05-11 against rxing
 # 0.9), so the decoder is not gated out of the wasm bundle. The
 # `wasm_support` feature is enabled regardless so chrono's wasmbind
@@ -31,6 +27,14 @@ qrcode = { workspace = true }
 # scanning per `web/README.md`; the Rust decoder is used by CLI +
 # native tests + the A/B parity harness only.
 rxing = { workspace = true, features = ["wasm_support"], optional = true }
+# QR + Micro QR encoder. `qrcode2` (sorairolake fork of `qrcode`)
+# replaces dormant `qrcode` 0.14 (ADR-017/ADR-028): maintained, on
+# crates.io, dual MIT/Apache, adds Micro QR M3 + rMQR. (It does NOT fix
+# the Micro terminator truncation — M3-L still rejects ~3% worst-case
+# ids; tracked in issue #211, mitigated by the mint M3-L fence.)
+# `default-features = false` drops its svg/eps/pic/image renderers — we
+# render our own SVG; only the encoder + module matrix are used.
+qrcode2 = { version = "0.18.0", default-features = false, features = ["std"] }
 
 [features]
 default = ["decoder"]

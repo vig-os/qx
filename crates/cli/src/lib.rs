@@ -63,7 +63,7 @@ use serde_json::json;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-use part_registry_codec::{render_label, Layout, TextFormat};
+use part_registry_codec::{encode_pinned, render_label, Ec, Family, Layout, TextFormat};
 use part_registry_config::{Config, IdentityAdapterChoice, StorageAdapterChoice};
 use part_registry_domain::{
     Action, AuditEntry, Diff, DiffEdit, DiffRow, Operator, OperatorRef, Part, PartId, PartStatus,
@@ -100,18 +100,29 @@ use part_registry_transport_github_pr::{
 /// 14·log2(31) ≈ 70 bits of entropy; we draw 32 bytes per attempt
 /// which is plenty after rejection-sampling.
 pub fn mint_part_id(existing: &HashSet<String>) -> Result<PartId, CliError> {
-    for _ in 0..16 {
+    for _ in 0..64 {
         let candidate = generate_one();
-        if !existing.contains(&candidate) {
-            return PartId::new(candidate.clone()).map_err(|e| {
-                CliError::Other(format!(
-                    "minted candidate {candidate:?} failed validation: {e}"
-                ))
-            });
+        if existing.contains(&candidate) {
+            continue;
         }
+        // M3-L fence (interim, issue #211): every minted id must encode
+        // in the registry's canonical compact label symbology — Micro QR
+        // **M3-L** — so every part renders as a uniform 60px micro label.
+        // ~3% of random nano14 ids exceed M3-L's budget (scattered digit
+        // runs inflate the Micro-QR segment count) and are re-rolled.
+        // Remove this label-coupling once #211 (ISO terminator
+        // truncation in the encoder) lands and M3-L holds all 14 chars.
+        if encode_pinned(&candidate, Family::Micro, 3, Ec::L).is_err() {
+            continue;
+        }
+        return PartId::new(candidate.clone()).map_err(|e| {
+            CliError::Other(format!(
+                "minted candidate {candidate:?} failed validation: {e}"
+            ))
+        });
     }
     Err(CliError::Other(
-        "nanoid keeps colliding — registry corrupt or RNG broken".into(),
+        "minting kept failing collision + M3-L feasibility — registry corrupt or RNG broken".into(),
     ))
 }
 
@@ -1890,6 +1901,21 @@ mod tests {
         let label = default_batch_label(t);
         // 2023-11-14T22:13:20Z
         assert_eq!(label, "B-2023-11-14-2213");
+    }
+
+    #[test]
+    fn minted_ids_always_fit_micro_m3_l() {
+        // The mint M3-L fence (issue #211 interim): every minted id
+        // must encode in Micro QR M3-L so labels are uniform 60px. ~3%
+        // of raw nano14 ids don't fit and are re-rolled; this asserts
+        // the fence holds across a batch.
+        use std::collections::HashSet;
+        let existing = HashSet::new();
+        for _ in 0..200 {
+            let id = mint_part_id(&existing).expect("mint succeeds");
+            encode_pinned(id.as_str(), Family::Micro, 3, Ec::L)
+                .expect("every minted id must encode in micro-m3-l (the fence)");
+        }
     }
 
     #[test]
