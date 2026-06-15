@@ -1,0 +1,107 @@
+{
+  "description": "Conformance corpus for ADR-039 schema-driven record validation. Each case is validated against conformance/contract.json by every runner (native Rust, wasm, FE). `expect` is the COMPLETE set of issues the validator must produce — extra or missing issues fail the case. This is the parity contract: all runners must agree, byte for byte, on this corpus.",
+  "cases": [
+    { "name": "clean-bound-part", "collection": "parts", "status": "bound",
+      "record": { "id": "PART0001", "status": "bound", "type": "bolt" },
+      "expect": [] },
+
+    { "name": "clean-part-with-open-property", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0002", "status": "unbound", "scratchpad": "anything goes here" },
+      "expect": [] },
+
+    { "name": "missing-required-to-enter", "collection": "parts", "status": "bound",
+      "record": { "id": "PART0003", "status": "bound" },
+      "expect": [ { "path": "type", "severity": "error", "contains": "enter status" } ] },
+
+    { "name": "integer-fractional", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0004", "status": "unbound", "count": 1.5 },
+      "expect": [ { "path": "count", "severity": "error", "contains": "fractional" } ] },
+
+    { "name": "integer-above-max", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0005", "status": "unbound", "count": 2000 },
+      "expect": [ { "path": "count", "severity": "error", "contains": "above max" } ] },
+
+    { "name": "decimal-scale-violation", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0006", "status": "unbound", "torque": "1.234" },
+      "expect": [ { "path": "torque", "severity": "error", "contains": "scale" } ] },
+
+    { "name": "decimal-precision-violation", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0007", "status": "unbound", "torque": "123.45" },
+      "expect": [ { "path": "torque", "severity": "error", "contains": "precision" } ] },
+
+    { "name": "number-above-max", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0008", "status": "unbound", "ratio": 1.5 },
+      "expect": [ { "path": "ratio", "severity": "error", "contains": "above max" } ] },
+
+    { "name": "bool-wrong-type", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0009", "status": "unbound", "active": "yes" },
+      "expect": [ { "path": "active", "severity": "error", "contains": "boolean" } ] },
+
+    { "name": "date-malformed", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0010", "status": "unbound", "made_on": "2026/01/01" },
+      "expect": [ { "path": "made_on", "severity": "error", "contains": "malformed date" } ] },
+
+    { "name": "enum-closed-rejects-unknown", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0011", "status": "unbound", "grade": "z" },
+      "expect": [ { "path": "grade", "severity": "error", "contains": "declared value set" } ] },
+
+    { "name": "enum-warn-mode", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0012", "status": "unbound", "tag": "z" },
+      "expect": [ { "path": "tag", "severity": "warn", "contains": "declared value set" } ] },
+
+    { "name": "maxlength-violation", "collection": "parts", "status": "bound",
+      "record": { "id": "PART0013", "status": "bound", "type": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      "expect": [ { "path": "type", "severity": "error", "contains": "maxLength" } ] },
+
+    { "name": "reference-reject-on-missing-fk", "collection": "parts", "status": "unbound",
+      "known_ids": { "companies": ["COMP0001"] },
+      "record": { "id": "PART0014", "status": "unbound", "manufacturer": "GHOST" },
+      "expect": [ { "path": "manufacturer", "severity": "error", "contains": "not found" } ] },
+
+    { "name": "reference-warn-on-missing-fk", "collection": "parts", "status": "unbound",
+      "known_ids": { "contacts": [] },
+      "record": { "id": "PART0015", "status": "unbound", "maybe_contact": "NOBODY" },
+      "expect": [ { "path": "maybe_contact", "severity": "warn", "contains": "not found" } ] },
+
+    { "name": "reference-skipped-when-universe-absent", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0016", "status": "unbound", "manufacturer": "GHOST" },
+      "expect": [] },
+
+    { "name": "reference-valid-fk", "collection": "parts", "status": "unbound",
+      "known_ids": { "companies": ["COMP0001"] },
+      "record": { "id": "PART0017", "status": "unbound", "manufacturer": "COMP0001" },
+      "expect": [] },
+
+    { "name": "attachment-extension-rejected", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0018", "status": "unbound", "datasheet": "spec.docx" },
+      "expect": [ { "path": "datasheet", "severity": "error", "contains": "not in allowed set" } ] },
+
+    { "name": "nested-object-type-error", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0019", "status": "unbound", "measurement": { "passed": "yes" } },
+      "expect": [ { "path": "measurement.passed", "severity": "error", "contains": "boolean" } ] },
+
+    { "name": "nested-unknown-key", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0020", "status": "unbound", "measurement": { "rogue": 1 } },
+      "expect": [ { "path": "measurement.rogue", "severity": "error", "contains": "unknown nested field" } ] },
+
+    { "name": "company-pattern-mismatch", "collection": "companies", "status": "active",
+      "record": { "id": "COMP0001", "status": "active", "label": "Acme", "website": "ftp://x" },
+      "expect": [ { "path": "website", "severity": "error", "contains": "does not match pattern" } ] },
+
+    { "name": "company-pattern-match-clean", "collection": "companies", "status": "active",
+      "record": { "id": "COMP0002", "status": "active", "label": "Acme", "website": "https://acme.example" },
+      "expect": [] },
+
+    { "name": "company-missing-required", "collection": "companies", "status": "active",
+      "record": { "id": "COMP0003", "status": "active" },
+      "expect": [ { "path": "label", "severity": "error", "contains": "required" } ] },
+
+    { "name": "contact-unknown-key-rejected-no-open-properties", "collection": "contacts",
+      "record": { "id": "CONT0001", "name": "Jo", "rogue": 1 },
+      "expect": [ { "path": "rogue", "severity": "error", "contains": "unknown field" } ] },
+
+    { "name": "contact-email-pattern-mismatch", "collection": "contacts",
+      "record": { "id": "CONT0002", "name": "Jo", "email": "not-an-email" },
+      "expect": [ { "path": "email", "severity": "error", "contains": "does not match pattern" } ] }
+  ]
+}

@@ -147,6 +147,9 @@
               # committed example SVGs the codec regression suite
               # diffs against (root examples/)
               || (pkgs.lib.hasInfix "/examples/" p)
+              # ADR-039 conformance corpus the native runner reads
+              # (crates/port_tests/tests/conformance.rs)
+              || (pkgs.lib.hasInfix "/conformance/" p)
               || (pkgs.lib.hasSuffix ".toml" base)
               || (pkgs.lib.hasSuffix ".lock" base);
         };
@@ -209,6 +212,24 @@
               --out-name part_registry_wasm \
               target/wasm32-unknown-unknown/release/part_registry_wasm.wasm
           '';
+        });
+
+        # Wasm-clean parity (ADR-039 §4): the contract parser + the record
+        # validator MUST compile to wasm32 so the FE runs the SAME
+        # validation logic as native (the `pr check` authority). This
+        # derivation fails the moment either crate grows a non-wasm
+        # dependency (std::fs, threads, a native-only crate) — the parity
+        # guarantee enforced by construction, not by discipline.
+        wasmCleanArtifact = craneLib.buildPackage (commonArgs // {
+          inherit cargoArtifacts;
+          pname = "part-registry-wasm-clean";
+          version = "0.1.0";
+          cargoExtraArgs =
+            "--target wasm32-unknown-unknown -p part-registry-contract -p part-registry-validators";
+          doNotPostBuildInstallCargoBinaries = true;
+          doNotLinkInheritedArtifacts = true;
+          doCheck = false;
+          installPhaseCommand = "mkdir -p $out";
         });
 
         # web/ source filtered to the FE-only inputs npm + vitest +
@@ -439,6 +460,13 @@
           # right so other checks (web-unit, pages.yml) can reuse the
           # bindgen output without re-building.
           wasm = wasmArtifact;
+
+          # Wasm-clean parity gate (ADR-039 §4) — the contract + validator
+          # crates compile to wasm32, so the FE validates identically to
+          # the native `pr check` authority. The native conformance runner
+          # (crates/port_tests/tests/conformance.rs) proves the LOGIC; this
+          # proves the same crates RUN on the FE surface.
+          wasm-clean = wasmCleanArtifact;
 
           # FE unit tests via vitest. node_modules come from the
           # fixed-output buildNpmPackage above so the check is hermetic,

@@ -3349,6 +3349,7 @@ dependencies = [
  "hex",
  "image",
  "part-registry-codec",
+ "part-registry-contract",
  "part-registry-domain",
  "part-registry-identity",
  "part-registry-signing",
@@ -3469,6 +3470,7 @@ version = "0.1.0"
 dependencies = [
  "part-registry-contract",
  "part-registry-domain",
+ "regex",
  "serde_json",
  "thiserror 2.0.18",
  "time",
