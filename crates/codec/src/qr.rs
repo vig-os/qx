@@ -2,14 +2,14 @@
 //!
 //! Encoder: `qrcode2` (sorairolake fork of `qrcode`; ADR-017/ADR-028
 //! swap — maintained, on crates.io, dual MIT/Apache, adds Micro QR M3
-//! + rMQR; resolves the `qrcode` 0.14 dormancy). NOTE: like its
+//! and rMQR; resolves the `qrcode` 0.14 dormancy). NOTE: like its
 //! ancestor it does NOT truncate the Micro-QR terminator, so M3-L
 //! rejects ~3% of 14-char ids with poor digit structure (issue #211);
-//! mitigated by the mint M3-L fence + `pr print --verify`. Version + EC
-//! level are contract parameters (ADR-031
-//! §8): [`encode_pinned`] takes them explicitly; [`encode`] keeps the
-//! pre-contract defaults (Standard QR V1 / Micro QR M4, both EC M)
-//! for the mm-native render path.
+//! mitigated by the mint M3-L fence and `pr print --verify`. Version
+//! and EC level are contract parameters (ADR-031 §8): [`encode_pinned`]
+//! takes them explicitly; [`encode`] keeps the pre-contract defaults
+//! (Standard QR V1 / Micro QR M4, both EC M) for the mm-native render
+//! path.
 //!
 //! Decoder: `rxing` 0.9 — supports both Standard QR and Micro QR.
 //!
