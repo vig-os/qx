@@ -67,11 +67,27 @@ rmcp = { version = "1", features = ["transport-io", "server"], optional = true }
 ratatui = { version = "0.29", optional = true }
 crossterm = { version = "0.28", optional = true }
 
+# In-core raster for `pr print --emit png|jpeg|pdf` (ADR-031 §8).
+# Optional + default-on so the shipped `pr` rasterises without an
+# external `rsvg-convert`; `--no-default-features` keeps the lean CI
+# build. The wasm façade does not depend on this crate, so the FE
+# bundle is untouched (foundation #33).
+resvg = { version = "0.44", optional = true }
+svg2pdf = { version = "0.12", optional = true }
+image = { version = "0.25", default-features = false, features = ["jpeg"], optional = true }
+
 [features]
-default = []
+default = ["raster"]
 serve = ["dep:axum", "dep:tokio", "dep:tower-http"]
 mcp = ["dep:rmcp", "dep:tokio"]
 tui = ["dep:ratatui", "dep:crossterm"]
+# In-core SVG -> png/jpeg/pdf for `pr print --emit` (default-on).
+raster = ["dep:resvg", "dep:svg2pdf", "dep:image"]
+# DEV-ONLY: `pr mint --local` writes straight to the local
+# registry.csv (LocalRegistrySink), bypassing the GitHub PR flow.
+# Never in `default` — must be opted in explicitly and must never
+# ship in a release/main build.
+dev-local = []
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -47,6 +47,11 @@ pub mod mcp;
 #[cfg(feature = "tui")]
 pub mod tui;
 
+/// In-core SVG -> png/jpeg/pdf raster for `pr print --emit` (ADR-031
+/// §8). The `Emit` enum + svg pass-through compile unconditionally;
+/// the actual rasterisers need the `raster` feature.
+pub mod raster;
+
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io::Write;
@@ -58,7 +63,7 @@ use serde_json::json;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-use part_registry_codec::{render_label, Layout, TextFormat};
+use part_registry_codec::{encode_pinned, render_label, Ec, Family, Layout, TextFormat};
 use part_registry_config::{Config, IdentityAdapterChoice, StorageAdapterChoice};
 use part_registry_domain::{
     Action, AuditEntry, Diff, DiffEdit, DiffRow, Operator, OperatorRef, Part, PartId, PartStatus,
@@ -95,18 +100,29 @@ use part_registry_transport_github_pr::{
 /// 14·log2(31) ≈ 70 bits of entropy; we draw 32 bytes per attempt
 /// which is plenty after rejection-sampling.
 pub fn mint_part_id(existing: &HashSet<String>) -> Result<PartId, CliError> {
-    for _ in 0..16 {
+    for _ in 0..64 {
         let candidate = generate_one();
-        if !existing.contains(&candidate) {
-            return PartId::new(candidate.clone()).map_err(|e| {
-                CliError::Other(format!(
-                    "minted candidate {candidate:?} failed validation: {e}"
-                ))
-            });
+        if existing.contains(&candidate) {
+            continue;
         }
+        // M3-L fence (interim, issue #211): every minted id must encode
+        // in the registry's canonical compact label symbology — Micro QR
+        // **M3-L** — so every part renders as a uniform 60px micro label.
+        // ~3% of random nano14 ids exceed M3-L's budget (scattered digit
+        // runs inflate the Micro-QR segment count) and are re-rolled.
+        // Remove this label-coupling once #211 (ISO terminator
+        // truncation in the encoder) lands and M3-L holds all 14 chars.
+        if encode_pinned(&candidate, Family::Micro, 3, Ec::L).is_err() {
+            continue;
+        }
+        return PartId::new(candidate.clone()).map_err(|e| {
+            CliError::Other(format!(
+                "minted candidate {candidate:?} failed validation: {e}"
+            ))
+        });
     }
     Err(CliError::Other(
-        "nanoid keeps colliding — registry corrupt or RNG broken".into(),
+        "minting kept failing collision + M3-L feasibility — registry corrupt or RNG broken".into(),
     ))
 }
 
@@ -298,6 +314,17 @@ pub struct MintArgs {
     /// Implies `--dry-run`.
     #[arg(long)]
     pub dry_run_file: Option<PathBuf>,
+
+    /// **Dev-only** — the `--local` flag is exposed only in builds
+    /// compiled with the `dev-local` cargo feature, so it can never be
+    /// invoked from the default/release `pr` (clap skips it otherwise,
+    /// pinning it to `false`). When set, the mint is applied straight
+    /// to the local `registry.csv` via [`LocalRegistrySink`] instead
+    /// of opening a GitHub PR, restoring the old `mint.py` mint ->
+    /// immediately-renderable loop for development. No token required.
+    #[cfg_attr(feature = "dev-local", arg(long))]
+    #[cfg_attr(not(feature = "dev-local"), arg(skip))]
+    pub local: bool,
 }
 
 // -------------------------------------------------------------------
@@ -820,6 +847,114 @@ impl ProposalSink for DryRunSink {
     fn status(&self, _proposal_ref: &ProposalRef) -> Result<ProposalStatus, ProposalError> {
         // Dry-run proposals are always "open" — they never close.
         Ok(ProposalStatus::Open)
+    }
+}
+
+// -------------------------------------------------------------------
+// LocalRegistrySink — DEV-ONLY direct write to the local registry.csv
+// -------------------------------------------------------------------
+
+/// **Dev-only** `ProposalSink` that applies a proposal's diff straight
+/// to the local working-copy `registry.csv`, bypassing the GitHub PR
+/// flow (ADR-019). It restores the pre-Rust `mint.py` loop: minted IDs
+/// are immediately renderable by `pr print` / `pr label` in the same
+/// checkout, with no token, network, or PR round-trip.
+///
+/// Gated behind the `dev-local` cargo feature so the entire type — and
+/// the `pr mint --local` flag that reaches it — is **compiled out of
+/// the default/release build** and can never ship in the production
+/// tool (the policy authority stays CI + reviewers per ADR-016/019).
+///
+/// Scope: applies `diff.adds` only (what `mint` produces). Rows are
+/// re-sorted ascending by `id` to preserve the registry's canonical
+/// CSV order (the same order `run_mint` assumes).
+#[cfg(feature = "dev-local")]
+pub struct LocalRegistrySink {
+    registry_csv: PathBuf,
+}
+
+#[cfg(feature = "dev-local")]
+impl LocalRegistrySink {
+    /// `repo_root` is the local data-repo clone path
+    /// ([`Wiring::repo_root`]); `registry.csv` sits at its root.
+    pub fn new(repo_root: PathBuf) -> Self {
+        Self {
+            registry_csv: repo_root.join("registry.csv"),
+        }
+    }
+}
+
+#[cfg(feature = "dev-local")]
+impl ProposalSink for LocalRegistrySink {
+    fn submit(&self, proposal: Proposal) -> Result<ProposalRef, ProposalError> {
+        let path = &self.registry_csv;
+        let backend = |e: String| ProposalError::Backend(e.into());
+
+        // Read existing header + rows.
+        let mut rdr = csv::Reader::from_path(path)
+            .map_err(|e| backend(format!("open {}: {e}", path.display())))?;
+        let header: Vec<String> = rdr
+            .headers()
+            .map_err(|e| backend(format!("read header {}: {e}", path.display())))?
+            .iter()
+            .map(|s| s.to_owned())
+            .collect();
+        let id_col = header
+            .iter()
+            .position(|c| c == "id")
+            .ok_or_else(|| backend(format!("{}: no `id` column", path.display())))?;
+        let mut rows: Vec<Vec<String>> = Vec::new();
+        for rec in rdr.records() {
+            let rec = rec.map_err(|e| backend(format!("read row: {e}")))?;
+            rows.push(rec.iter().map(|s| s.to_owned()).collect());
+        }
+
+        // Apply adds — project each DiffRow onto the header columns.
+        let added = proposal.diff.adds.len();
+        for add in &proposal.diff.adds {
+            let id = add
+                .id
+                .as_ref()
+                .map(|p| p.as_str().to_owned())
+                .unwrap_or_default();
+            let row: Vec<String> = header
+                .iter()
+                .map(|col| {
+                    if col == "id" {
+                        id.clone()
+                    } else {
+                        add.fields.get(col).cloned().unwrap_or_default()
+                    }
+                })
+                .collect();
+            rows.push(row);
+        }
+
+        // Keep canonical ascending-by-id CSV order.
+        rows.sort_by(|a, b| a.get(id_col).cmp(&b.get(id_col)));
+
+        // Write back (truncate + rewrite).
+        let mut wtr = csv::Writer::from_path(path)
+            .map_err(|e| backend(format!("open for write {}: {e}", path.display())))?;
+        wtr.write_record(&header)
+            .map_err(|e| backend(format!("write header: {e}")))?;
+        for r in &rows {
+            wtr.write_record(r)
+                .map_err(|e| backend(format!("write row: {e}")))?;
+        }
+        wtr.flush()
+            .map_err(|e| backend(format!("flush {}: {e}", path.display())))?;
+
+        Ok(ProposalRef {
+            url: format!("local://{}#adds={added}", path.display()),
+            local_id: Some("local".into()),
+            adapter: "local".into(),
+        })
+    }
+
+    fn status(&self, _proposal_ref: &ProposalRef) -> Result<ProposalStatus, ProposalError> {
+        // A local apply is effectively merged the instant it returns.
+        Ok(ProposalStatus::Merged)
     }
 }
 
@@ -1371,7 +1506,7 @@ pub struct BindOutcome {
 /// 4. Emit an `AuditEntry` via the observability layer.
 pub fn run_bind(args: &BindArgs, wiring: &Wiring) -> Result<BindOutcome, CliError> {
     if args.void && (args.type_.is_some() || args.vendor.is_some() || args.notes.is_some()) {
-        // Parity with bind.py — silently ignore metadata on --void;
+        // Parity with bind.py — silently ignore metadata on --void; guardrails-ok
         // the Python CLI tolerates this. We surface a warning via
         // tracing but proceed. Per issue #56, notes is also ignored
         // (Python appends the void marker to existing notes, ignoring
@@ -1766,6 +1901,21 @@ mod tests {
         let label = default_batch_label(t);
         // 2023-11-14T22:13:20Z
         assert_eq!(label, "B-2023-11-14-2213");
+    }
+
+    #[test]
+    fn minted_ids_always_fit_micro_m3_l() {
+        // The mint M3-L fence (issue #211 interim): every minted id
+        // must encode in Micro QR M3-L so labels are uniform 60px. ~3%
+        // of raw nano14 ids don't fit and are re-rolled; this asserts
+        // the fence holds across a batch.
+        use std::collections::HashSet;
+        let existing = HashSet::new();
+        for _ in 0..200 {
+            let id = mint_part_id(&existing).expect("mint succeeds");
+            encode_pinned(id.as_str(), Family::Micro, 3, Ec::L)
+                .expect("every minted id must encode in micro-m3-l (the fence)");
+        }
     }
 
     #[test]

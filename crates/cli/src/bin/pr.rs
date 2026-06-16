@@ -161,6 +161,18 @@ enum Cmd {
         no_log: bool,
         #[arg(long, default_value = "labels")]
         out_dir: PathBuf,
+        /// Output format (ADR-031 §8): svg (default) | png | jpeg |
+        /// pdf. png/jpeg/pdf rasterise in-core (no external
+        /// rsvg-convert) and need the `raster` build feature
+        /// (default-on). Files are written as `<id>.<ext>`.
+        #[arg(long, default_value = "svg")]
+        emit: String,
+        /// Round-trip fence: rasterise each rendered label and decode
+        /// its QR (rxing), refusing to finish if any QR does not scan
+        /// back to its id. Confirms every printed code is machine-
+        /// readable. Needs the `raster` + codec `decoder` features.
+        #[arg(long)]
+        verify: bool,
         /// Hidden alias retired by --size (ADR-031 §8: the unit rides
         /// the value): mm (default, the mm-native renderer) or px
         /// (the px-true device-pixel renderer).
@@ -565,11 +577,33 @@ fn parity_mint(args: MintArgs) -> ExitCode {
         Ok(c) => c,
         Err(e) => return e,
     };
-    let dry = dry_run_target(args.dry_run, &args.dry_run_file);
-    let wiring = match build_wiring(&cfg, dry) {
+    // Dev-only `--local` sink: skip the token-requiring live path by
+    // wiring a throwaway in-memory dry-run target, then swap in the
+    // LocalRegistrySink below. `args.local` is forced false unless the
+    // `dev-local` feature exposes the flag (clap `arg(skip)` otherwise).
+    let local = args.local;
+    let dry = if local {
+        Some(DryRunTarget::Memory(std::sync::Arc::new(
+            std::sync::Mutex::new(Vec::new()),
+        )))
+    } else {
+        dry_run_target(args.dry_run, &args.dry_run_file)
+    };
+    #[allow(unused_mut)]
+    let mut wiring = match build_wiring(&cfg, dry) {
         Ok(w) => w,
         Err(e) => return e,
     };
+    #[cfg(feature = "dev-local")]
+    if local {
+        eprintln!(
+            "pr mint --local: DEV BUILD — applying straight to local registry.csv, \
+             NOT opening a PR"
+        );
+        wiring.sink = Box::new(part_registry_cli::LocalRegistrySink::new(
+            wiring.repo_root.clone(),
+        ));
+    }
     init_obs(&cfg, &wiring);
     let span = request_id_span("pr.mint", RequestId::new());
     let _g = span.enter();
@@ -677,6 +711,8 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
         copies,
         no_log,
         out_dir,
+        emit,
+        verify,
         unit,
         size_px,
         padding,
@@ -743,7 +779,14 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
             length_excess_px: length_excess,
             excess_at,
         };
-        return protocol_print(&ctx, ids, options, &out_dir);
+        let emit = match part_registry_cli::raster::Emit::parse(&emit) {
+            Ok(e) => e,
+            Err(msg) => {
+                eprintln!("{msg}");
+                return ExitCode::from(2);
+            }
+        };
+        return protocol_print(&ctx, ids, options, &out_dir, emit, verify);
     }
 
     let (req, output) = match cmd {
@@ -862,6 +905,8 @@ fn protocol_print(
     ids: Vec<String>,
     options: part_registry_app::PrintOptions,
     out_dir: &Path,
+    emit: part_registry_cli::raster::Emit,
+    verify: bool,
 ) -> ExitCode {
     let resp = dispatch(
         ctx,
@@ -878,17 +923,57 @@ fn protocol_print(
                 return ExitCode::FAILURE;
             }
             let labels = data["labels"].as_array().cloned().unwrap_or_default();
+            let ext = emit.ext();
             for l in &labels {
                 let id = l["id"].as_str().unwrap_or("label");
                 let svg = l["svg"].as_str().unwrap_or_default();
-                let path = out_dir.join(format!("{id}.svg"));
-                if let Err(e) = std::fs::write(&path, svg) {
+                // Round-trip fence (--verify): rasterise to PNG and
+                // decode the QR, refusing if it does not scan back to
+                // the id. Independent of --emit (always uses a PNG for
+                // the decoder).
+                if verify {
+                    let png = match part_registry_cli::raster::render(
+                        svg,
+                        part_registry_cli::raster::Emit::Png,
+                    ) {
+                        Ok(b) => b,
+                        Err(msg) => {
+                            eprintln!("verify {id}: rasterise failed: {msg}");
+                            return ExitCode::FAILURE;
+                        }
+                    };
+                    match part_registry_codec::decode_qr(&png) {
+                        Ok(decoded) if decoded == id => {}
+                        Ok(decoded) => {
+                            eprintln!(
+                                "verify {id}: QR decoded to {decoded:?}, not the id — refusing"
+                            );
+                            return ExitCode::FAILURE;
+                        }
+                        Err(e) => {
+                            eprintln!("verify {id}: QR did not decode ({e}) — refusing");
+                            return ExitCode::FAILURE;
+                        }
+                    }
+                }
+                // The engine always renders SVG; --emit rasterises it
+                // in-core (ADR-031 §8) for png/jpeg/pdf, pass-through
+                // for svg.
+                let bytes = match part_registry_cli::raster::render(svg, emit) {
+                    Ok(b) => b,
+                    Err(msg) => {
+                        eprintln!("emit {id}.{ext}: {msg}");
+                        return ExitCode::FAILURE;
+                    }
+                };
+                let path = out_dir.join(format!("{id}.{ext}"));
+                if let Err(e) = std::fs::write(&path, bytes) {
                     eprintln!("write {}: {e}", path.display());
                     return ExitCode::FAILURE;
                 }
             }
             println!(
-                "rendered {} label(s) -> {}",
+                "rendered {} {ext} label(s) -> {}",
                 labels.len(),
                 out_dir.display()
             );

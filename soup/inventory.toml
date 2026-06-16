@@ -286,26 +286,27 @@ notes = "Cryptographic primitive; RustCrypto org maintains test vectors against 
 # -----------------------------------------------------------------------------
 
 [[crate]]
-name = "qrcode"
-version = "=0.14"
+name = "qrcode2"
+version = "=0.18"
 class = 3
-role = "Standard QR + Micro QR M4 encoder — backs the permanent physical label"
+role = "Standard QR + Micro QR (M3/M4) + rMQR encoder — backs the permanent physical label"
 used_by = ["codec"]
-maintenance_url = "https://github.com/kennytm/qrcode-rust"
-last_release_check = "2026-05-11"
-upstream_status = "dormant"
+maintenance_url = "https://github.com/sorairolake/qrcode-rust2"
+last_release_check = "2026-06-15"
+upstream_status = "active"
 validation_harness = "crates/port_tests/src/soup/qr_roundtrip.rs"
 surveillance_owner = "codec-maintainer"
 revalidation_trigger = "any-version-bump"
 notes = """
-**ADR-017 §Open Questions flags upstream dormancy.** Pin held against
-dormant `kennytm/qrcode-rust` until `sorairolake/qrcode-rust2` (active
-fork) publishes to crates.io or this project vendors it. Monthly
-dormancy check via quarterly SOUP-health workflow. ADR-023 trigger R3
-fires if upstream goes >9 months without commits — codec maintainer
-decides between fork-of-fork, vendoring, or migration to a different
-encoder. H2 harness (planned, issue #46) covers matrix-fingerprint
-golden-file regression and cross-decoder agreement.
+**Swapped 2026-06-15 from dormant `qrcode` 0.14 → `qrcode2` 0.18**
+(sorairolake fork; ADR-017/ADR-028 R3 path), now published on
+crates.io and actively maintained — resolves the dormancy that ADR-017
+§Open Questions flagged. Dual MIT/Apache. Adds Micro QR M3 + rMQR. The
+H2/H3 round-trip + cross-decoder harnesses pass with no matrix drift.
+Known limitation tracked in issue #211: like its `qrcode` ancestor it
+does NOT truncate the Micro-QR terminator, so M3-L rejects ~3% of
+14-char ids with poor digit structure; mitigated today by the mint
+M3-L fence + the `pr print --verify` round-trip gate.
 """
 
 [[crate]]

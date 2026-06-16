@@ -538,9 +538,30 @@ receipt.
 
 - **Default DPI per printer** — lives in the printer profile (config);
   enumerate supported models.
-- **Raster in core vs CLI** — does `--emit png|pdf` rasterize inside the
+- **Raster in core vs CLI** — ~~does `--emit png|pdf` rasterize inside the
   core (portable, heavier WASM) or stay a CLI/server concern (current
-  `rsvg-convert` path)? Decide when a non-CLI shell needs raster.
+  `rsvg-convert` path)?~~ **Resolved (2026-06-15):** rasterise in the
+  **CLI**, not the shared core. `pr print --emit svg|png|jpeg|pdf`
+  (default `svg`) rasterises in-process via `resvg`/`svg2pdf` behind the
+  CLI-only `raster` cargo feature (default-on), retiring the external
+  `rsvg-convert` step. The wasm façade does **not** depend on the raster
+  crates, so the FE bundle stays under the 1.5 MB gzip budget
+  (foundation #33); browsers rasterise SVG via `<canvas>.toBlob`
+  instead. JPEG is included (composite-over-white from the premultiplied
+  pixmap). `--no-default-features` keeps a lean SVG-only build for CI.
+  - **Dev preview loop (`--local`).** `pr print` only renders IDs in the
+    local registry, and `pr mint` submits via GitHub PR (ADR-019), so
+    fresh IDs aren't locally renderable. For development only, a
+    `LocalRegistrySink` behind the **`dev-local` cargo feature** exposes
+    `pr mint --count N --local`, applying the mint straight to the local
+    `registry.csv` (restoring the old `mint.py` mint→render loop). It is
+    **compiled out of the default/release build** — the flag and the sink
+    do not exist in the shipped `pr` (policy authority stays CI +
+    reviewers per ADR-016/019). Run the loop offline so per-invocation
+    `git reset --hard` doesn't discard the local rows:
+    `PARTREG_OFFLINE=true pr mint --count 50 --local` then
+    `PARTREG_OFFLINE=true pr print --id … --emit png`. Build with
+    `cargo build --features dev-local`.
 - **Multi-up sheets** — `compose-sheet` (Python-only today) becomes
   "pack M px-true labels into a sheet grid"; layering it on this
   single-label primitive is a follow-up, likely its own scope.
