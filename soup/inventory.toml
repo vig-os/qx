@@ -292,21 +292,25 @@ class = 3
 role = "Standard QR + Micro QR (M3/M4) + rMQR encoder — backs the permanent physical label"
 used_by = ["codec"]
 maintenance_url = "https://github.com/sorairolake/qrcode-rust2"
-last_release_check = "2026-06-15"
+last_release_check = "2026-06-16"
 upstream_status = "active"
 validation_harness = "crates/port_tests/src/soup/qr_roundtrip.rs"
 surveillance_owner = "codec-maintainer"
 revalidation_trigger = "any-version-bump"
 notes = """
 **Swapped 2026-06-15 from dormant `qrcode` 0.14 → `qrcode2` 0.18**
-(sorairolake fork; ADR-017/ADR-028 R3 path), now published on
-crates.io and actively maintained — resolves the dormancy that ADR-017
-§Open Questions flagged. Dual MIT/Apache. Adds Micro QR M3 + rMQR. The
-H2/H3 round-trip + cross-decoder harnesses pass with no matrix drift.
-Known limitation tracked in issue #211: like its `qrcode` ancestor it
-does NOT truncate the Micro-QR terminator, so M3-L rejects ~3% of
-14-char ids with poor digit structure; mitigated today by the mint
-M3-L fence + the `pr print --verify` round-trip gate.
+(sorairolake fork; ADR-017/ADR-028 R3 path), published on crates.io and
+actively maintained — resolves the dormancy ADR-017 §Open Questions
+flagged. Dual MIT/Apache. Adds Micro QR M3 + rMQR. H2/H3 round-trip +
+cross-decoder harnesses pass with no matrix drift.
+**Temporarily git-pinned (root `[patch.crates-io]`)** to our fork
+`gerchowl/qrcode-rust2@2b288f2` (branch feat/annex-j-optimal-
+segmentation) which fixes issue #211: upstream's mode segmenter could
+overrun Micro QR capacity and falsely reject ~3% of 14-char ids; the
+fork adds a single-mode clamp + Annex-J optimal segmentation, so M3-L
+now holds every nano14 id (verified 20k/20k). Drop the patch once the
+fix is upstreamed + published. Belt-and-suspenders: the mint M3-L
+confirm + `pr print --verify` round-trip gate remain.
 """
 
 [[crate]]

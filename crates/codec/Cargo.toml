@@ -28,12 +28,13 @@ serde_json = { workspace = true }
 # native tests + the A/B parity harness only.
 rxing = { workspace = true, features = ["wasm_support"], optional = true }
 # QR + Micro QR encoder. `qrcode2` (sorairolake fork of `qrcode`)
-# replaces dormant `qrcode` 0.14 (ADR-017/ADR-028): maintained, on
-# crates.io, dual MIT/Apache, adds Micro QR M3 + rMQR. (It does NOT fix
-# the Micro terminator truncation — M3-L still rejects ~3% worst-case
-# ids; tracked in issue #211, mitigated by the mint M3-L fence.)
-# `default-features = false` drops its svg/eps/pic/image renderers — we
-# render our own SVG; only the encoder + module matrix are used.
+# replaces dormant `qrcode` 0.14 (ADR-017/ADR-028): maintained, dual
+# MIT/Apache, adds Micro QR M3 + rMQR. Pinned via root [patch.crates-io]
+# to our fork's Annex-J optimal-segmentation branch (issue #211) so
+# M3-L holds every 14-char nano14 id (upstream's segmenter overran
+# capacity on ~3% of ids). `default-features = false` drops its
+# svg/eps/pic/image renderers — we render our own SVG; only the encoder
+# + module matrix are used.
 qrcode2 = { version = "0.18.0", default-features = false, features = ["std"] }
 
 [features]

@@ -105,13 +105,14 @@ pub fn mint_part_id(existing: &HashSet<String>) -> Result<PartId, CliError> {
         if existing.contains(&candidate) {
             continue;
         }
-        // M3-L fence (interim, issue #211): every minted id must encode
-        // in the registry's canonical compact label symbology — Micro QR
-        // **M3-L** — so every part renders as a uniform 60px micro label.
-        // ~3% of random nano14 ids exceed M3-L's budget (scattered digit
-        // runs inflate the Micro-QR segment count) and are re-rolled.
-        // Remove this label-coupling once #211 (ISO terminator
-        // truncation in the encoder) lands and M3-L holds all 14 chars.
+        // M3-L confirm (defense-in-depth, issue #211): every minted id
+        // must encode in the registry's canonical compact label
+        // symbology — Micro QR **M3-L** — so every part renders as a
+        // uniform 60px micro label. The qrcode2 fork's Annex-J optimal
+        // segmentation now holds ALL 14-char nano14 ids in M3-L
+        // (verified 20k/20k), so this re-roll never triggers in
+        // practice; it stays as a guard against an encoder regression or
+        // the fork patch being dropped before the fix is upstreamed.
         if encode_pinned(&candidate, Family::Micro, 3, Ec::L).is_err() {
             continue;
         }
@@ -1905,10 +1906,10 @@ mod tests {
 
     #[test]
     fn minted_ids_always_fit_micro_m3_l() {
-        // The mint M3-L fence (issue #211 interim): every minted id
-        // must encode in Micro QR M3-L so labels are uniform 60px. ~3%
-        // of raw nano14 ids don't fit and are re-rolled; this asserts
-        // the fence holds across a batch.
+        // Every minted id must encode in Micro QR M3-L so labels are
+        // uniform 60px. With the qrcode2 Annex-J fork (issue #211) all
+        // nano14 ids fit M3-L, so the mint confirm never re-rolls; this
+        // guards that invariant across a batch.
         use std::collections::HashSet;
         let existing = HashSet::new();
         for _ in 0..200 {

@@ -3998,8 +3998,7 @@ dependencies = [
 [[package]]
 name = "qrcode2"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9b9a9b88fd8c275d65cb2255d8bd152c0a6ab70a48356a378b9977b484511d7"
+source = "git+https://github.com/gerchowl/qrcode-rust2?rev=2b288f230f119e26dc8c905089c82bd1e6504503#2b288f230f119e26dc8c905089c82bd1e6504503"
 dependencies = [
  "csscolorparser",
 ]

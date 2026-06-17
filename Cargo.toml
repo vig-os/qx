@@ -80,3 +80,10 @@ codegen-units = 1
 lto = "fat"
 strip = "symbols"
 panic = "abort"
+
+# qrcode2 optimal-segmentation fix (issue #211): patches the crates.io
+# 0.18 dep to our fork's Annex-J + single-mode-clamp branch so Micro QR
+# M3-L holds every 14-char nano14 id (no spurious DataTooLong). Interim
+# until the fix is upstreamed + published; ADR-028 SOUP note updated.
+[patch.crates-io]
+qrcode2 = { git = "https://github.com/gerchowl/qrcode-rust2", rev = "2b288f230f119e26dc8c905089c82bd1e6504503" }
