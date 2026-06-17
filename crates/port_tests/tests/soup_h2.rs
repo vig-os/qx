@@ -1,7 +1,7 @@
 //! SOUP harness H2 — Micro QR roundtrip + matrix-fingerprint golden
 //! hash per IEC 62304.
 //!
-//! Validates the `qrcode` (encoder) and `rxing` (decoder) SOUP
+//! Validates the `qrcode2` (encoder) and `rxing` (decoder) SOUP
 //! dependencies by:
 //!
 //! 1. Encoding a fixed corpus of canonical IDs in both Standard QR and
@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 
 use part_registry_codec::qr::{encode, QrMatrix};
 use part_registry_codec::svg::Layout;
-use part_registry_codec::{decode_qr, render, TextFormat};
+use part_registry_codec::{decode_qr, encode_pinned, render, Ec, Family, TextFormat};
 
 /// Fixed corpus of 5 canonical IDs drawn from the ADR-012 alphabet.
 const CORPUS: [&str; 5] = [
@@ -93,6 +93,40 @@ fn micro_qr_roundtrip_corpus() {
     }
 }
 
+/// Issue #211 regression guard: **every** 14-char nano14 id must encode
+/// in Micro QR **M3-L** (the canonical compact label symbology) and
+/// round-trip through rxing. A wide deterministic sweep catches the
+/// suboptimal-segmentation class (false `DataTooLong`) that the
+/// qrcode2 Annex-J fork fixes; a 1-in-25 sample is fully decoded to
+/// also catch matrix-correctness regressions. If this fails after a
+/// qrcode2 bump, the segmentation fix regressed or the `[patch.crates-
+/// io]` pin was dropped before the fix was upstreamed.
+#[test]
+fn micro_m3l_holds_and_roundtrips_nano14_corpus() {
+    const ALPHABET: &[u8] = b"23456789ABCDEFGHJKMNPQRSTUVWXYZ"; // nano14, 31 syms
+    let mut state: u64 = 0x9E3779B97F4A7C15;
+    let mut next = || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (state >> 33) as usize
+    };
+    for i in 0..5000 {
+        let id: String = (0..14)
+            .map(|_| ALPHABET[next() % ALPHABET.len()] as char)
+            .collect();
+        let matrix = encode_pinned(&id, Family::Micro, 3, Ec::L)
+            .unwrap_or_else(|e| panic!("micro-m3-l encode failed for nano14 id {id}: {e}"));
+        assert_eq!(matrix.size, 15, "M3 is 15 data modules");
+        if i % 25 == 0 {
+            let png = rasterise_matrix(&matrix, 12);
+            let decoded = decode_qr(&png)
+                .unwrap_or_else(|e| panic!("rxing failed to decode micro-m3-l for {id}: {e}"));
+            assert_eq!(decoded, id, "micro-m3-l roundtrip mismatch for {id}");
+        }
+    }
+}
+
 // ------------------------------------------------------------------
 // 2. Golden hash — SHA-256 of SVG output for regression detection
 // ------------------------------------------------------------------
@@ -106,7 +140,11 @@ const GOLDEN_STANDARD: [&str; 5] = [
     "3cacc4b9224fb637db9fa7c36c329589248ffb328c97daf1f262e962792ff50d",
     "4f2f7941367c1ad3ba5a2a2d55bc9c22ac89ff92fcf216f97399588a777fee4e",
     "205426ec8abd8f561cb18bae1bcd5dd8c3b72fb9082ed62262fb7b0bfdd4f915",
-    "988d530ad2f3cf81918bb270d9e59426bf41f07e36fbf12d273f75d774fd96ad",
+    // XY23456789ABCD changed with the qrcode2 Annex-J fork (#211): the
+    // 8-digit run `23456789` now encodes as a numeric segment (more
+    // optimal) vs the prior alphanumeric run — a different but valid
+    // matrix (the roundtrip corpus test confirms it still decodes).
+    "705de3be3ae3f1924acaa27cc2723263a9c72df4af79e005b2146a1455a7671c",
     "35cdca4445621946e66df57a22c0f507b667d03b35746b3fa6acb38ff66bd72e",
 ];
 

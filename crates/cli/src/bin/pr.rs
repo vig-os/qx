@@ -167,12 +167,14 @@ enum Cmd {
         /// (default-on). Files are written as `<id>.<ext>`.
         #[arg(long, default_value = "svg")]
         emit: String,
-        /// Round-trip fence: rasterise each rendered label and decode
-        /// its QR (rxing), refusing to finish if any QR does not scan
-        /// back to its id. Confirms every printed code is machine-
-        /// readable. Needs the `raster` + codec `decoder` features.
+        /// Skip the round-trip QC fence. By default every rendered
+        /// label is rasterised and its QR decoded (rxing), refusing to
+        /// finish unless each QR scans back to its id — so every printed
+        /// code is confirmed machine-readable. Pass this only for
+        /// throwaway/preview batches. Needs the `raster` + codec
+        /// `decoder` features.
         #[arg(long)]
-        verify: bool,
+        no_verify: bool,
         /// Hidden alias retired by --size (ADR-031 §8: the unit rides
         /// the value): mm (default, the mm-native renderer) or px
         /// (the px-true device-pixel renderer).
@@ -712,7 +714,7 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
         no_log,
         out_dir,
         emit,
-        verify,
+        no_verify,
         unit,
         size_px,
         padding,
@@ -786,7 +788,7 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
                 return ExitCode::from(2);
             }
         };
-        return protocol_print(&ctx, ids, options, &out_dir, emit, verify);
+        return protocol_print(&ctx, ids, options, &out_dir, emit, !no_verify);
     }
 
     let (req, output) = match cmd {
@@ -927,9 +929,10 @@ fn protocol_print(
             for l in &labels {
                 let id = l["id"].as_str().unwrap_or("label");
                 let svg = l["svg"].as_str().unwrap_or_default();
-                // Round-trip fence (--verify): rasterise to PNG and
-                // decode the QR, refusing if it does not scan back to
-                // the id. Independent of --emit (always uses a PNG for
+                // Round-trip QC fence (default on; --no-verify skips):
+                // rasterise to PNG and decode the QR, refusing if it
+                // does not scan back to the id. Independent of --emit
+                // (always uses a PNG for
                 // the decoder).
                 if verify {
                     let png = match part_registry_cli::raster::render(
