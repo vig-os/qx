@@ -439,9 +439,8 @@
           #     no-fake-impl         — matches well-defined sentinels
           #                            (todo!() / unimplemented!() / etc.)
           #
-          # `no-conflict-markers` would also belong in the tree-wide
-          # set, but the pinned guardrails rev does not ship it yet —
-          # add it here on the next `nix flake update` of guardrails.
+          # Tree-wide content gates. guardrails d0b0bab now ships
+          # `no-conflict-markers`, wired here per the prior TODO.
           guardrails-gates = pkgs.runCommand "guardrails-gates" {
             nativeBuildInputs = [ guardrails.packages.${system}.gates ];
           } ''
@@ -451,7 +450,21 @@
             all_files="$rs_files $ts_files"
             if [ -n "$all_files" ]; then
               echo "$all_files" | xargs -n 50 guardrails-no-fake-impl
+              echo "$all_files" | xargs -n 50 guardrails-no-conflict-markers
             fi
+            touch $out
+          '';
+
+          # ci-shim (guardrails #23): CI must be a shim over a local-
+          # runnable `nix flake check`, so green-locally ⟺ green-on-CI
+          # (no YAML-only logic that can't be reproduced). ENFORCED here
+          # (hard-fail) — ci.yml is a shim; the host-bound workflows
+          # (pages deploy, release bundling) carry a `guardrails-ok`.
+          ci-shim = pkgs.runCommand "ci-shim" {
+            nativeBuildInputs = [ guardrails.packages.${system}.gates ];
+          } ''
+            cd ${./.}
+            GUARDRAILS_CI_SHIM_ENFORCE=1 guardrails-ci-shim .github/workflows
             touch $out
           '';
 

@@ -1,3 +1,5 @@
+# guardrails-ok (ci-shim): host-bound GitHub Pages deploy — needs the
+# `pages` environment + OIDC, not reproducible under `nix flake check`.
 # Per #35: this workflow stays as a code-repo preview deploy so the
 # vanilla FE bundle (sandbox-default registry) is available at
 # https://morepet.github.io/part-registry/. Production deployments live
