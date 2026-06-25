@@ -59,10 +59,10 @@ function collectAppState(): string {
     // Contract version
     lines.push(`- Contract schema_version: ${(window as any).__contractVersion ?? "unknown"}`);
     // Label settings
-    const codeType = localStorage.getItem("part-registry.label.codeType") ??
-      sessionStorage.getItem("part-registry.label.codeType") ?? "standard";
-    const fmt = localStorage.getItem("part-registry.label.format") ??
-      sessionStorage.getItem("part-registry.label.format") ?? "auto";
+    const codeType = localStorage.getItem("qx.label.codeType") ??
+      sessionStorage.getItem("qx.label.codeType") ?? "standard";
+    const fmt = localStorage.getItem("qx.label.format") ??
+      sessionStorage.getItem("qx.label.format") ?? "auto";
     lines.push(`- Label settings: code=${codeType}, format=${fmt}`);
   } catch {
     lines.push("- (state collection failed)");
@@ -80,7 +80,7 @@ function encodeReproState(): string {
     const state: Record<string, unknown> = {};
 
     // Session items (from IndexedDB are async — use localStorage fallback snapshot)
-    const sessionRaw = localStorage.getItem("part-registry.session");
+    const sessionRaw = localStorage.getItem("qx.session");
     if (sessionRaw) {
       try {
         const sess = JSON.parse(sessionRaw);
@@ -98,9 +98,9 @@ function encodeReproState(): string {
 
     // Label settings
     state.labelSettings = {
-      codeType: localStorage.getItem("part-registry.label.codeType") ?? "standard",
-      format: localStorage.getItem("part-registry.label.format") ?? "auto",
-      showText: localStorage.getItem("part-registry.label.showText") ?? "true",
+      codeType: localStorage.getItem("qx.label.codeType") ?? "standard",
+      format: localStorage.getItem("qx.label.format") ?? "auto",
+      showText: localStorage.getItem("qx.label.showText") ?? "true",
     };
 
     if (Object.keys(state).length === 0) return "";

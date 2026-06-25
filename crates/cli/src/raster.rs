@@ -1,4 +1,4 @@
-//! In-core SVG rasterisation for `pr print --emit png|jpeg|pdf`
+//! In-core SVG rasterisation for `qx print --emit png|jpeg|pdf`
 //! (ADR-031 §8). Resolves the ADR's "raster in core vs CLI" open
 //! question in favour of an in-process path: no external
 //! `rsvg-convert`, deterministic across operator machines.

@@ -4,10 +4,10 @@ The desktop member of the **Webview** bundle family: the same Vite +
 React webapp (`webapp/`), loaded into a Tauri v2 window, with its
 transport calling the Rust app layer **in-process** — `invoke
 ("dispatch")` lands on the one Tauri command in
-`src-tauri/src/lib.rs`, which runs `part_registry_app::dispatch`
+`src-tauri/src/lib.rs`, which runs `qx_app::dispatch`
 directly. No HTTP hop, no second server.
 
-Wiring matches `pr serve` (`crates/cli/src/bin/pr.rs`): adapters come
+Wiring matches `qx serve` (`crates/cli/src/bin/qx.rs`): adapters come
 from `Wiring::from_config` over the `PART_REGISTRY_*` env config
 (ADR-021). The live GitHub PR sink is used when a token resolves
 (`PART_REGISTRY__TRANSPORT__GITHUB_TOKEN`, `GITHUB_TOKEN`, or
@@ -18,11 +18,11 @@ stdout and reads still work token-free.
 
 Two ways to iterate on the UI:
 
-- **Against `pr serve` (no Tauri in the loop)** — fastest for pure UI
+- **Against `qx serve` (no Tauri in the loop)** — fastest for pure UI
   work; the http transport speaks the identical protocol:
 
   ```sh
-  cargo run -p part-registry-cli --features serve --bin pr -- serve
+  cargo run -p qx-cli --features serve --bin qx -- serve
   cd webapp && VITE_TRANSPORT=http VITE_API_BASE=http://localhost:8470 npm run dev
   ```
 
@@ -41,7 +41,7 @@ Two ways to iterate on the UI:
   cd desktop/src-tauri && cargo tauri dev
   ```
 
-  Without `tauri-cli`, `cargo run -p part-registry-desktop` also works
+  Without `tauri-cli`, `cargo run -p qx-desktop` also works
   in debug — the debug build points at `devUrl`, so the Vite dev
   server must be running.
 
@@ -53,7 +53,7 @@ cd desktop/src-tauri && cargo tauri build         # release binary
 ```
 
 The release build embeds `webapp/dist` at compile time, so the webapp
-build must run first. `cargo check -p part-registry-desktop` is the CI
+build must run first. `cargo check -p qx-desktop` is the CI
 gate for this crate; full bundling needs platform tooling that CI does
 not require.
 

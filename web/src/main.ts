@@ -361,7 +361,7 @@ function renderLayout() {
   ].join("");
 
   const title = el("h1", { class: "shell__title" });
-  const appTitle = getConfig().presentation?.appTitle ?? "part-registry";
+  const appTitle = getConfig().presentation?.appTitle ?? "qx";
   title.append(qrIcon, appTitle);
   const repoLink = el("a", {
     class: "shell__repo",

@@ -1,9 +1,9 @@
-//! `part-registry-validators` — pure-function validators over registry
+//! `qx-validators` — pure-function validators over registry
 //! state. Repository-trait-agnostic per ADR-017 §"Strangler-fig
 //! migration sequence" step 2.
 //!
 //! ADR-016 §"Classification classes" is implemented here via
-//! [`classify`] (delegating to [`part_registry_domain::Diff::classify`])
+//! [`classify`] (delegating to [`qx_domain::Diff::classify`])
 //! and [`policy_decision`]. CI is the policy authority; FE preflight
 //! calls the same functions to attach an advisory `Vec<Action>` /
 //! `AuthDecision` to a `Proposal` (ADR-019).
@@ -25,7 +25,7 @@
 
 /// Schema-driven record validation (ADR-039) — the contract-generic
 /// validator that supersedes the `Part`-specific checks below as the FE
-/// and `pr check` migrate onto the canonical form.
+/// and `qx check` migrate onto the canonical form.
 pub mod record;
 pub use record::{validate_record, RecordContext, RecordIssue, Severity};
 
@@ -33,7 +33,7 @@ use std::fmt;
 
 use thiserror::Error;
 
-use part_registry_domain::{
+use qx_domain::{
     Action, ActionKind, AuthDecision, Diff, Operator, Part, PartId, PartStatus, PrintEvent,
     Timestamp,
 };
@@ -326,7 +326,7 @@ impl Default for Policy {
     }
 }
 
-/// Re-export of [`part_registry_domain::Diff::classify`]. The
+/// Re-export of [`qx_domain::Diff::classify`]. The
 /// validators crate is the single reader-of-record for the policy
 /// vocabulary per ADR-016 §"Classification classes"; the classifier
 /// implementation lives in `domain` for type-locality but every
@@ -452,7 +452,7 @@ pub fn format_error(e: &ValidationError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use part_registry_domain::{
+    use qx_domain::{
         DiffEdit, DiffRow, HeaderChange, IdentitySource, KeyId, OperatorId, OperatorRef, PartId,
         PartStatus,
     };

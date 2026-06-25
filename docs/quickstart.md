@@ -1,6 +1,6 @@
 # Quickstart for new operators
 
-A narrative walkthrough for your first day on the part-registry. By the
+A narrative walkthrough for your first day on qx. By the
 end you'll have the app installed on your phone, scanned a real label,
 queued a bind, and printed a label on the Brother QL-820NWBc.
 
@@ -34,7 +34,7 @@ app).
 
 ## Step 1 — Install the PWA on your phone
 
-The web app lives at <https://morepet.github.io/part-registry/>. It's
+The web app lives at <https://morepet.github.io/qx/>. It's
 a Progressive Web App: install it once and it behaves like a native
 app — one-tap launch, no browser chrome, works offline for lookups.
 

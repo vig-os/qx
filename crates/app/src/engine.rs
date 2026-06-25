@@ -12,23 +12,21 @@ use serde_json::json;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-use part_registry_codec::{
+use qx_codec::{
     check_format_warning, color, compose_repeat, deprecated_flag_sugar, fill_to_max,
     payload as payload_dsl, recommend_format, render_label, render_label_px_with_opts,
     solver as solver_mod, svg as svg_mod, CodecError, Color, ExcessAt, Family, IdBlock, Layout,
     Orient, Padding, PaddingMode, PayloadShape, PxLabel, RenderOpts, RepeatAxis, RepeatCount,
     RepeatOpts, Rotate, SizeMode, SolverInputs, Spacing, Symbology, TextFormat,
 };
-use part_registry_domain::{
+use qx_domain::{
     Diff, DiffEdit, DiffRow, Operator, OperatorRef, Part, PartId, PartStatus, PrintEvent, Proposal,
     ProposalRef, RequestId, PART_ID_ALPHABET, PART_ID_LEN,
 };
-use part_registry_identity::IdentityProvider;
-use part_registry_observability::{
-    bind_audit_entry, emit_audit, mint_audit_entry, void_audit_entry,
-};
-use part_registry_storage::{PartFilter, Repository};
-use part_registry_transport::ProposalSink;
+use qx_identity::IdentityProvider;
+use qx_observability::{bind_audit_entry, emit_audit, mint_audit_entry, void_audit_entry};
+use qx_storage::{PartFilter, Repository};
+use qx_transport::ProposalSink;
 
 use crate::entity::{field_value, part_to_entity, Entity};
 use crate::preset::{parts_descriptor, registry_descriptor};
@@ -733,16 +731,16 @@ fn edit(
     };
     // RowEdit audit (the bind/mint/void constructors don't cover plain
     // edits; build the entry directly).
-    let entry = part_registry_domain::AuditEntry {
+    let entry = qx_domain::AuditEntry {
         request_id,
         timestamp: OffsetDateTime::now_utc(),
         actor: op,
-        action: part_registry_domain::Action::RowEdit {
+        action: qx_domain::Action::RowEdit {
             id: target.id.clone(),
             before,
             after,
         },
-        target: part_registry_domain::TargetRef::Part {
+        target: qx_domain::TargetRef::Part {
             id: target.id.clone(),
         },
         before: None,
@@ -968,7 +966,7 @@ fn print_mm(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
                 &fg_mm,
                 &bg_mm,
             );
-            let metadata_body = part_registry_codec::receipt::metadata_element(&receipt);
+            let metadata_body = qx_codec::receipt::metadata_element(&receipt);
             let mm_opts = svg_mod::MmRenderOpts {
                 fg: &fg_mm.svg,
                 bg: &bg_mm.svg,
@@ -1042,8 +1040,8 @@ fn mm_receipt(
     size_mm: f64,
     fg: &Color,
     bg: &Color,
-) -> part_registry_codec::Receipt {
-    part_registry_codec::Receipt {
+) -> qx_codec::Receipt {
+    qx_codec::Receipt {
         id: canonical.into(),
         // Stage 1: mm always renders the legacy qr+id arrangement,
         // so shape/payload is documented as "qr id" for the receipt.
@@ -1061,7 +1059,7 @@ fn mm_receipt(
         fg: fg.svg.clone(),
         bg: bg.svg.clone(),
         font: "Consolas".into(),
-        generator: part_registry_codec::receipt::generator(),
+        generator: qx_codec::receipt::generator(),
         // The mm path refuses repeat flags outright (px-only).
         repeat: None,
     }
@@ -1110,13 +1108,13 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
     // Stage 2 canvas: validate + surface as Unsupported for the
     // composed render (the resolved tree is the receipt). Full
     // canvas-aware rendering is the future ROI step.
-    if let Some(part_registry_codec::PayloadNode::Canvas {
+    if let Some(qx_codec::PayloadNode::Canvas {
         width,
         height,
         children,
     }) = &payload_tree
     {
-        let resolved = match part_registry_codec::resolve_canvas(*width, *height, children, dpi) {
+        let resolved = match qx_codec::resolve_canvas(*width, *height, children, dpi) {
             Ok(r) => r,
             Err(e) => return Response::error(ErrorKind::Validation, e),
         };
@@ -1266,8 +1264,7 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
         Ok(x) => x,
         Err(r) => return r,
     };
-    let mut composed: Vec<Option<part_registry_codec::RepeatComposed>> =
-        Vec::with_capacity(rendered.len());
+    let mut composed: Vec<Option<qx_codec::RepeatComposed>> = Vec::with_capacity(rendered.len());
     if let Some(opts) = &repeat_opts {
         for l in &rendered {
             match compose_repeat(l, opts) {
@@ -1401,7 +1398,7 @@ fn resolve_colors(options: &PrintOptions) -> Result<(Color, Color, Option<String
 /// Resolve the payload shape from the explicit DSL list (stage 1:
 /// flat list — `qr`, `id`, `qr id`, `id qr`).
 fn resolve_payload_shape(
-    elements: Option<&[part_registry_codec::PayloadElement]>,
+    elements: Option<&[qx_codec::PayloadElement]>,
 ) -> Result<PayloadShape, Response> {
     let Some(els) = elements else {
         return Ok(PayloadShape::QrId);
@@ -1416,19 +1413,19 @@ fn resolve_payload_shape(
     let mut id_first = false;
     for (i, e) in els.iter().enumerate() {
         match e {
-            part_registry_codec::PayloadElement::Qr { .. } => {
+            qx_codec::PayloadElement::Qr { .. } => {
                 if !has_qr {
                     qr_first = i == 0 || (!has_id);
                     has_qr = true;
                 }
             }
-            part_registry_codec::PayloadElement::Id { .. } => {
+            qx_codec::PayloadElement::Id { .. } => {
                 if !has_id {
                     id_first = i == 0 || (!has_qr);
                     has_id = true;
                 }
             }
-            part_registry_codec::PayloadElement::Space { .. } => {}
+            qx_codec::PayloadElement::Space { .. } => {}
         }
     }
     match (has_qr, has_id) {

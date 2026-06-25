@@ -5,7 +5,7 @@ import type { Registry, RegistryQuery } from "../registry/registry";
 import type { RegistryRow } from "../registry/schema";
 import { printTab, fmtId, PRINTER_DPI, MM_PER_INCH, PX_TO_MM } from "./print";
 
-const PLAN_KEY = "part-registry.print-plan";
+const PLAN_KEY = "qx.print-plan";
 
 const boundRow: RegistryRow = {
   id: "K7M3PQ9RT5VAXY",

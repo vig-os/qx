@@ -8,13 +8,13 @@ use std::sync::{Arc, Mutex};
 use serde_json::json;
 use time::macros::datetime;
 
-use part_registry_domain::{
+use qx_domain::{
     AuditEntry, Hash, IdentitySource, Operator, OperatorId, Part, PartId, PartStatus, PrintEvent,
     Proposal, ProposalRef, ProposalStatus,
 };
-use part_registry_identity::{Capabilities, IdentityError, IdentityProvider};
-use part_registry_storage::{AuditFilter, PartFilter, PrintEventFilter, RepoError, Repository};
-use part_registry_transport::{ProposalError, ProposalSink};
+use qx_identity::{Capabilities, IdentityError, IdentityProvider};
+use qx_storage::{AuditFilter, PartFilter, PrintEventFilter, RepoError, Repository};
+use qx_transport::{ProposalError, ProposalSink};
 
 use crate::engine::{dispatch, AppContext};
 use crate::protocol::{ErrorKind, Request, Response};
@@ -836,7 +836,7 @@ fn print_mm_rejects_repeat_flags_instead_of_ignoring_them() {
 // parser) and wire form (serde-untagged) — plus old-wire compat.
 #[test]
 fn padding_spec_parses_and_expands_the_css_shorthand() {
-    use part_registry_codec::Padding;
+    use qx_codec::Padding;
 
     use crate::protocol::PaddingSpec;
 

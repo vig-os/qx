@@ -1,5 +1,5 @@
 [package]
-name = "part-registry-app"
+name = "qx-app"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -8,16 +8,16 @@ publish.workspace = true
 description = "Application layer per ADR-030/035 — collection engine + command protocol; every shell dispatches through here"
 
 [dependencies]
-part-registry-domain = { path = "../domain" }
-part-registry-storage = { path = "../storage" }
-part-registry-transport = { path = "../transport" }
-part-registry-identity = { path = "../identity" }
-part-registry-validators = { path = "../validators" }
+qx-domain = { path = "../domain" }
+qx-storage = { path = "../storage" }
+qx-transport = { path = "../transport" }
+qx-identity = { path = "../identity" }
+qx-validators = { path = "../validators" }
 # Encoder + renderer only — the decoder (rxing, ~1.4 MB) must not ride
 # into the wasm bundle via this dep; decode-image lands behind a
 # feature with the ADR-032 A/B gate.
-part-registry-codec = { path = "../codec", default-features = false }
-part-registry-observability = { path = "../observability" }
+qx-codec = { path = "../codec", default-features = false }
+qx-observability = { path = "../observability" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

@@ -1,4 +1,4 @@
-# web/ — part-registry SPA
+# web/ — qx SPA
 
 Static site that scans QRs, looks up parts, prints labels via the OS
 print dialog, and queues binds for batched PR submission.
@@ -105,7 +105,7 @@ has been deleted.
 
 | Asset | Raw | Gzipped |
 |---|---|---|
-| `part_registry_wasm_bg.wasm` (encoder + validators + classifier) | 334 KB | 128 KB |
+| `qx_wasm_bg.wasm` (encoder + validators + classifier) | 334 KB | 128 KB |
 | wasm-bindgen JS shim | 16 KB | 6 KB |
 
 Comfortably under the 1.5 MB gzipped budget set in foundation issue

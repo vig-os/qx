@@ -1,5 +1,5 @@
 [package]
-name = "part-registry-identity-github-oauth"
+name = "qx-identity-github-oauth"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -10,8 +10,8 @@ publish.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-part-registry-domain = { path = "../domain" }
-part-registry-identity = { path = "../identity" }
+qx-domain = { path = "../domain" }
+qx-identity = { path = "../identity" }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -25,7 +25,7 @@ reqwest = { workspace = true }
 dirs = { workspace = true }
 
 [dev-dependencies]
-part-registry-port-tests = { path = "../port_tests" }
+qx-port-tests = { path = "../port_tests" }
 tempfile = { workspace = true }
 mockito = { workspace = true }
 time = { workspace = true }

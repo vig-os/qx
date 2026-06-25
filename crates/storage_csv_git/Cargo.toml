@@ -1,5 +1,5 @@
 [package]
-name = "part-registry-storage-csv-git"
+name = "qx-storage-csv-git"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -10,8 +10,8 @@ publish.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-part-registry-domain = { path = "../domain" }
-part-registry-storage = { path = "../storage" }
+qx-domain = { path = "../domain" }
+qx-storage = { path = "../storage" }
 thiserror = { workspace = true }
 
 # Per ADR-018 — CSV read/write, deterministic snapshot hashing, JSON
@@ -25,7 +25,7 @@ time = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
-part-registry-port-tests = { path = "../port_tests" }
+qx-port-tests = { path = "../port_tests" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tempfile = { workspace = true }

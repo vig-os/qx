@@ -1,5 +1,5 @@
 [package]
-name = "part-registry-storage-jsonl-git"
+name = "qx-storage-jsonl-git"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -11,8 +11,8 @@ description = "JSONL+git Repository adapter per ADR-035 §4 (collections/*.jsonl
 path = "src/lib.rs"
 
 [dependencies]
-part-registry-domain = { path = "../domain" }
-part-registry-storage = { path = "../storage" }
+qx-domain = { path = "../domain" }
+qx-storage = { path = "../storage" }
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
@@ -23,7 +23,7 @@ sha2.workspace = true
 tempfile.workspace = true
 
 [dev-dependencies]
-part-registry-port-tests = { path = "../port_tests" }
+qx-port-tests = { path = "../port_tests" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 serde_json.workspace = true

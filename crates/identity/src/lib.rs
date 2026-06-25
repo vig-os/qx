@@ -1,4 +1,4 @@
-//! `part-registry-identity` — `IdentityProvider` + `Authorizer` traits
+//! `qx-identity` — `IdentityProvider` + `Authorizer` traits
 //! per ADR-020. Authentication and authorization co-located because
 //! they share `Operator` at every call site.
 //!
@@ -13,12 +13,12 @@
 
 use thiserror::Error;
 
-use part_registry_domain::Operator;
+use qx_domain::Operator;
 
 // Re-export the policy / authorization types so adapters can do
-// `use part_registry_identity::{IdentityProvider, Capabilities};`
-// without a separate `part_registry_domain` import.
-pub use part_registry_domain::{Action, AuthDecision, Capabilities};
+// `use qx_identity::{IdentityProvider, Capabilities};`
+// without a separate `qx_domain` import.
+pub use qx_domain::{Action, AuthDecision, Capabilities};
 
 #[derive(Debug, Error)]
 pub enum IdentityError {

@@ -47,7 +47,7 @@ jobs:
         run: cargo test --workspace
 
       - name: cargo build wasm32
-        run: cargo build --target wasm32-unknown-unknown -p part-registry-wasm --release
+        run: cargo build --target wasm32-unknown-unknown -p qx-wasm --release
 
       # `npm test` runs `build:wasm` which shells out to
       # `${WASM_BINDGEN:-$HOME/.cargo/bin/wasm-bindgen}`. Install the
@@ -116,14 +116,14 @@ jobs:
           chmod +x ~/.cargo/bin/wasm-bindgen
 
       - name: Build WASM (release)
-        run: cargo build --target wasm32-unknown-unknown -p part-registry-wasm --release
+        run: cargo build --target wasm32-unknown-unknown -p qx-wasm --release
 
       - name: wasm-bindgen → web/src/wasm/
         run: |
           wasm-bindgen --target web \
             --out-dir web/src/wasm \
-            --out-name part_registry_wasm \
-            target/wasm32-unknown-unknown/release/part_registry_wasm.wasm
+            --out-name qx_wasm \
+            target/wasm32-unknown-unknown/release/qx_wasm.wasm
 
       - name: Stage bundle contents
         run: |
@@ -223,11 +223,11 @@ jobs:
               --notes-file release-notes.md
           fi
 
-  # The `pr` multicall binary (ADR-030 §2) — the artifact data-repo CI
+  # The `qx` command (ADR-030 §2) — the artifact data-repo CI
   # gates pin (check.yml.tmpl fetches it by tag + sha256; ADR-034 §2:
   # CI runs the released binary, not a from-source build). Lean build —
-  # `pr check` needs no serve/mcp/tui features.
-  pr-binary:
+  # `qx check` needs no serve/mcp/tui features.
+  qx-binary:
     needs: [test, bundle]
     runs-on: ubuntu-latest
     steps:
@@ -238,15 +238,15 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build pr (release, lean)
-        run: cargo build --release -p part-registry-cli --bin pr
+      - name: Build qx (release, lean)
+        run: cargo build --release -p qx-cli --bin qx
 
       - name: Stage + checksum
         run: |
           TAG="${{ needs.bundle.outputs.tag }}"
-          cp target/release/pr "pr-x86_64-unknown-linux-gnu"
-          sha256sum "pr-x86_64-unknown-linux-gnu" > "pr-sha256sums-${TAG}.txt"
-          cat "pr-sha256sums-${TAG}.txt"
+          cp target/release/qx "qx-x86_64-unknown-linux-gnu"
+          sha256sum "qx-x86_64-unknown-linux-gnu" > "qx-sha256sums-${TAG}.txt"
+          cat "qx-sha256sums-${TAG}.txt"
 
       - name: Upload to the release
         env:
@@ -254,8 +254,8 @@ jobs:
         run: |
           TAG="${{ needs.bundle.outputs.tag }}"
           gh release upload "${TAG}" \
-            "pr-x86_64-unknown-linux-gnu" \
-            "pr-sha256sums-${TAG}.txt" \
+            "qx-x86_64-unknown-linux-gnu" \
+            "qx-sha256sums-${TAG}.txt" \
             --repo "${GITHUB_REPOSITORY}" --clobber
 
       # ADR-038 §5: the curl-able install.sh pins this tarball by its
@@ -279,7 +279,7 @@ jobs:
   # moves to a flake dockerTools build when the gate build goes
   # in-flake (the image then becomes bit-reproducible too).
   runner-image:
-    needs: [bundle, pr-binary]
+    needs: [bundle, qx-binary]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -291,9 +291,9 @@ jobs:
         run: |
           TAG="${{ needs.bundle.outputs.tag }}"
           gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}" \
-            --pattern "pr-x86_64-unknown-linux-gnu" \
-            --pattern "pr-sha256sums-*.txt"
-          grep "pr-x86_64-unknown-linux-gnu" "pr-sha256sums-${TAG}.txt" | sha256sum -c -
+            --pattern "qx-x86_64-unknown-linux-gnu" \
+            --pattern "qx-sha256sums-*.txt"
+          grep "qx-x86_64-unknown-linux-gnu" "qx-sha256sums-${TAG}.txt" | sha256sum -c -
 
       - name: Build + push runner image
         env:
@@ -301,15 +301,15 @@ jobs:
         run: |
           TAG="${{ needs.bundle.outputs.tag }}"
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}-runner"
-          cp pr-x86_64-unknown-linux-gnu pr
+          cp qx-x86_64-unknown-linux-gnu qx
           cat > Dockerfile <<'DOCKER'
           FROM debian:bookworm-slim
           RUN apt-get update \
             && apt-get install -y --no-install-recommends git ca-certificates jq zstd curl \
             && rm -rf /var/lib/apt/lists/*
-          COPY pr /usr/local/bin/pr
-          RUN chmod +x /usr/local/bin/pr
-          ENTRYPOINT ["/usr/local/bin/pr"]
+          COPY qx /usr/local/bin/qx
+          RUN chmod +x /usr/local/bin/qx
+          ENTRYPOINT ["/usr/local/bin/qx"]
           DOCKER
           echo "${GH_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
           docker build -t "${IMAGE}:${TAG}" -t "${IMAGE}:latest" .

@@ -4,7 +4,7 @@
 - Status: exploration — NOT a commitment. Drafts **one full vertical**
   of the QMS preset family so the document spine is concrete, not
   hand-wavy. Feeds a future "QMS preset family" ADR (trigger now armed:
-  [[hq-eqms-goal-committed]] — parts in production → write our own SOPs
+  [[qx-eqms-goal-committed]] — parts in production → write our own SOPs
   in-engine). Builds on `platform-vs-registry.md` (the HQ question).
 - Companion: ADR-035 (collections metamodel), ADR-039 (contract engine
   / canonical form), ADR-036 (e-signature rungs), ADR-037 (audit anchor).
@@ -74,7 +74,7 @@ in the form its `body` attachment would carry:
 > **1. Purpose.** Define how a part is created, identified, bound to a
 > manufacturer, and accepted into the controlled registry.
 >
-> **2. Scope.** All parts entered via the `part-registry` tool against the
+> **2. Scope.** All parts entered via the `qx` tool against the
 > production data repo.
 >
 > **3. Responsibilities.** *Originator* mints + drafts the part.

@@ -197,7 +197,7 @@ export interface CountData {
 // proposal ref, never the updated entity. Shapes mirror
 // crates/app/src/engine.rs (create/edit/transition).
 
-/** Handle to a submitted proposal (Rust `part_registry_domain::ProposalRef`). */
+/** Handle to a submitted proposal (Rust `qx_domain::ProposalRef`). */
 export interface ProposalRef {
   url: string;
   local_id: string | null;

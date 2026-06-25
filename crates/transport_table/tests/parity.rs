@@ -15,13 +15,13 @@ use std::sync::{Arc, Mutex};
 
 use base64::Engine;
 
-use part_registry_domain::{
+use qx_domain::{
     Diff, DiffEdit, DiffRow, IdentitySource, KeyId, Operator, OperatorId, PartId, Proposal,
     RequestId,
 };
-use part_registry_port_tests::{proposal_sink_parity, RegistryState};
-use part_registry_transport::ProposalSink;
-use part_registry_transport_github_pr::{
+use qx_port_tests::{proposal_sink_parity, RegistryState};
+use qx_transport::ProposalSink;
+use qx_transport_github_pr::{
     CheckRunsResponse, CreatePullRequest, CreateRefRequest, GetContentsResponse, GitRefObject,
     GitRefResponse, GithubPrConfig, GithubPrHttp, GithubPrProposalSink, HttpError, PullResponse,
     PullReview, PutContentsRequest,
@@ -257,7 +257,7 @@ fn apply_github(base: &RegistryState, p: &Proposal) -> Result<RegistryState, Str
 }
 
 fn apply_table(base: &RegistryState, p: &Proposal) -> Result<RegistryState, String> {
-    let sink = part_registry_transport_table::TableSink::with_base(base.clone());
+    let sink = qx_transport_table::TableSink::with_base(base.clone());
     sink.submit(p.clone()).map_err(|e| e.to_string())?;
     Ok(sink.state())
 }

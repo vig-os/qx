@@ -3,7 +3,7 @@
 One-page reference for the lab-floor workflow. Print and pin near the
 Brother QL-820NWBc.
 
-App: <https://morepet.github.io/part-registry/>
+App: <https://morepet.github.io/qx/>
 Repo: <https://github.com/MorePET/part-registry>
 
 ## What the labels mean

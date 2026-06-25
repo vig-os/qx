@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bootstrap (or update) a data repo for the part-registry per ADR-019 +
+# Bootstrap (or update) a data repo for qx per ADR-019 +
 # #35 Phase 3. Idempotent: missing files are created; existing files
 # are left as-is unless `--force` is passed for the relevant kind.
 #
@@ -159,7 +159,7 @@ else
     log "creating repo via gh repo create"
     do_or_say gh repo create "$target" \
       --"$visibility" \
-      --description "Operator data for part-registry — registry.csv, print_log.csv, audit_log.csv. Code lives at $CODE_REPO." \
+      --description "Operator data for qx — registry.csv, print_log.csv, audit_log.csv. Code lives at $CODE_REPO." \
       --clone=false
   else
     err "repo $target does not exist; pass --create to create it"
@@ -192,8 +192,8 @@ cd "$workdir/$name"
 # Mark as exo-pet/MorePET admin operation so generated commits aren't
 # attributed to a random global git config.
 if (( ! dry_run )); then
-  git config user.email "bootstrap@part-registry.invalid"
-  git config user.name "part-registry bootstrap"
+  git config user.email "bootstrap@qx.invalid"
+  git config user.name "qx bootstrap"
   git config commit.gpgsign false
 fi
 
@@ -217,7 +217,7 @@ for the PR-driven mutation model.
 
 ## How to interact
 
-Reads + writes flow through the part-registry FE (deployed to GitHub Pages
+Reads + writes flow through the qx FE (deployed to GitHub Pages
 from this repo via the [\`pages.yml\`](.github/workflows/pages.yml) workflow)
 or via the Rust CLIs (\`mint\` / \`label\` / \`bind\`) in the code repo
 with \`PART_REGISTRY__REPO__DATA_REPO_URL=https://github.com/${target}\`.
@@ -299,8 +299,8 @@ if [[ -n "$pr_release" ]]; then
   # released artifact). The checksum file is published by the code
   # repo's release workflow (pr-binary job).
   pr_sha=$(gh release download "$pr_release" --repo "$CODE_REPO" \
-      --pattern "pr-sha256sums-*.txt" --output - 2>/dev/null \
-      | awk '/pr-x86_64-unknown-linux-gnu/ {print $1}' || true)
+      --pattern "qx-sha256sums-*.txt" --output - 2>/dev/null \
+      | awk '/qx-x86_64-unknown-linux-gnu/ {print $1}' || true)
   if [[ -z "$pr_sha" ]]; then
     err "release ${pr_release} on ${CODE_REPO} has no pr binary checksum — tag a release with the pr-binary job first"
   fi

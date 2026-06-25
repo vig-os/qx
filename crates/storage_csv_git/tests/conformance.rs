@@ -15,12 +15,12 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use part_registry_domain::{
+use qx_domain::{
     Action, AuditEntry, Hash, IdentitySource, KeyId, Operator, OperatorId, PartFilter, PartId,
     PartStatus, RekorProof, RequestId, Signature, TargetRef,
 };
-use part_registry_storage::{AuditFilter, PrintEventFilter, Repository};
-use part_registry_storage_csv_git::{CsvGitConfig, CsvGitRepository};
+use qx_storage::{AuditFilter, PrintEventFilter, Repository};
+use qx_storage_csv_git::{CsvGitConfig, CsvGitRepository};
 use serde_json::json;
 use tempfile::TempDir;
 use time::OffsetDateTime;
@@ -73,7 +73,7 @@ fn copy_fixture(src: &Path, dst: &Path) {
 #[test]
 fn csv_git_conforms_to_repository() {
     let (_tmp, repo) = fresh_repo();
-    part_registry_port_tests::repository_conformance(repo);
+    qx_port_tests::repository_conformance(repo);
 }
 
 // -------------------------------------------------------------------
@@ -281,7 +281,7 @@ fn snapshot_hash_changes_when_content_changes() {
 #[test]
 fn open_rejects_missing_path() {
     let cfg = CsvGitConfig {
-        repo_path: PathBuf::from("/does/not/exist/part-registry-test-xyz"),
+        repo_path: PathBuf::from("/does/not/exist/qx-test-xyz"),
         commit_on_write: false,
         signing_key_id: None,
     };

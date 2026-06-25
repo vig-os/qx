@@ -1,5 +1,5 @@
 [package]
-name = "part-registry-storage"
+name = "qx-storage"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -10,6 +10,6 @@ publish.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-part-registry-domain = { path = "../domain" }
+qx-domain = { path = "../domain" }
 serde = { workspace = true }
 thiserror = { workspace = true }

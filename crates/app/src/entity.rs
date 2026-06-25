@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use time::format_description::well_known::Rfc3339;
 
-use part_registry_domain::Part;
+use qx_domain::Part;
 
 /// Wire entity per ADR-035 §0 (micro-core + declared fields + open
 /// properties). Timestamps are RFC-3339 strings on the wire.

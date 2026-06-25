@@ -1,4 +1,4 @@
-//! `part-registry-transport-table` — an in-memory, **non-CSV**
+//! `qx-transport-table` — an in-memory, **non-CSV**
 //! `ProposalSink` (spike #189, delta D2).
 //!
 //! ADR-019 asserts and ADR-027 is meant to *test* substrate-independence
@@ -38,8 +38,8 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
-use part_registry_domain::{Diff, Proposal, ProposalRef, ProposalStatus};
-use part_registry_transport::{ProposalError, ProposalSink};
+use qx_domain::{Diff, Proposal, ProposalRef, ProposalStatus};
+use qx_transport::{ProposalError, ProposalSink};
 
 /// Canonical registry state: `id -> {column -> value}`. Empty-valued
 /// cells are never stored — a table has no concept of an empty CSV cell.

@@ -152,7 +152,7 @@ compile anything impure:
   record_bytes) -> Verdict`, marshalling only.
 
 **Enforced mechanically, not by policy:** a CI job runs `cargo build -p
-part-registry-contract -p part-registry-validators --target
+qx-contract -p qx-validators --target
 wasm32-unknown-unknown` every PR. Pull `git2` into `validators` and the
 wasm build breaks *before* review.
 
@@ -175,7 +175,7 @@ breaking hash-stable checks).
 A **conformance corpus** of `(contract, record, expected_verdict)`
 triples is checked into the repo and consumed by **three runners**:
 
-1. native Rust (`cargo test -p part-registry-validators`),
+1. native Rust (`cargo test -p qx-validators`),
 2. wasm (`wasm-bindgen-test`, headless in CI),
 3. FE Vitest loading the **actual shipped wasm artifact**.
 
@@ -248,7 +248,7 @@ host review** (ADR-035 §0 entity-store principle).
    ADR-035 §1b wanted, for free); `approved_by` = the PR's authenticated
    reviews; `change_rationale` = the PR/commit message;
    `approval_commit_sha` = the merge SHA; "which contract governed this
-   record" = `git show <record-commit>:.part-registry/contract.json`.
+   record" = `git show <record-commit>:.qx/contract.json`.
 
 **Effective-dating is commit-resolved — and that gives the ALCOA
 property for free.** A record is governed by the contract content in the
@@ -271,7 +271,7 @@ which contract governed it; even then it is *derived*, never hand-set.
 
 **Governance is policy-checked, host-projected, host-neutral.** The gate
 enforces the *policy* (≥ 2 distinct approvers, rationale present, gate
-green, CODEOWNERS on `.part-registry/contract.json` satisfied) against
+green, CODEOWNERS on `.qx/contract.json` satisfied) against
 the host's review record, and may materialize a **read-only receipt**
 (like the print receipt) for offline auditors — but the source of truth
 is the host. Because authority lives with the host (ADR-019/034), the
@@ -302,7 +302,7 @@ A field may declare either, both, or neither.
 
 ### 7. Anatomy, bootstrap, and the typeFields seam
 
-- The contract moves to **`.part-registry/contract.json`** in the data
+- The contract moves to **`.qx/contract.json`** in the data
   repo (ADR-033 §4 anatomy); `bootstrap` seeds it from the tool baseline
   at `format_version` 1 (governance for that seed = the bootstrap PR's
   own host review).
@@ -347,7 +347,7 @@ derive — whether this binary can parse this format — stays in-file as
   data leaves git (§6).
 - **`schema/contract.schema.json` rewritten** to the canonical scalar
   set and self-validated in CI; `schema/registry-contract.json`
-  regenerated to the new form and relocated to `.part-registry/`.
+  regenerated to the new form and relocated to `.qx/`.
 - **`pr check` becomes contract-driven over JSONL** (today CSV/parts-
   only): it validates changed records against HEAD-of-PR's contract and
   **never re-checks merged records** (commit-resolved effective-dating);
@@ -358,7 +358,7 @@ derive — whether this binary can parse this format — stays in-file as
 - **A conformance corpus + 3-runner harness** joins CI; a wasm-clean
   build job guards the purity boundary; a size-budget assertion guards
   bundle bloat (`panic=abort`, `opt-level=z`, trimmed `serde_json`).
-- **Bootstrap** seeds `.part-registry/contract.json` with the change-
+- **Bootstrap** seeds `.qx/contract.json` with the change-
   control header v1.
 
 ## Open questions / supersession triggers

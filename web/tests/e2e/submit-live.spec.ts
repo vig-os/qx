@@ -39,7 +39,7 @@ test.describe("Live submit pipeline", () => {
     // Pre-inject the test PAT + a known user into sessionStorage
     await page.addInitScript(
       ([token]) => {
-        window.sessionStorage.setItem("part-registry.github-pat", token);
+        window.sessionStorage.setItem("qx.github-pat", token);
       },
       [PAT],
     );
@@ -52,8 +52,8 @@ test.describe("Live submit pipeline", () => {
   test("auth modal validates token and shows username", async ({ page }) => {
     // Don't pre-inject token for this test — we want to test the modal
     await page.addInitScript(() => {
-      window.sessionStorage.removeItem("part-registry.github-pat");
-      window.sessionStorage.removeItem("part-registry.github-user");
+      window.sessionStorage.removeItem("qx.github-pat");
+      window.sessionStorage.removeItem("qx.github-user");
     });
 
     await page.goto("/");
@@ -106,7 +106,7 @@ test.describe("Live submit pipeline", () => {
     // API pipeline, not the form.
     await page.addInitScript(
       ([user]) => {
-        window.sessionStorage.setItem("part-registry.github-user", user);
+        window.sessionStorage.setItem("qx.github-user", user);
         // Pre-populate a session with one bind item using the old
         // localStorage key that session.ts migrates from
         const session = {
@@ -120,7 +120,7 @@ test.describe("Live submit pipeline", () => {
           }],
         };
         // Write to IndexedDB via a micro-script
-        const req = indexedDB.open("part-registry", 1);
+        const req = indexedDB.open("qx", 1);
         req.onupgradeneeded = () => {
           req.result.createObjectStore("session");
         };

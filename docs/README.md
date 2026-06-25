@@ -1,6 +1,6 @@
 # docs/
 
-Operator-facing documentation for the part-registry.
+Operator-facing documentation for qx.
 
 | File | For | Length |
 |---|---|---|
@@ -23,7 +23,7 @@ When that lands, this folder becomes its source.
 ## Conventions
 
 - Plain English, short sentences. Operators here are technical (it's
-  a research lab) but the docs assume no prior part-registry
+  a research lab) but the docs assume no prior qx
   knowledge.
 - `> Note:` callouts only for the genuinely surprising things — not
   for routine information.

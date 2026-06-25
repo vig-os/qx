@@ -7,11 +7,11 @@ use std::sync::{Arc, Mutex};
 
 use tempfile::TempDir;
 
-use part_registry_cli::{DryRunSink, DryRunTarget, Wiring};
-use part_registry_domain::{Capabilities, IdentitySource, Operator, OperatorId, Proposal};
-use part_registry_identity::{IdentityError, IdentityProvider};
-use part_registry_storage::Repository;
-use part_registry_storage_csv_git::{CsvGitConfig, CsvGitRepository};
+use qx_cli::{DryRunSink, DryRunTarget, Wiring};
+use qx_domain::{Capabilities, IdentitySource, Operator, OperatorId, Proposal};
+use qx_identity::{IdentityError, IdentityProvider};
+use qx_storage::Repository;
+use qx_storage_csv_git::{CsvGitConfig, CsvGitRepository};
 
 /// Build a tempdir-backed `Repository` with empty `registry.csv` +
 /// `print_log.csv` + `audit_log.csv`.

@@ -1,5 +1,5 @@
 # bundle.yml — the ADR-037 monthly evidence package for a deployed
-# part-registry data repo. Seeded by tools/bootstrap-data-repo.sh.
+# qx data repo. Seeded by tools/bootstrap-data-repo.sh.
 #
 # Publishes an immutable release whose assets are a complete offline
 # evidence package: full `git bundle` + gate report + manifest. Skipped
@@ -56,12 +56,12 @@ jobs:
       - name: gate binary
         if: steps.gatekeep.outputs.skip == 'false'
         run: |
-          if [ -f .part-registry/gate/pr.zst ] && [ -f .part-registry/gate/pr.sha256 ]; then
-            zstd -d -o pr .part-registry/gate/pr.zst
-            sha256sum -c .part-registry/gate/pr.sha256
+          if [ -f .qx/gate/pr.zst ] && [ -f .qx/gate/pr.sha256 ]; then
+            zstd -d -o pr .qx/gate/pr.zst
+            sha256sum -c .qx/gate/pr.sha256
           else
             curl -fsSL -o pr \
-              "https://github.com/__CODE_REPO__/releases/download/__PR_VERSION__/pr-x86_64-unknown-linux-gnu"
+              "https://github.com/__CODE_REPO__/releases/download/__PR_VERSION__/qx-x86_64-unknown-linux-gnu"
             echo "__PR_SHA256__  pr" | sha256sum -c -
           fi
           chmod +x pr

@@ -1,5 +1,5 @@
 [package]
-name = "part-registry-transport-github-pr"
+name = "qx-transport-github-pr"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -10,9 +10,9 @@ publish.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-part-registry-domain = { path = "../domain" }
-part-registry-transport = { path = "../transport" }
-part-registry-validators = { path = "../validators" }
+qx-domain = { path = "../domain" }
+qx-transport = { path = "../transport" }
+qx-validators = { path = "../validators" }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -26,6 +26,6 @@ base64 = { workspace = true }
 reqwest = { workspace = true }
 
 [dev-dependencies]
-part-registry-port-tests = { path = "../port_tests" }
+qx-port-tests = { path = "../port_tests" }
 mockito = { workspace = true }
 uuid = { workspace = true }

@@ -78,7 +78,7 @@ rules — ADR-035 §1a); ad-hoc untyped ref fields stay out.
     types.jsonl  products.jsonl  vendors.jsonl  locations.jsonl
   attachments/              # content-addressed blobs <sha256>.<ext> (ADR-035 §4)
   audit_log.jsonl           # ADR-022 audit trail — the ONE stream (print events folded in)
-  .part-registry/           # tool config namespace (keeps the root clean)
+  .qx/           # tool config namespace (keeps the root clean)
     contract.json           # versioned schema: collection descriptors (ADR-035 §0)
     manifest.toml           # ADR-034 capabilities / policy / features
     roles.toml              # ADR-034 role bindings (advisory / non-GitHub)
@@ -97,15 +97,15 @@ Each artifact, the contract that governs it, and how it's enforced
 | `collections/*.jsonl` | `contract.json` descriptors | engine validation (`core ∪ kind ∪ shape` + FK/graph) in `pr check` CI + preflight; writes only via PR (ADR-018/019) |
 | `attachments/<sha256>.<ext>` | `attachment` field decls | ref-exists + hash-matches-content (tamper-evident) |
 | `audit_log.jsonl` (the one stream; print events folded in) | `AuditEntry`/`Signature` (ADR-022/024) | append-only, no-rewrite; `&Operator` required; snapshot hash; FK to entities |
-| `.part-registry/contract.json` | tool meta-schema + `[min,max]` | tool validates on open; SSOT for validators; snapshot test |
-| `.part-registry/manifest.toml` | tool meta-schema | tool reads (advisory); seeds CODEOWNERS (ADR-034) |
-| `.part-registry/roles.toml` | `manifest.toml` roles | CI cross-check; drives advisory + non-GitHub authz |
+| `.qx/contract.json` | tool meta-schema + `[min,max]` | tool validates on open; SSOT for validators; snapshot test |
+| `.qx/manifest.toml` | tool meta-schema | tool reads (advisory); seeds CODEOWNERS (ADR-034) |
+| `.qx/roles.toml` | `manifest.toml` roles | CI cross-check; drives advisory + non-GitHub authz |
 | `.github/CODEOWNERS` | derived from `manifest.toml` | **GitHub branch protection — authoritative authz gate** |
 | `.github/workflows/pr-check.yml` | ADR-016 check contract | Actions; required-green to merge |
 
 ### 5. Operator workspace
 
-`~/.config/part-registry/registries.toml` lists the registries an
+`~/.config/qx/registries.toml` lists the registries an
 operator uses (`name → locator + default identity/profile`), for quick
 switching and cross-registry views. Single-registry operations still
 take a locator; the workspace is convenience + the home for any
@@ -126,7 +126,7 @@ the regulated invariants uniform (every registry has the same audited
 core) while letting deployments add domain fields without forking the
 tool. One-repo-one-registry gives the cleanest authz/audit/contract
 boundary; the workspace delivers multi-registry ergonomics without
-federation complexity. The `.part-registry/` namespace keeps the data
+federation complexity. The `.qx/` namespace keeps the data
 root (the collections an operator browses) clean.
 
 ## Consequences
@@ -145,7 +145,7 @@ root (the collections an operator browses) clean.
   build artifact — ADR-035 §0): a committed derived view beside the
   source of truth is a rival truth. The Pages FE consumes the build
   artifact until the WASM read path lands.
-- **`.part-registry/` is the config namespace** for contract + manifest
+- **`.qx/` is the config namespace** for contract + manifest
   + roles (ADR-034 lives here too).
 - **`registries.toml`** is a new operator-side artifact (workspace).
 
@@ -153,7 +153,7 @@ root (the collections an operator browses) clean.
 
 > **2026-06-11:** three refinements from the audit-identity/anchoring
 > session (ADR-036/037/038): (1) the anatomy gains
-> `.part-registry/gate/` (vendored gate binary + sha256 + attestation +
+> `.qx/gate/` (vendored gate binary + sha256 + attestation +
 > source + Nix recipe — ADR-038 §1) and the `anchor.yml`/`bundle.yml`
 > workflows (ADR-037 §3); (2) the `[min, max]` tool-compat range splits
 > into a hard **metamodel parse floor** plus **derived per-op floors**

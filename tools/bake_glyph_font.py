@@ -5,7 +5,7 @@
 # ///
 """Bake crates/codec/src/glyph_font.rs from BOTH nx75 design files.
 
-nx75 — the part-registry anchor font, PARITY-DISPATCHED OPTICAL
+nx75 — the qx anchor font, PARITY-DISPATCHED OPTICAL
 MASTERS. Two masters of the same 7x5 anchor design ship side by side
 and the renderer picks per glyph scale k:
 
@@ -269,7 +269,7 @@ def ink_count(img: list[list[int]]) -> int:
 
 
 HEADER = '''\
-//! nx75 — the part-registry anchor font, PARITY-DISPATCHED OPTICAL
+//! nx75 — the qx anchor font, PARITY-DISPATCHED OPTICAL
 //! MASTERS.
 //!
 //! A first-party 7x5 ANCHOR font for the nano14 id alphabet shipping

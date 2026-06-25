@@ -1,4 +1,4 @@
-//! `part-registry-transport` — `ProposalSink` trait per ADR-019.
+//! `qx-transport` — `ProposalSink` trait per ADR-019.
 //!
 //! `submit + status` only. There is no `merge`, `close`, or `comment`
 //! — acceptance belongs to the policy authority (CI + reviewers per
@@ -14,9 +14,9 @@
 use thiserror::Error;
 
 // Re-export the proposal payload / status types so adapters can do
-// `use part_registry_transport::{ProposalSink, Proposal, ProposalStatus};`
-// without a separate `part_registry_domain` import.
-pub use part_registry_domain::{Proposal, ProposalRef, ProposalStatus};
+// `use qx_transport::{ProposalSink, Proposal, ProposalStatus};`
+// without a separate `qx_domain` import.
+pub use qx_domain::{Proposal, ProposalRef, ProposalStatus};
 
 #[derive(Debug, Error)]
 pub enum ProposalError {

@@ -1,4 +1,4 @@
-//! `part-registry-cli` — wiring crate for the `mint`, `label`, `bind`
+//! `qx-cli` — wiring crate for the `mint`, `label`, `bind`
 //! binaries per ADR-017. Adapter selection per ADR-021's
 //! `PART_REGISTRY_*` env vars happens here so domain crates never
 //! match on adapter strings (ADR-027 §Tier 4 drift discipline).
@@ -8,7 +8,7 @@
 //! Each binary's `main()` is a ~30-line wrapper that:
 //!
 //! 1. Parses its `Args` clap struct (defined in this crate).
-//! 2. Loads [`Config`] via `part_registry_config`.
+//! 2. Loads [`Config`] via `qx_config`.
 //! 3. Calls `init_observability(...)` to set up tracing + audit-CSV.
 //! 4. Opens a `request_id` root span per ADR-022.
 //! 5. Calls `run_mint` / `run_label` / `run_bind` with parsed args +
@@ -35,19 +35,19 @@
 
 #![forbid(unsafe_code)]
 
-/// `pr serve` — HTTP shell over the command protocol (ADR-030 §2).
+/// `qx serve` — HTTP shell over the command protocol (ADR-030 §2).
 #[cfg(feature = "serve")]
 pub mod serve;
 
-/// `pr mcp` — stdio MCP shell over the command protocol (ADR-030 §2).
+/// `qx mcp` — stdio MCP shell over the command protocol (ADR-030 §2).
 #[cfg(feature = "mcp")]
 pub mod mcp;
 
-/// `pr tui` — terminal shell over the command protocol (ADR-030 §2).
+/// `qx tui` — terminal shell over the command protocol (ADR-030 §2).
 #[cfg(feature = "tui")]
 pub mod tui;
 
-/// In-core SVG -> png/jpeg/pdf raster for `pr print --emit` (ADR-031
+/// In-core SVG -> png/jpeg/pdf raster for `qx print --emit` (ADR-031
 /// §8). The `Emit` enum + svg pass-through compile unconditionally;
 /// the actual rasterisers need the `raster` feature.
 pub mod raster;
@@ -63,25 +63,23 @@ use serde_json::json;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-use part_registry_codec::{encode_pinned, render_label, Ec, Family, Layout, TextFormat};
-use part_registry_config::{Config, IdentityAdapterChoice, StorageAdapterChoice};
-use part_registry_domain::{
+use qx_codec::{encode_pinned, render_label, Ec, Family, Layout, TextFormat};
+use qx_config::{Config, IdentityAdapterChoice, StorageAdapterChoice};
+use qx_domain::{
     Action, AuditEntry, Diff, DiffEdit, DiffRow, Operator, OperatorRef, Part, PartId, PartStatus,
     PrintEvent, Proposal, ProposalRef, ProposalStatus, RequestId, Signature, TargetRef,
     PART_ID_ALPHABET, PART_ID_LEN,
 };
-use part_registry_identity::IdentityProvider;
-use part_registry_identity_git_config::GitConfigIdentity;
-use part_registry_observability::{
+use qx_identity::IdentityProvider;
+use qx_identity_git_config::GitConfigIdentity;
+use qx_observability::{
     bind_audit_entry, emit_audit, init, mint_audit_entry, request_id_span, void_audit_entry,
     AuditSinkHandle, ObservabilityConfig, OperatorGuard,
 };
-use part_registry_storage::{PartFilter, Repository};
-use part_registry_storage_csv_git::{CsvGitConfig, CsvGitRepository};
-use part_registry_transport::{ProposalError, ProposalSink};
-use part_registry_transport_github_pr::{
-    GithubPrConfig, GithubPrProposalSink, ReqwestGithubPrHttp,
-};
+use qx_storage::{PartFilter, Repository};
+use qx_storage_csv_git::{CsvGitConfig, CsvGitRepository};
+use qx_transport::{ProposalError, ProposalSink};
+use qx_transport_github_pr::{GithubPrConfig, GithubPrProposalSink, ReqwestGithubPrHttp};
 
 // -------------------------------------------------------------------
 // ADR-012 identifier helpers
@@ -163,15 +161,15 @@ fn generate_one() -> String {
 #[derive(Debug, thiserror::Error)]
 pub enum CliError {
     #[error("config: {0}")]
-    Config(#[from] part_registry_config::ConfigError),
+    Config(#[from] qx_config::ConfigError),
     #[error("storage: {0}")]
-    Storage(#[from] part_registry_storage::RepoError),
+    Storage(#[from] qx_storage::RepoError),
     #[error("identity: {0}")]
-    Identity(#[from] part_registry_identity::IdentityError),
+    Identity(#[from] qx_identity::IdentityError),
     #[error("transport: {0}")]
     Transport(#[from] ProposalError),
     #[error("codec: {0}")]
-    Codec(#[from] part_registry_codec::CodecError),
+    Codec(#[from] qx_codec::CodecError),
     #[error("invalid argument: {0}")]
     BadArg(String),
     #[error("not found: {0}")]
@@ -233,7 +231,7 @@ pub enum LayoutArg {
 
 /// Text-format selector mirroring `label.py --format {4/4,4/4/4,5/5/4,auto}`.
 ///
-/// `auto` defers to [`part_registry_codec::recommend_format`] at runtime.
+/// `auto` defers to [`qx_codec::recommend_format`] at runtime.
 /// Clap parses the slash-separated form for parity with the Python CLI.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum FormatArg {
@@ -556,7 +554,7 @@ impl Wiring {
         let sink: Box<dyn ProposalSink> = if let Some(target) = dry_run {
             Box::new(DryRunSink::new(target))
         } else {
-            if cfg.transport.adapter != part_registry_config::TransportAdapterChoice::GithubPr {
+            if cfg.transport.adapter != qx_config::TransportAdapterChoice::GithubPr {
                 return Err(CliError::BadArg(format!(
                     "unsupported transport adapter {:?}; live submission supports \
                      `github_pr` (or pass --dry-run)",
@@ -571,7 +569,7 @@ impl Wiring {
                         .into(),
                 )
             })?;
-            let (owner, name) = part_registry_config::parse_owner_repo(&cfg.repo.data_repo_url)?;
+            let (owner, name) = qx_config::parse_owner_repo(&cfg.repo.data_repo_url)?;
             let http = ReqwestGithubPrHttp::new(token)
                 .map_err(|e| CliError::Other(format!("github http client: {e}")))?;
             let gh_cfg = GithubPrConfig {
@@ -582,8 +580,8 @@ impl Wiring {
                 // Contents-API committer pair (the PR author is the
                 // token's user; the *operator* travels in the proposal
                 // body per ADR-019/020).
-                commit_author_name: "part-registry".into(),
-                commit_author_email: "part-registry@users.noreply.github.com".into(),
+                commit_author_name: "qx".into(),
+                commit_author_email: "qx@users.noreply.github.com".into(),
             };
             Box::new(GithubPrProposalSink::new(http, gh_cfg))
         };
@@ -857,11 +855,11 @@ impl ProposalSink for DryRunSink {
 /// **Dev-only** `ProposalSink` that applies a proposal's diff straight
 /// to the local working-copy `registry.csv`, bypassing the GitHub PR
 /// flow (ADR-019). It restores the pre-Rust `mint.py` loop: minted IDs
-/// are immediately renderable by `pr print` / `pr label` in the same
+/// are immediately renderable by `qx print` / `qx label` in the same
 /// checkout, with no token, network, or PR round-trip.
 ///
 /// Gated behind the `dev-local` cargo feature so the entire type — and
-/// the `pr mint --local` flag that reaches it — is **compiled out of
+/// the `qx mint --local` flag that reaches it — is **compiled out of
 /// the default/release build** and can never ship in the production
 /// tool (the policy authority stays CI + reviewers per ADR-016/019).
 ///
@@ -974,7 +972,7 @@ impl ProposalSink for LocalRegistrySink {
 pub fn init_observability(
     cfg: &ObservabilityConfig,
     repo: Arc<dyn Repository>,
-) -> Result<(), part_registry_observability::InitError> {
+) -> Result<(), qx_observability::InitError> {
     // The AuditSinkHandle wants `Box<dyn Repository>`, not `Arc`.
     // Wrap the Arc in a thin shim so multiple holders are fine.
     let shim: Box<dyn Repository> = Box::new(ArcRepository(repo));
@@ -987,7 +985,7 @@ pub fn init_observability(
         Ok(()) => Ok(()),
         // Re-init in the same process (CLI tests) is fine — the
         // global subscriber stays installed from the first call.
-        Err(part_registry_observability::InitError::AlreadyInit(_)) => Ok(()),
+        Err(qx_observability::InitError::AlreadyInit(_)) => Ok(()),
         Err(e) => Err(e),
     }
 }
@@ -998,42 +996,37 @@ pub fn init_observability(
 struct ArcRepository(Arc<dyn Repository>);
 
 impl Repository for ArcRepository {
-    fn get_part(&self, id: &PartId) -> Result<Option<Part>, part_registry_storage::RepoError> {
+    fn get_part(&self, id: &PartId) -> Result<Option<Part>, qx_storage::RepoError> {
         self.0.get_part(id)
     }
 
-    fn list_parts(
-        &self,
-        filter: &PartFilter,
-    ) -> Result<Vec<Part>, part_registry_storage::RepoError> {
+    fn list_parts(&self, filter: &PartFilter) -> Result<Vec<Part>, qx_storage::RepoError> {
         self.0.list_parts(filter)
     }
 
     fn list_audit_events(
         &self,
-        filter: &part_registry_storage::AuditFilter,
-    ) -> Result<Vec<AuditEntry>, part_registry_storage::RepoError> {
+        filter: &qx_storage::AuditFilter,
+    ) -> Result<Vec<AuditEntry>, qx_storage::RepoError> {
         self.0.list_audit_events(filter)
     }
 
     fn list_print_events(
         &self,
-        filter: &part_registry_storage::PrintEventFilter,
-    ) -> Result<Vec<PrintEvent>, part_registry_storage::RepoError> {
+        filter: &qx_storage::PrintEventFilter,
+    ) -> Result<Vec<PrintEvent>, qx_storage::RepoError> {
         self.0.list_print_events(filter)
     }
 
-    fn append_audit_event(&self, ev: AuditEntry) -> Result<(), part_registry_storage::RepoError> {
+    fn append_audit_event(&self, ev: AuditEntry) -> Result<(), qx_storage::RepoError> {
         self.0.append_audit_event(ev)
     }
 
-    fn append_print_event(&self, ev: PrintEvent) -> Result<(), part_registry_storage::RepoError> {
+    fn append_print_event(&self, ev: PrintEvent) -> Result<(), qx_storage::RepoError> {
         self.0.append_print_event(ev)
     }
 
-    fn snapshot_hash(
-        &self,
-    ) -> Result<part_registry_domain::Hash, part_registry_storage::RepoError> {
+    fn snapshot_hash(&self) -> Result<qx_domain::Hash, qx_storage::RepoError> {
         self.0.snapshot_hash()
     }
 }
@@ -1246,7 +1239,7 @@ pub fn run_label(args: &LabelArgs, wiring: &Wiring) -> Result<LabelOutcome, CliE
     // Resolve format: auto-select by size, or use explicit choice +
     // optional warning.
     let (text_format, warning) = match args.format {
-        FormatArg::Auto => part_registry_codec::recommend_format(size_mm),
+        FormatArg::Auto => qx_codec::recommend_format(size_mm),
         explicit => {
             let f = match explicit {
                 FormatArg::FourFour => TextFormat::FourFour,
@@ -1254,7 +1247,7 @@ pub fn run_label(args: &LabelArgs, wiring: &Wiring) -> Result<LabelOutcome, CliE
                 FormatArg::FiveFiveFour => TextFormat::FiveFiveFour,
                 FormatArg::Auto => unreachable!(),
             };
-            (f, part_registry_codec::check_format_warning(size_mm, f))
+            (f, qx_codec::check_format_warning(size_mm, f))
         }
     };
 
@@ -1322,7 +1315,7 @@ pub fn run_label(args: &LabelArgs, wiring: &Wiring) -> Result<LabelOutcome, CliE
     let logged = !args.no_log;
     if logged {
         let operator = identity.clone().ok_or_else(|| {
-            CliError::Identity(part_registry_identity::IdentityError::NoIdentity(
+            CliError::Identity(qx_identity::IdentityError::NoIdentity(
                 "label --no-log not set but identity lookup failed; pass --no-log \
                  to skip print_log.csv writes"
                     .into(),
@@ -1358,7 +1351,7 @@ pub fn run_label(args: &LabelArgs, wiring: &Wiring) -> Result<LabelOutcome, CliE
             let ev = PrintEvent {
                 id: part.id.clone(),
                 printed_at: now,
-                printed_by: OperatorRef(part_registry_domain::OperatorId(operator_name.clone())),
+                printed_by: OperatorRef(qx_domain::OperatorId(operator_name.clone())),
                 layout: layout_name.into(),
                 size_mm,
                 extra: extra.clone(),
@@ -1937,9 +1930,9 @@ mod tests {
 
     fn dummy_operator() -> Operator {
         Operator {
-            id: part_registry_domain::OperatorId("test:user".into()),
+            id: qx_domain::OperatorId("test:user".into()),
             display_name: "Test".into(),
-            source: part_registry_domain::IdentitySource::GitConfig,
+            source: qx_domain::IdentitySource::GitConfig,
             verified_at: None,
             claims: BTreeMap::new(),
             pubkey: None,

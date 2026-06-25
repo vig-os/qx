@@ -1,4 +1,4 @@
-//! `pr serve` — the HTTP shell per ADR-030 §2 (feature `serve`).
+//! `qx serve` — the HTTP shell per ADR-030 §2 (feature `serve`).
 //!
 //! One POST endpoint speaks the command protocol — the same
 //! `Request`/`Response` JSON every other shell uses — plus a health
@@ -25,7 +25,7 @@ use axum::extract::State;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 
-use part_registry_app::{dispatch, AppContext, ErrorKind, Request, Response};
+use qx_app::{dispatch, AppContext, ErrorKind, Request, Response};
 
 /// Build the protocol router over a shared [`AppContext`].
 pub fn router(ctx: Arc<AppContext>) -> Router {
@@ -72,7 +72,7 @@ pub fn run(
         let listener = tokio::net::TcpListener::bind(addr)
             .await
             .map_err(|e| crate::CliError::Other(format!("bind {addr}: {e}")))?;
-        tracing::info!(%addr, "pr serve listening");
+        tracing::info!(%addr, "qx serve listening");
         axum::serve(listener, app)
             .with_graceful_shutdown(async {
                 let _ = tokio::signal::ctrl_c().await;
@@ -93,13 +93,13 @@ mod tests {
     use http_body_util::BodyExt;
     use tower::ServiceExt;
 
-    use part_registry_domain::{
+    use qx_domain::{
         AuditEntry, Hash, IdentitySource, Operator, OperatorId, Part, PartId, PartStatus,
         PrintEvent, Proposal, ProposalRef, ProposalStatus,
     };
-    use part_registry_identity::{Capabilities, IdentityError, IdentityProvider};
-    use part_registry_storage::{AuditFilter, PartFilter, PrintEventFilter, RepoError, Repository};
-    use part_registry_transport::{ProposalError, ProposalSink};
+    use qx_identity::{Capabilities, IdentityError, IdentityProvider};
+    use qx_storage::{AuditFilter, PartFilter, PrintEventFilter, RepoError, Repository};
+    use qx_transport::{ProposalError, ProposalSink};
 
     struct MemRepo(Mutex<Vec<Part>>);
     impl Repository for MemRepo {

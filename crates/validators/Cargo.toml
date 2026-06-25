@@ -1,5 +1,5 @@
 [package]
-name = "part-registry-validators"
+name = "qx-validators"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -10,8 +10,8 @@ publish.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-part-registry-domain = { path = "../domain" }
-part-registry-contract = { path = "../contract" }
+qx-domain = { path = "../domain" }
+qx-contract = { path = "../contract" }
 serde_json = { workspace = true }
 regex = { workspace = true }
 thiserror = { workspace = true }

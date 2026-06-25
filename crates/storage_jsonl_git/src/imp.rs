@@ -9,10 +9,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use part_registry_domain::{AuditEntry, Hash, Part, PartId, PartSortKey, PartStatus, RequestId};
-use part_registry_storage::{
-    AuditFilter, PartFilter, PrintEvent, PrintEventFilter, RepoError, Repository,
-};
+use qx_domain::{AuditEntry, Hash, Part, PartId, PartSortKey, PartStatus, RequestId};
+use qx_storage::{AuditFilter, PartFilter, PrintEvent, PrintEventFilter, RepoError, Repository};
 use sha2::{Digest, Sha256};
 
 /// Relative path of the parts collection (ADR-035 §0/§4: a registry

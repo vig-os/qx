@@ -1,4 +1,4 @@
-//! `part-registry-contract` — the pure parser + types for the canonical
+//! `qx-contract` — the pure parser + types for the canonical
 //! `contract.json` form (ADR-039).
 //!
 //! ## What this crate is
@@ -22,7 +22,7 @@
 //! ## Cross-surface parity (ADR-039 §4)
 //!
 //! No I/O, no `std::fs`, no clock. `serde` + `serde_json` + `thiserror`
-//! only, so the crate compiles bit-identically to native (the `pr check`
+//! only, so the crate compiles bit-identically to native (the `qx check`
 //! gate, the authority) and `wasm32-unknown-unknown` (FE form-gen +
 //! preflight, advisory). Parity is by construction: there is nothing to
 //! drift.
@@ -50,7 +50,7 @@ pub const TOOL_SUPPORTED_FORMAT: RangeInclusive<u32> = 1..=1;
 /// Does this tool understand the contract's format generation? Separate
 /// from parsing on purpose: a caller may parse a contract to *inspect*
 /// it (e.g. report "needs a newer tool") even when it cannot safely act
-/// on it. The `pr check` gate calls this before trusting a contract.
+/// on it. The `qx check` gate calls this before trusting a contract.
 pub fn is_compatible(contract: &Contract) -> bool {
     TOOL_SUPPORTED_FORMAT.contains(&contract.format_version)
 }

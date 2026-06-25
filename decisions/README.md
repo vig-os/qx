@@ -1,4 +1,4 @@
-# Decision records — part-registry
+# Decision records — qx
 
 Markdown ADRs (Architecture Decision Records) for the parts registry.
 Each ADR captures one decision — its context, the alternatives that

@@ -5,8 +5,8 @@
 //! tooling, and Playwright tests. A drift here means a schema change
 //! was made in one surface but not the other.
 
-use part_registry_domain::{PART_ID_ALPHABET, PART_ID_LEN};
-use part_registry_validators::REGISTRY_HEADER;
+use qx_domain::{PART_ID_ALPHABET, PART_ID_LEN};
+use qx_validators::REGISTRY_HEADER;
 
 /// Minimal contract shape — only the fields we need to assert against.
 #[derive(serde::Deserialize)]

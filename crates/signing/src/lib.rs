@@ -1,4 +1,4 @@
-//! `part-registry-signing` — `SigningProvider` + `VerificationProvider`
+//! `qx-signing` — `SigningProvider` + `VerificationProvider`
 //! traits per ADR-024.
 //!
 //! `Signature` lives in `crates/domain/` and is `#[non_exhaustive]`
@@ -9,9 +9,7 @@
 
 use thiserror::Error;
 
-use part_registry_domain::{
-    ActionKind, Operator, SigAlgorithm, Signature, Timestamp, Verification,
-};
+use qx_domain::{ActionKind, Operator, SigAlgorithm, Signature, Timestamp, Verification};
 
 #[derive(Debug, Error)]
 pub enum SignError {

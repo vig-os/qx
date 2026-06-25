@@ -8,13 +8,13 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
-use part_registry_domain::{
+use qx_domain::{
     Diff, DiffRow, IdentitySource, KeyId, Operator, OperatorId, PartId, Proposal, ProposalRef,
     RequestId,
 };
-use part_registry_port_tests::proposal_sink_conformance;
-use part_registry_transport::ProposalSink;
-use part_registry_transport_github_pr::{
+use qx_port_tests::proposal_sink_conformance;
+use qx_transport::ProposalSink;
+use qx_transport_github_pr::{
     CheckRun, CheckRunsResponse, CreatePullRequest, CreateRefRequest, GetContentsResponse,
     GitRefObject, GitRefResponse, GithubPrConfig, GithubPrHttp, GithubPrProposalSink, HttpError,
     PullResponse, PullReview, PutContentsRequest,
@@ -191,5 +191,5 @@ fn github_pr_sink_status_round_trips_open_state() {
     };
     let s = sink.status(&pref).expect("status ok");
     // No checks, no requested reviewers → Open.
-    assert!(matches!(s, part_registry_domain::ProposalStatus::Open));
+    assert!(matches!(s, qx_domain::ProposalStatus::Open));
 }

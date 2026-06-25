@@ -156,7 +156,7 @@ describe("migrateOldQueue", () => {
         changes: { vendor: "TC Direct" },
       },
     ];
-    localStorage.setItem("part-registry.bind-queue", JSON.stringify(oldItems));
+    localStorage.setItem("qx.bind-queue", JSON.stringify(oldItems));
 
     const count = await migrateOldQueue();
     expect(count).toBe(2);
@@ -167,7 +167,7 @@ describe("migrateOldQueue", () => {
     expect(session.items[1].kind).toBe("edit");
 
     // Old key cleared
-    expect(localStorage.getItem("part-registry.bind-queue")).toBeNull();
+    expect(localStorage.getItem("qx.bind-queue")).toBeNull();
   });
 
   it("handles empty old queue gracefully", async () => {
@@ -176,7 +176,7 @@ describe("migrateOldQueue", () => {
   });
 
   it("handles malformed old queue", async () => {
-    localStorage.setItem("part-registry.bind-queue", "not json");
+    localStorage.setItem("qx.bind-queue", "not json");
     const count = await migrateOldQueue();
     expect(count).toBe(0);
   });

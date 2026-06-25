@@ -1,4 +1,4 @@
-//! `part-registry-observability` — `tracing` setup + audit-CSV
+//! `qx-observability` — `tracing` setup + audit-CSV
 //! subscriber + `request_id` propagation per ADR-022.
 //!
 //! ## Shape (ADR-022 §"Tracing setup")
@@ -30,8 +30,8 @@
 //! the root span at the binary's entry point:
 //!
 //! ```no_run
-//! # use part_registry_observability::{init, ObservabilityConfig, AuditSinkHandle, request_id_span};
-//! # use part_registry_domain::RequestId;
+//! # use qx_observability::{init, ObservabilityConfig, AuditSinkHandle, request_id_span};
+//! # use qx_domain::RequestId;
 //! let cfg = ObservabilityConfig::cli_defaults();
 //! let _ = init(&cfg, AuditSinkHandle::disabled());
 //! let rid = RequestId::new();
@@ -70,10 +70,8 @@ use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
-use part_registry_domain::{
-    Action, AuditEntry, Hash, Operator, OperatorId, RequestId, TargetRef, Timestamp,
-};
-use part_registry_storage::{RepoError, Repository};
+use qx_domain::{Action, AuditEntry, Hash, Operator, OperatorId, RequestId, TargetRef, Timestamp};
+use qx_storage::{RepoError, Repository};
 
 // -------------------------------------------------------------------
 // Errors
@@ -97,11 +95,11 @@ pub enum InitError {
 // Config — re-exported from the config crate (single source of truth)
 // -------------------------------------------------------------------
 
-/// Re-exported from [`part_registry_config::ObservabilityConfig`] so
+/// Re-exported from [`qx_config::ObservabilityConfig`] so
 /// consumers that already depend on this crate don't need a separate
-/// `part_registry_config` import. The config crate owns the shape;
+/// `qx_config` import. The config crate owns the shape;
 /// this crate consumes it. See ADR-021 §Corrections and issue #38.
-pub use part_registry_config::ObservabilityConfig;
+pub use qx_config::ObservabilityConfig;
 
 // -------------------------------------------------------------------
 // AuditSinkHandle
@@ -194,8 +192,8 @@ pub fn clear_current_operator() {
 /// and clears it on drop — including during stack unwinding (panics).
 ///
 /// ```no_run
-/// # use part_registry_observability::OperatorGuard;
-/// # use part_registry_domain::{Operator, OperatorId, IdentitySource};
+/// # use qx_observability::OperatorGuard;
+/// # use qx_domain::{Operator, OperatorId, IdentitySource};
 /// let op = Operator {
 ///     id: OperatorId("git:user".into()),
 ///     display_name: "user".into(),
@@ -312,7 +310,7 @@ macro_rules! request_id_span {
 ///
 /// Returns the span; the caller is responsible for entering it.
 pub fn request_id_span(name: &'static str, rid: RequestId) -> Span {
-    tracing::info_span!(target: "part_registry::observability", "request", name = name, request_id = %rid)
+    tracing::info_span!(target: "qx::observability", "request", name = name, request_id = %rid)
 }
 
 // -------------------------------------------------------------------
@@ -344,7 +342,7 @@ pub fn emit_audit(entry: &AuditEntry) {
         }
     };
     tracing::info!(
-        target: "part_registry::audit",
+        target: "qx::audit",
         audit = true,
         audit_entry = %payload,
         action = %action_kind_str(&entry.action),
@@ -357,13 +355,13 @@ pub fn emit_audit(entry: &AuditEntry) {
 
 fn action_kind_str(action: &Action) -> &'static str {
     match action.kind() {
-        part_registry_domain::ActionKind::RowAdd => "row_add",
-        part_registry_domain::ActionKind::RowDelete => "row_delete",
-        part_registry_domain::ActionKind::RowVoid => "row_void",
-        part_registry_domain::ActionKind::RowBind => "row_bind",
-        part_registry_domain::ActionKind::RowEdit => "row_edit",
-        part_registry_domain::ActionKind::HeaderChange => "header_change",
-        part_registry_domain::ActionKind::BulkChange => "bulk_change",
+        qx_domain::ActionKind::RowAdd => "row_add",
+        qx_domain::ActionKind::RowDelete => "row_delete",
+        qx_domain::ActionKind::RowVoid => "row_void",
+        qx_domain::ActionKind::RowBind => "row_bind",
+        qx_domain::ActionKind::RowEdit => "row_edit",
+        qx_domain::ActionKind::HeaderChange => "header_change",
+        qx_domain::ActionKind::BulkChange => "bulk_change",
     }
 }
 
@@ -601,7 +599,7 @@ where
         Some("part_id") | Some("part") => v
             .target_value
             .as_deref()
-            .and_then(|s| part_registry_domain::PartId::new(s.to_string()).ok())
+            .and_then(|s| qx_domain::PartId::new(s.to_string()).ok())
             .map(|id| TargetRef::Part { id }),
         Some("batch") => v
             .target_value
@@ -645,7 +643,7 @@ where
 }
 
 fn action_from_kind_str(s: &str, target_value: Option<&str>) -> Option<Action> {
-    use part_registry_domain::PartId;
+    use qx_domain::PartId;
     // Try to use the real target value as the PartId; fall back to a
     // placeholder when the value is missing or fails validation.
     let part_id = target_value
@@ -731,7 +729,7 @@ pub fn set_test_clock(t: Option<Timestamp>) {
 pub fn mint_audit_entry(
     request_id: RequestId,
     actor: Operator,
-    minted_id: part_registry_domain::PartId,
+    minted_id: qx_domain::PartId,
     extra: serde_json::Value,
 ) -> AuditEntry {
     let row = serde_json::json!({ "id": minted_id.as_str(), "status": "unbound" });
@@ -753,7 +751,7 @@ pub fn mint_audit_entry(
 pub fn bind_audit_entry(
     request_id: RequestId,
     actor: Operator,
-    id: part_registry_domain::PartId,
+    id: qx_domain::PartId,
     fields: std::collections::BTreeMap<String, String>,
     extra: serde_json::Value,
 ) -> AuditEntry {
@@ -778,7 +776,7 @@ pub fn bind_audit_entry(
 pub fn edit_audit_entry(
     request_id: RequestId,
     actor: Operator,
-    id: part_registry_domain::PartId,
+    id: qx_domain::PartId,
     before: std::collections::BTreeMap<String, String>,
     after: std::collections::BTreeMap<String, String>,
     extra: serde_json::Value,
@@ -805,7 +803,7 @@ pub fn edit_audit_entry(
 pub fn void_audit_entry(
     request_id: RequestId,
     actor: Operator,
-    id: part_registry_domain::PartId,
+    id: qx_domain::PartId,
     reason: String,
     extra: serde_json::Value,
 ) -> AuditEntry {
@@ -839,7 +837,7 @@ pub fn cli_scaffold_operator() -> Operator {
     Operator {
         id: OperatorId(format!("git:{user}")),
         display_name: user.clone(),
-        source: part_registry_domain::IdentitySource::GitConfig,
+        source: qx_domain::IdentitySource::GitConfig,
         verified_at: None,
         claims: std::collections::BTreeMap::new(),
         pubkey: None,

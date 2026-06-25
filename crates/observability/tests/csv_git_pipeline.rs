@@ -12,13 +12,13 @@
 use std::fs;
 use std::process::Command;
 
-use part_registry_domain::{
+use qx_domain::{
     Action, AuditEntry, AuditFilter, Hash, IdentitySource, Operator, OperatorId, PartId,
     RekorProof, RequestId, Signature, TargetRef,
 };
-use part_registry_observability::{emit_audit, request_id_span, AuditSinkHandle};
-use part_registry_storage::Repository;
-use part_registry_storage_csv_git::{CsvGitConfig, CsvGitRepository};
+use qx_observability::{emit_audit, request_id_span, AuditSinkHandle};
+use qx_storage::Repository;
+use qx_storage_csv_git::{CsvGitConfig, CsvGitRepository};
 use tracing_subscriber::layer::SubscriberExt;
 
 fn sample_operator() -> Operator {
@@ -105,7 +105,7 @@ fn full_pipeline_writes_csv_with_sigstore_round_trip() {
         chain_hash: Some(Hash("abc123".into())),
     };
 
-    let layer = part_registry_observability::__test_audit_csv_layer(handle);
+    let layer = qx_observability::__test_audit_csv_layer(handle);
     let subscriber = tracing_subscriber::registry().with(layer);
 
     tracing::subscriber::with_default(subscriber, || {

@@ -109,7 +109,7 @@ export default defineConfig({
       filename: "sw.ts",
       includeAssets: ["icon.svg", "icon-maskable.svg"],
       manifest: {
-        name: "part-registry",
+        name: "qx",
         short_name: "parts",
         description:
           "Scan QRs, look up parts, print labels, queue binds for batched PR submission.",

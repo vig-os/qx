@@ -5,7 +5,7 @@
 - Component / area: who an audit record is attributed to, and how that
   attribution is established. Resolves ADR-035's deferred "operators
   directory collection"; discharges the e-signature question raised by
-  the platform/HQ exploration; revises the `file://` stance of
+  the platform/qx exploration; revises the `file://` stance of
   ADR-030/033/034 (see their Corrections).
 - Reviewers: Lars Gerchow (required for Accepted)
 - Related: ADR-019 (proposal sink), ADR-020 (identity port), ADR-022

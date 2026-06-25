@@ -1,4 +1,4 @@
-//! `part-registry-port-tests` — generic conformance + parity +
+//! `qx-port-tests` — generic conformance + parity +
 //! drift-detection framework per ADR-027.
 //!
 //! Adapter crates wire their concrete adapter into the generic
@@ -15,11 +15,11 @@
 
 use std::collections::BTreeMap;
 
-use part_registry_domain::{Proposal, ProposalStatus};
-use part_registry_identity::IdentityProvider;
-use part_registry_signing::SigningProvider;
-use part_registry_storage::Repository;
-use part_registry_transport::ProposalSink;
+use qx_domain::{Proposal, ProposalStatus};
+use qx_identity::IdentityProvider;
+use qx_signing::SigningProvider;
+use qx_storage::Repository;
+use qx_transport::ProposalSink;
 
 /// Canonical registry state for cross-adapter parity: `id -> {column ->
 /// value}`. Substrate-agnostic — a CSV adapter and a relational adapter

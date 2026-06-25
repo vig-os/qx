@@ -1,4 +1,4 @@
-//! `pr mcp` — stdio MCP server over the command protocol (ADR-030 §2,
+//! `qx mcp` — stdio MCP server over the command protocol (ADR-030 §2,
 //! feature `mcp`).
 //!
 //! One MCP tool per protocol op family. The mapping is structural, not
@@ -21,7 +21,7 @@ use rmcp::model::*;
 use rmcp::service::RequestContext;
 use rmcp::{RoleServer, ServerHandler, ServiceExt};
 
-use part_registry_app::{dispatch, AppContext, Request, Response};
+use qx_app::{dispatch, AppContext, Request, Response};
 
 /// `(tool name, protocol op tag, description)` — one row per op family.
 const OPS: &[(&str, &str, &str)] = &[
@@ -140,12 +140,9 @@ impl RegistryMcp {
 impl ServerHandler for RegistryMcp {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new(
-                "part-registry",
-                env!("CARGO_PKG_VERSION"),
-            ))
+            .with_server_info(Implementation::new("qx", env!("CARGO_PKG_VERSION")))
             .with_instructions(format!(
-                "part-registry command protocol over MCP (registry: {}). Reads \
+                "qx command protocol over MCP (registry: {}). Reads \
                  (resolve/list/count/describe/export) are safe; mutations \
                  (create/edit/transition) submit PR proposals through the same \
                  policy gates as every other shell — they do not change the \
@@ -194,7 +191,7 @@ impl ServerHandler for RegistryMcp {
             .await
             .unwrap_or_else(|e| {
                 Response::error(
-                    part_registry_app::ErrorKind::Backend,
+                    qx_app::ErrorKind::Backend,
                     format!("dispatch task failed: {e}"),
                 )
             });
@@ -309,7 +306,7 @@ mod tests {
         let r = response_to_result(&ok);
         assert_ne!(r.is_error, Some(true));
 
-        let err = Response::error(part_registry_app::ErrorKind::NotFound, "nope");
+        let err = Response::error(qx_app::ErrorKind::NotFound, "nope");
         let r = response_to_result(&err);
         assert_eq!(r.is_error, Some(true));
     }

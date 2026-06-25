@@ -1,6 +1,6 @@
 # Registry anatomy — files, contracts, and enforcement
 
-The operator/admin reference for **what a deployed part-registry contains
+The operator/admin reference for **what a deployed qx data repo contains
 and how each piece is kept honest**. The *decisions* behind this live in
 [ADR-033](../decisions/ADR-033-registry-anatomy-self-describing.md)
 (anatomy + self-describing contract) and
@@ -10,7 +10,7 @@ point at.
 
 A deployed registry is **one git repo = one registry**. The data root
 holds the CSVs a human or spreadsheet touches; tool config lives under
-`.part-registry/`; the host's enforcement lives under `.github/` + repo
+`.qx/`; the host's enforcement lives under `.github/` + repo
 settings.
 
 > **Format note (ADR-035):** every entity lives in a **collection** —
@@ -34,14 +34,14 @@ settings.
     types.jsonl  products.jsonl  vendors.jsonl  locations.jsonl
   attachments/              # content-addressed blobs <sha256>.<ext> (ADR-035 §4)
   audit_log.jsonl           # the ONE stream — audit trail incl. print events (ADR-022)
-  .part-registry/
+  .qx/
     contract.json           # versioned schema: collection descriptors (ADR-035 §0)
     manifest.toml           # capabilities / policy / feature flags
     roles.toml              # role bindings (advisory / non-GitHub)
   .github/
     CODEOWNERS              # review routing — generated from the manifest
     workflows/
-      pr-check.yml          # `pr check --diff` gate (ADR-016)
+      pr-check.yml          # `qx check --diff` gate (ADR-016)
       pages.yml             # web view deploy (ADR-013)
   README.md  CONTRIBUTING.md  .gitignore
 ```
@@ -50,11 +50,11 @@ settings.
 
 | File | What it does | Governed by | Enforced / checked by | Administered by |
 |---|---|---|---|---|
-| `collections/parts.jsonl` | Parts collection — one entity per line (`id, status, created_at, transitioned_at{…}, kind, components[]` + per-kind fields + `properties`) | `contract.json` (field set, order, statuses, ID rules) | `validate-registry` (header-schema · required-field · id-format · status-enum · status-field required/forbidden · id-uniqueness · sort-stability) in `pr check` CI + FE/CLI preflight. **No direct writes** — read+audit-append only (ADR-018); mutations via PR (ADR-019) | Operators propose via `mint`/`bind`/`void` → PR; GitHub gates merge |
+| `collections/parts.jsonl` | Parts collection — one entity per line (`id, status, created_at, transitioned_at{…}, kind, components[]` + per-kind fields + `properties`) | `contract.json` (field set, order, statuses, ID rules) | `validate-registry` (header-schema · required-field · id-format · status-enum · status-field required/forbidden · id-uniqueness · sort-stability) in `qx check` CI + FE/CLI preflight. **No direct writes** — read+audit-append only (ADR-018); mutations via PR (ADR-019) | Operators propose via `mint`/`bind`/`void` → PR; GitHub gates merge |
 | `print_log.csv` | Append-only print audit (ADR-015) — `id, printed_at, layout, size, copies, operator, output_mode, extra` | print-event shape in `contract.json`; **FK** → `registry.csv` ids | FK-integrity (orphans flagged in CI) · sort-by-timestamp · append-only | Written by `render-label`/print; rides the same PR (or appended on `file://` commit) |
 | `audit_log.csv` | Append-only audit trail (ADR-022) — one `AuditEntry` per mutation: `operator(source, verified_at), action, ts, chain_hash, signature` | `AuditEntry` schema (ADR-022/018); signature/chain (ADR-024) | append-only + **no rewrite of prior rows** · every entry carries a verified `&Operator` (ADR-020) · `snapshot_hash` reproducibility (ADR-024) · `verify-signature` | Written automatically by the tool on every mutation; immutable |
 
-## B. Config namespace — `.part-registry/`
+## B. Config namespace — `.qx/`
 
 | File | What it does | Governed by | Enforced / checked by | Administered by |
 |---|---|---|---|---|
@@ -67,7 +67,7 @@ settings.
 | Thing | What it does | Governed by | Enforced / checked by | Administered by |
 |---|---|---|---|---|
 | `.github/CODEOWNERS` | Which paths require which reviewers (`registry.csv` deletes, `contract.json`, `manifest.toml` → `@org/qms-approvers`) | GitHub CODEOWNERS format; **derived from `manifest.toml`** | **GitHub branch protection** (required code-owner review) — the *authoritative* authz gate; consistency check vs the manifest (drift) | Generated/regenerated from the manifest by bootstrap / GitHub App |
-| `.github/workflows/pr-check.yml` | Runs `pr check --diff` (ADR-016): validate-registry + validate-diff + classify + policy-decision; posts the check | the tool's check contract (exit codes) | GitHub Actions; **branch protection requires it green to merge** | Seeded by bootstrap; pins/fetches the `pr` binary |
+| `.github/workflows/pr-check.yml` | Runs `qx check --diff` (ADR-016): validate-registry + validate-diff + classify + policy-decision; posts the check | the tool's check contract (exit codes) | GitHub Actions; **branch protection requires it green to merge** | Seeded by bootstrap; pins/fetches the `pr` binary |
 | `.github/workflows/pages.yml` | Deploys the web view (ADR-013) | — | Actions | bootstrap |
 | **Branch protection** *(repo setting, not a file)* | Require PRs (no direct `main`), require the check + required reviews | GitHub | GitHub itself | **Set by bootstrap / GitHub App via API** — config that can drift; must be self-audited (see below) |
 
@@ -75,7 +75,7 @@ settings.
 `README.md` (what this registry is) · `CONTRIBUTING.md` (PR-driven mutation model, "no direct main") · `.gitignore` (ignore generated label SVGs). Seeded by bootstrap; convention-governed.
 
 ## E. Operator-side (local, NOT in the data repo)
-`~/.config/part-registry/registries.toml` — workspace (name → locator + identity, ADR-033 §5) · `~/.config/part-registry/github-token.json` — cached token (ADR-020). Local to each operator.
+`~/.config/qx/registries.toml` — workspace (name → locator + identity, ADR-033 §5) · `~/.config/qx/github-token.json` — cached token (ADR-020). Local to each operator.
 
 ## The contracts, and where the teeth are
 
@@ -86,7 +86,7 @@ settings.
 | **Port traits** (code, not in data repo) | capability interfaces | compile-time + ADR-027 conformance |
 | **Host enforcement** (CODEOWNERS + branch protection + check) | the actual merge gate | GitHub |
 
-**Three enforcement layers:** ① tool validators classify + advise (CI `pr check` + FE/CLI preflight) → ② GitHub enforces (branch protection + CODEOWNERS + required check) → ③ on `file://` there is no ②, so it is **local-trust + advisory only** (ADR-034's stated asymmetry).
+**Three enforcement layers:** ① tool validators classify + advise (CI `qx check` + FE/CLI preflight) → ② GitHub enforces (branch protection + CODEOWNERS + required check) → ③ on `file://` there is no ②, so it is **local-trust + advisory only** (ADR-034's stated asymmetry).
 
 **Cross-file consistency checks:** `contract.json` ↔ `registry.csv` (validators) · `registry.csv` ↔ `print_log`/`audit_log` (FK) · `manifest` roles ↔ `roles.toml` ↔ `CODEOWNERS` (drift) · `contract.schema_version` ↔ tool `[min,max]` (compat) · `snapshot_hash` (reproducibility).
 
@@ -98,4 +98,4 @@ settings.
 
 ## Known gap — protection drift
 
-Branch protection is a repo **setting**, not a committed file, so it can be changed out-of-band and drift silently. Mitigation (tracked as an ADR-034 open item): a `pr check` / GitHub-App **self-audit** that verifies a registry's branch protection + CODEOWNERS still match its manifest, and flags drift.
+Branch protection is a repo **setting**, not a committed file, so it can be changed out-of-band and drift silently. Mitigation (tracked as an ADR-034 open item): a `qx check` / GitHub-App **self-audit** that verifies a registry's branch protection + CODEOWNERS still match its manifest, and flags drift.

@@ -1,15 +1,14 @@
-//! `pr` — the multicall binary per ADR-030 §2: one native artifact for
+//! `qx` — the single qx command per ADR-030 §2: one native artifact for
 //! the whole shell family.
 //!
-//! - `pr mint` / `pr label` / `pr bind` — parity delegates onto the
-//!   same engine the legacy single-purpose binaries use (strangler-fig:
-//!   those stay until parity retirement). Unlike the legacy bins,
-//!   omitting `--dry-run` here uses the **live** GitHub PR sink
-//!   (ADR-030 build-order step 2).
-//! - `pr list|resolve|describe|count|export|print|whoami` — thin shells
-//!   over `part_registry_app::dispatch` (the command protocol); output
+//! - `qx mint` / `qx label` / `qx bind` — parity delegates onto the
+//!   same engine the legacy single-purpose binaries used (now folded in;
+//!   the standalone bins are retired). Omitting `--dry-run` here uses
+//!   the **live** GitHub PR sink (ADR-030 build-order step 2).
+//! - `qx list|resolve|describe|count|export|print|whoami` — thin shells
+//!   over `qx_app::dispatch` (the command protocol); output
 //!   is the protocol's JSON `data` payload, pretty-printed.
-//! - `pr check` — the ADR-016 gate: structural validation of a data
+//! - `qx check` — the ADR-016 gate: structural validation of a data
 //!   repo plus, with `--base <git-ref>`, semantic-diff classification +
 //!   policy per ADR-034 (tool classifies/advises; the host's branch
 //!   protection + CODEOWNERS enforce).
@@ -24,30 +23,26 @@ use serde_json::{Map, Value};
 
 use clap::{Parser, Subcommand};
 
-use part_registry_app::{dispatch, AppContext, Request, Response};
-use part_registry_cli::{
+use qx_app::{dispatch, AppContext, Request, Response};
+use qx_cli::{
     init_observability, render_bind_summary, render_mint_summary, run_bind, run_label, run_mint,
     BindArgs, DryRunTarget, LabelArgs, MintArgs, Wiring,
 };
-use part_registry_config::Config;
-use part_registry_contract::{is_compatible, Contract};
-use part_registry_domain::{
+use qx_config::Config;
+use qx_contract::{is_compatible, Contract};
+use qx_domain::{
     Diff, DiffEdit, DiffRow, HeaderChange, IdentitySource, Operator, OperatorId, PartId,
     PartStatus, RequestId,
 };
-use part_registry_observability::{request_id_span, ObservabilityConfig};
-use part_registry_validators::record::{validate_record, RecordContext, Severity};
-use part_registry_validators::{
+use qx_observability::{request_id_span, ObservabilityConfig};
+use qx_validators::record::{validate_record, RecordContext, Severity};
+use qx_validators::{
     policy_decision, registry_sort_key, validate_sort_stable, validate_status_transition,
     validate_unique_ids, Policy,
 };
 
 #[derive(Parser)]
-#[command(
-    name = "pr",
-    about = "part-registry — one binary, every shell (ADR-030)",
-    version
-)]
+#[command(name = "qx", about = "qx — one binary, every shell (ADR-030)", version)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -188,7 +183,7 @@ enum Cmd {
         /// floors). CSS shorthand: 2 (all) | 2,6 (vertical,horizontal)
         /// | 2,6,4,6 (top,right,bottom,left).
         #[arg(long, value_parser = parse_padding_spec)]
-        padding: Option<part_registry_app::PaddingSpec>,
+        padding: Option<qx_app::PaddingSpec>,
         /// Quiet-zone accounting for the deduction (ADR-031 §8):
         /// overlap (quiet zone counts toward outside padding),
         /// additive (excluded; full-bleed/die-cut), or clip (no
@@ -304,7 +299,7 @@ enum Cmd {
         #[arg(long)]
         base: Option<String>,
     },
-    /// Scaffold a fresh "company HQ" data repo: the canonical contract
+    /// Scaffold a fresh company data repo: the canonical contract
     /// (parts + companies + contacts), empty collections, and the CI
     /// gate workflow (ADR-039). The starting point for a deployment.
     Init {
@@ -359,7 +354,7 @@ fn parse_size_spec(s: &str) -> Result<SizeSpec, String> {
 
 /// `--padding 2 | 2,6 | 2,6,4,6` — the protocol's one CSS-shorthand
 /// expansion rule, exposed as a clap value parser.
-fn parse_padding_spec(s: &str) -> Result<part_registry_app::PaddingSpec, String> {
+fn parse_padding_spec(s: &str) -> Result<qx_app::PaddingSpec, String> {
     s.parse()
 }
 
@@ -435,7 +430,7 @@ fn tui_cmd() -> ExitCode {
         Err(e) => return e,
     };
     let ctx = app_context(&cfg, wiring);
-    match part_registry_cli::tui::run(ctx) {
+    match qx_cli::tui::run(ctx) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("tui failed: {e}");
@@ -456,13 +451,13 @@ fn mcp_cmd() -> ExitCode {
         Ok(w) => w,
         Err(_) => {
             eprintln!(
-                "pr mcp: no GitHub token resolved — mutations will be captured as \
+                "qx mcp: no GitHub token resolved — mutations will be captured as \
                  dry-run JSON, not submitted (set PART_REGISTRY__TRANSPORT__GITHUB_TOKEN)."
             );
             // Stdout carries the MCP wire; dry-run capture must go to a
             // file, never stdout.
-            let capture = std::env::temp_dir().join("pr-mcp-dry-run.jsonl");
-            eprintln!("pr mcp: dry-run proposals -> {}", capture.display());
+            let capture = std::env::temp_dir().join("qx-mcp-dry-run.jsonl");
+            eprintln!("qx mcp: dry-run proposals -> {}", capture.display());
             match build_wiring(&cfg, Some(DryRunTarget::File(capture))) {
                 Ok(w) => w,
                 Err(e) => return e,
@@ -471,7 +466,7 @@ fn mcp_cmd() -> ExitCode {
     };
     init_obs(&cfg, &wiring);
     let ctx = app_context(&cfg, wiring);
-    match part_registry_cli::mcp::run(ctx) {
+    match qx_cli::mcp::run(ctx) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("mcp failed: {e}");
@@ -493,7 +488,7 @@ fn serve_cmd(addr: std::net::SocketAddr, static_dir: Option<PathBuf>) -> ExitCod
         Ok(w) => w,
         Err(_) => {
             eprintln!(
-                "pr serve: no GitHub token resolved — mutations will be captured \
+                "qx serve: no GitHub token resolved — mutations will be captured \
                  as dry-run JSON on the server's stdout, not submitted. Set \
                  PART_REGISTRY__TRANSPORT__GITHUB_TOKEN (or GITHUB_TOKEN) for \
                  live proposals."
@@ -505,10 +500,10 @@ fn serve_cmd(addr: std::net::SocketAddr, static_dir: Option<PathBuf>) -> ExitCod
         }
     };
     init_obs(&cfg, &wiring);
-    let span = request_id_span("pr.serve", RequestId::new());
+    let span = request_id_span("qx.serve", RequestId::new());
     let _g = span.enter();
     let ctx = app_context(&cfg, wiring);
-    match part_registry_cli::serve::run(ctx, addr, static_dir) {
+    match qx_cli::serve::run(ctx, addr, static_dir) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("serve failed: {e}");
@@ -557,7 +552,7 @@ fn dry_run_target(dry_run: bool, dry_run_file: &Option<PathBuf>) -> Option<DryRu
 }
 
 fn app_context(cfg: &Config, wiring: Wiring) -> AppContext {
-    let registry_name = part_registry_config::parse_owner_repo(&cfg.repo.data_repo_url)
+    let registry_name = qx_config::parse_owner_repo(&cfg.repo.data_repo_url)
         .map(|(o, r)| format!("{o}/{r}"))
         .unwrap_or_else(|_| cfg.repo.data_repo_url.clone());
     AppContext {
@@ -597,15 +592,13 @@ fn parity_mint(args: MintArgs) -> ExitCode {
     #[cfg(feature = "dev-local")]
     if local {
         eprintln!(
-            "pr mint --local: DEV BUILD — applying straight to local registry.csv, \
+            "qx mint --local: DEV BUILD — applying straight to local registry.csv, \
              NOT opening a PR"
         );
-        wiring.sink = Box::new(part_registry_cli::LocalRegistrySink::new(
-            wiring.repo_root.clone(),
-        ));
+        wiring.sink = Box::new(qx_cli::LocalRegistrySink::new(wiring.repo_root.clone()));
     }
     init_obs(&cfg, &wiring);
-    let span = request_id_span("pr.mint", RequestId::new());
+    let span = request_id_span("qx.mint", RequestId::new());
     let _g = span.enter();
     match run_mint(&args, &wiring) {
         Ok(outcome) => {
@@ -631,7 +624,7 @@ fn parity_label(args: LabelArgs) -> ExitCode {
         Err(e) => return e,
     };
     init_obs(&cfg, &wiring);
-    let span = request_id_span("pr.label", RequestId::new());
+    let span = request_id_span("qx.label", RequestId::new());
     let _g = span.enter();
     match run_label(&args, &wiring) {
         Ok(outcome) => {
@@ -663,7 +656,7 @@ fn parity_bind(args: BindArgs) -> ExitCode {
         Err(e) => return e,
     };
     init_obs(&cfg, &wiring);
-    let span = request_id_span("pr.bind", RequestId::new());
+    let span = request_id_span("qx.bind", RequestId::new());
     let _g = span.enter();
     match run_bind(&args, &wiring) {
         Ok(outcome) => {
@@ -693,7 +686,7 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
         Err(e) => return e,
     };
     init_obs(&cfg, &wiring);
-    let span = request_id_span("pr.dispatch", RequestId::new());
+    let span = request_id_span("qx.dispatch", RequestId::new());
     let _g = span.enter();
     let ctx = app_context(&cfg, wiring);
 
@@ -748,7 +741,7 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
             Some(SizeSpec::Mm(v)) => (unit, v, None),
             None => (unit, size_mm, size_px),
         };
-        let options = part_registry_app::PrintOptions {
+        let options = qx_app::PrintOptions {
             layout,
             size_mm,
             chars,
@@ -779,7 +772,7 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
             length_excess_px: length_excess,
             excess_at,
         };
-        let emit = match part_registry_cli::raster::Emit::parse(&emit) {
+        let emit = match qx_cli::raster::Emit::parse(&emit) {
             Ok(e) => e,
             Err(msg) => {
                 eprintln!("{msg}");
@@ -801,14 +794,14 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
         } => (
             Request::List {
                 collection,
-                filter: part_registry_app::Filter {
+                filter: qx_app::Filter {
                     status,
                     kind: None,
                     text,
                     fields: fields.into_iter().collect(),
                 },
                 sort: Vec::new(),
-                page: part_registry_app::Page { offset, limit },
+                page: qx_app::Page { offset, limit },
             },
             output,
         ),
@@ -822,7 +815,7 @@ fn protocol_cmd(cmd: Cmd) -> ExitCode {
         } => (
             Request::Count {
                 collection,
-                filter: part_registry_app::Filter {
+                filter: qx_app::Filter {
                     status,
                     ..Default::default()
                 },
@@ -903,16 +896,16 @@ fn protocol_export(
 fn protocol_print(
     ctx: &AppContext,
     ids: Vec<String>,
-    options: part_registry_app::PrintOptions,
+    options: qx_app::PrintOptions,
     out_dir: &Path,
-    emit: part_registry_cli::raster::Emit,
+    emit: qx_cli::raster::Emit,
     verify: bool,
 ) -> ExitCode {
     let resp = dispatch(
         ctx,
         Request::Print {
             collection: "parts".into(),
-            selection: part_registry_app::Selection::Ids(ids),
+            selection: qx_app::Selection::Ids(ids),
             options,
         },
     );
@@ -932,17 +925,14 @@ fn protocol_print(
                 // the id. Independent of --emit (always uses a PNG for
                 // the decoder).
                 if verify {
-                    let png = match part_registry_cli::raster::render(
-                        svg,
-                        part_registry_cli::raster::Emit::Png,
-                    ) {
+                    let png = match qx_cli::raster::render(svg, qx_cli::raster::Emit::Png) {
                         Ok(b) => b,
                         Err(msg) => {
                             eprintln!("verify {id}: rasterise failed: {msg}");
                             return ExitCode::FAILURE;
                         }
                     };
-                    match part_registry_codec::decode_qr(&png) {
+                    match qx_codec::decode_qr(&png) {
                         Ok(decoded) if decoded == id => {}
                         Ok(decoded) => {
                             eprintln!(
@@ -959,7 +949,7 @@ fn protocol_print(
                 // The engine always renders SVG; --emit rasterises it
                 // in-core (ADR-031 §8) for png/jpeg/pdf, pass-through
                 // for svg.
-                let bytes = match part_registry_cli::raster::render(svg, emit) {
+                let bytes = match qx_cli::raster::render(svg, emit) {
                     Ok(b) => b,
                     Err(msg) => {
                         eprintln!("emit {id}.{ext}: {msg}");
@@ -990,7 +980,7 @@ fn protocol_print(
 }
 
 // -------------------------------------------------------------------
-// pr check — the ADR-016 gate (ADR-034: classify + advise; the host
+// qx check — the ADR-016 gate (ADR-034: classify + advise; the host
 // enforces)
 // -------------------------------------------------------------------
 
@@ -1034,7 +1024,7 @@ fn check(path: &Path, base: Option<&str>) -> ExitCode {
     }
 
     // --- Contract-driven path (ADR-039) — runs when a contract is present.
-    let contract_records = if path.join(".part-registry/contract.json").exists() {
+    let contract_records = if path.join(".qx/contract.json").exists() {
         ran_something = true;
         check_contract(path, base, &mut failures, &mut notices)
     } else {
@@ -1043,8 +1033,8 @@ fn check(path: &Path, base: Option<&str>) -> ExitCode {
 
     if !ran_something {
         eprintln!(
-            "pr check: nothing to check — neither registry.csv nor \
-             .part-registry/contract.json found in {}",
+            "qx check: nothing to check — neither registry.csv nor \
+             .qx/contract.json found in {}",
             path.display()
         );
         return ExitCode::FAILURE;
@@ -1055,7 +1045,7 @@ fn check(path: &Path, base: Option<&str>) -> ExitCode {
     }
     if failures.is_empty() {
         println!(
-            "pr check: OK ({csv_rows} csv row(s), {contract_records} contract record(s){})",
+            "qx check: OK ({csv_rows} csv row(s), {contract_records} contract record(s){})",
             if base.is_some() {
                 ", diff classified"
             } else {
@@ -1067,7 +1057,7 @@ fn check(path: &Path, base: Option<&str>) -> ExitCode {
         for f in &failures {
             eprintln!("FAIL: {f}");
         }
-        eprintln!("pr check: {} failure(s)", failures.len());
+        eprintln!("qx check: {} failure(s)", failures.len());
         ExitCode::FAILURE
     }
 }
@@ -1086,7 +1076,7 @@ fn check_contract(
     notices: &mut Vec<String>,
 ) -> usize {
     // 1. Load + parse + structurally validate the HEAD contract.
-    let contract_path = path.join(".part-registry/contract.json");
+    let contract_path = path.join(".qx/contract.json");
     let bytes = match std::fs::read(&contract_path) {
         Ok(b) => b,
         Err(e) => {
@@ -1235,18 +1225,17 @@ fn jsonl_lines_by_id(text: &str) -> BTreeMap<String, String> {
 }
 
 // -------------------------------------------------------------------
-// pr init — scaffold a deployable "company HQ" data repo (ADR-039)
+// qx init — scaffold a deployable company data repo (ADR-039)
 // -------------------------------------------------------------------
 
 /// The code-owned canonical starter contract: parts + companies +
 /// contacts. A fresh deployment begins here and EXTENDS it (add
 /// collections/fields), never weakens the floor (ADR-035 guardrail #1).
-const COMPANY_HQ_CONTRACT: &str =
-    include_str!("../../../../schema/presets/company-hq.contract.json");
+const COMPANY_CONTRACT: &str = include_str!("../../../../schema/presets/company.contract.json");
 
 /// CI gate workflow dropped into a scaffolded repo: every PR is validated
 /// against the contract at its own diff (commit-resolved, ADR-039 §6).
-const CHECK_WORKFLOW: &str = r#"# Generated by `pr init` — the ADR-016/039 gate. Every PR is validated
+const CHECK_WORKFLOW: &str = r#"# Generated by `qx init` — the ADR-016/039 gate. Every PR is validated
 # against the contract effective at its commit; untouched records are not
 # re-litigated (commit-resolved effective-dating).
 name: check
@@ -1263,29 +1252,29 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Install the pr engine
+      - name: Install the qx engine
         # Swap for a pinned released binary in production (faster + the
         # SSoT hash you attest to — see ADR-038 release engineering).
-        run: cargo install --git https://github.com/MorePET/part-registry part-registry-cli --bin pr --locked
+        run: cargo install --git https://github.com/MorePET/part-registry qx-cli --bin qx --locked
       - name: Validate against the contract
-        run: pr check --path . --base "origin/${{ github.base_ref || 'main' }}"
+        run: qx check --path . --base "origin/${{ github.base_ref || 'main' }}"
 "#;
 
 fn init_repo(path: &Path, force: bool) -> ExitCode {
     // The contract is the SSOT — validate the embedded preset BEFORE
-    // writing it, so `pr init` can never lay down an invalid repo.
-    let contract = match Contract::from_bytes(COMPANY_HQ_CONTRACT.as_bytes()) {
+    // writing it, so `qx init` can never lay down an invalid repo.
+    let contract = match Contract::from_bytes(COMPANY_CONTRACT.as_bytes()) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("pr init: embedded preset is invalid (build bug): {e}");
+            eprintln!("qx init: embedded preset is invalid (build bug): {e}");
             return ExitCode::FAILURE;
         }
     };
 
-    let contract_path = path.join(".part-registry/contract.json");
+    let contract_path = path.join(".qx/contract.json");
     if contract_path.exists() && !force {
         eprintln!(
-            "pr init: {} already exists (use --force to overwrite)",
+            "qx init: {} already exists (use --force to overwrite)",
             contract_path.display()
         );
         return ExitCode::FAILURE;
@@ -1299,19 +1288,19 @@ fn init_repo(path: &Path, force: bool) -> ExitCode {
             let p = path.join($rel);
             if let Some(parent) = p.parent() {
                 if let Err(e) = std::fs::create_dir_all(parent) {
-                    eprintln!("pr init: mkdir {}: {e}", parent.display());
+                    eprintln!("qx init: mkdir {}: {e}", parent.display());
                     return ExitCode::FAILURE;
                 }
             }
             if let Err(e) = std::fs::write(&p, $content) {
-                eprintln!("pr init: write {}: {e}", p.display());
+                eprintln!("qx init: write {}: {e}", p.display());
                 return ExitCode::FAILURE;
             }
             wrote.push($rel.to_string());
         }};
     }
 
-    write_file!(".part-registry/contract.json", COMPANY_HQ_CONTRACT);
+    write_file!(".qx/contract.json", COMPANY_CONTRACT);
     // One empty append-only stream per collection the contract declares.
     for coll in &contract.collections {
         let rel = format!("collections/{}.jsonl", coll.name);
@@ -1321,7 +1310,7 @@ fn init_repo(path: &Path, force: bool) -> ExitCode {
     write_file!("README.md", &readme_for(&contract));
 
     println!(
-        "pr init: scaffolded a company-HQ repo in {}",
+        "qx init: scaffolded a company data repo in {}",
         path.display()
     );
     for f in &wrote {
@@ -1349,10 +1338,10 @@ fn readme_for(contract: &Contract) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     format!(
-        r#"# Company HQ — part-registry data repo
+        r#"# A qx data repo
 
-A git-native registry scaffolded by `pr init`. The **contract**
-(`.part-registry/contract.json`) is the source of truth for what this
+A git-native registry scaffolded by `qx init`. The **contract**
+(`.qx/contract.json`) is the source of truth for what this
 repo holds and how each record is validated; records live as append-only
 NDJSON under `collections/`.
 
@@ -1365,7 +1354,7 @@ NDJSON under `collections/`.
 - **Add / edit records** by committing lines to `collections/<name>.jsonl`
   (or through the app). Each record is a JSON object with an `id`, an
   optional lifecycle `status`, and the fields the contract declares.
-- **Every PR is gated**: `pr check --base origin/main` validates the
+- **Every PR is gated**: `qx check --base origin/main` validates the
   records you touched against the contract — types, required fields,
   enum/reference policy, foreign-key integrity, lifecycle transitions.
   Records you did not touch are not re-validated (commit-resolved
@@ -1378,7 +1367,7 @@ NDJSON under `collections/`.
 
 The contract is a **floor you extend, never weaken**. To add a domain
 (e.g. controlled documents / SOPs, suppliers, training records), add a
-collection to `.part-registry/contract.json` — no engine change. The same
+collection to `.qx/contract.json` — no engine change. The same
 gate then governs it. See the project's QMS preset family for the
 SOP/QA/QC vertical.
 "#
@@ -1425,7 +1414,7 @@ fn parse_csv_text(text: &str) -> Result<CsvTable, String> {
 fn rows_to_parts(
     rows: &[BTreeMap<String, String>],
     failures: &mut Vec<String>,
-) -> Vec<part_registry_domain::Part> {
+) -> Vec<qx_domain::Part> {
     let mut parts = Vec::with_capacity(rows.len());
     for (i, row) in rows.iter().enumerate() {
         let line = i + 2; // header is line 1
@@ -1457,7 +1446,7 @@ fn rows_to_parts(
                 time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
             })
             .unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
-        parts.push(part_registry_domain::Part {
+        parts.push(qx_domain::Part {
             id,
             status,
             minted_at,
@@ -1567,7 +1556,7 @@ fn check_transitions(diff: &Diff, failures: &mut Vec<String>) {
 fn advise_policy(diff: &Diff, failures: &mut Vec<String>, notices: &mut Vec<String>) {
     let ci_operator = Operator {
         id: OperatorId("ci:pr-check".into()),
-        display_name: "pr check (advisory)".into(),
+        display_name: "qx check (advisory)".into(),
         source: IdentitySource::OfflineClaim,
         verified_at: Some(time::OffsetDateTime::now_utc()),
         claims: BTreeMap::new(),
@@ -1585,19 +1574,19 @@ fn advise_policy(diff: &Diff, failures: &mut Vec<String>, notices: &mut Vec<Stri
             .join(", ")
     ));
     match decision {
-        part_registry_domain::AuthDecision::Allow => {
+        qx_domain::AuthDecision::Allow => {
             notices.push("policy: allow".into());
         }
-        part_registry_domain::AuthDecision::Warn { reason } => {
+        qx_domain::AuthDecision::Warn { reason } => {
             notices.push(format!("policy: warn — {reason}"));
         }
-        part_registry_domain::AuthDecision::RequiresElevation { approver_role } => {
+        qx_domain::AuthDecision::RequiresElevation { approver_role } => {
             notices.push(format!(
                 "policy: requires elevation — CODEOWNERS review by `{approver_role}` \
                  enforces this (ADR-034)"
             ));
         }
-        part_registry_domain::AuthDecision::Block { reason } => {
+        qx_domain::AuthDecision::Block { reason } => {
             failures.push(format!("policy: block — {reason}"));
         }
     }

@@ -1,4 +1,4 @@
-//! `part-registry-signing-git-commit` — MVP `SigningProvider` +
+//! `qx-signing-git-commit` — MVP `SigningProvider` +
 //! `VerificationProvider` adapter per ADR-024.
 //!
 //! ## The adapter does no cryptography
@@ -35,12 +35,8 @@
 
 #![forbid(unsafe_code)]
 
-use part_registry_domain::{
-    KeyId, SigAlgorithm, Signature, Timestamp, Verification, VerificationSource,
-};
-use part_registry_signing::{
-    SignError, SigningContext, SigningProvider, VerificationProvider, VerifyError,
-};
+use qx_domain::{KeyId, SigAlgorithm, Signature, Timestamp, Verification, VerificationSource};
+use qx_signing::{SignError, SigningContext, SigningProvider, VerificationProvider, VerifyError};
 
 // -------------------------------------------------------------------
 // Pending-signature pattern
@@ -235,7 +231,7 @@ impl VerificationProvider for GitCommitVerifier {
         &self,
         _payload: &[u8],
         sig: &Signature,
-        _op: &part_registry_domain::Operator,
+        _op: &qx_domain::Operator,
     ) -> Result<Verification, VerifyError> {
         let commit_sha = match sig {
             Signature::GitCommit { commit_sha, .. } => commit_sha,
@@ -298,7 +294,7 @@ enum GitCommitError {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
-    use part_registry_domain::{ActionKind, IdentitySource, Operator, OperatorId};
+    use qx_domain::{ActionKind, IdentitySource, Operator, OperatorId};
     use std::collections::BTreeMap;
     use std::process::Command;
 
@@ -470,7 +466,7 @@ mod tests {
         let sig = Signature::Sigstore {
             cert: vec![1, 2, 3],
             sig: vec![4, 5, 6],
-            rekor_proof: part_registry_domain::RekorProof {
+            rekor_proof: qx_domain::RekorProof {
                 uuid: "u".into(),
                 log_index: 1,
             },

@@ -1,4 +1,4 @@
-//! `part-registry-domain` — pure data types shared across the workspace.
+//! `qx-domain` — pure data types shared across the workspace.
 //!
 //! Per ADR-017 §"Workspace shape": this crate is the type keystone.
 //! No I/O, no side effects, no dependencies on other workspace crates.

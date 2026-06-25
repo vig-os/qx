@@ -1,4 +1,4 @@
-//! `part-registry-wasm` — `wasm-bindgen` façade over `codec`,
+//! `qx-wasm` — `wasm-bindgen` façade over `codec`,
 //! `validators`, and the policy engine per ADR-017 strangler-fig
 //! step 8. Consumed by `web/src/` after the inline TS encoder
 //! (`web/src/layouts/qrcode-generator.ts` + `svg.ts`) is retired in
@@ -11,7 +11,7 @@
 //!
 //! - [`render_label`] — render an SVG label for a canonical 14-char
 //!   ID. Mirrors `label.py` and delegates to
-//!   `part_registry_codec::render`. Layout is one of `"vert"`,
+//!   `qx_codec::render`. Layout is one of `"vert"`,
 //!   `"horz"`, or `"flag"`; format is one of `"4/4"`, `"4/4/4"`,
 //!   `"5/5/4"` (matches the Python CLI flag values verbatim).
 //! - decoding is intentionally absent from this façade. The FE
@@ -64,12 +64,12 @@ pub mod dispatch;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-use part_registry_codec::{
+use qx_codec::{
     check_format_warning as codec_check_format_warning, recommend_format as codec_recommend_format,
     render as codec_render, Layout, TextFormat,
 };
-use part_registry_domain::{Diff, Operator, Part, PrintEvent, RequestId};
-use part_registry_validators::{
+use qx_domain::{Diff, Operator, Part, PrintEvent, RequestId};
+use qx_validators::{
     classify as validators_classify, policy_decision as validators_policy_decision,
     print_log_sort_key, registry_sort_key, validate_print_log_fk, validate_print_log_header,
     validate_print_log_schema, validate_registry_header, validate_registry_schema,
@@ -397,7 +397,7 @@ pub fn policy_decision(input_json: &str) -> Result<JsValue, JsError> {
 #[cfg(test)]
 mod tests {
     //! Native-side smoke tests. The wasm32 build is gated by `cargo
-    //! build --target wasm32-unknown-unknown -p part-registry-wasm`
+    //! build --target wasm32-unknown-unknown -p qx-wasm`
     //! in CI; these tests only exercise the parser + JSON shape on
     //! native so `cargo test --workspace` covers the surface without
     //! a wasm runtime.

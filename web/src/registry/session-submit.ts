@@ -106,7 +106,7 @@ export function buildSessionCommitMessage(session: Session): {
     .join(", ");
 
   const prBody =
-    `Proposed by the part-registry web UI.\n\n` +
+    `Proposed by the qx web UI.\n\n` +
     `**Changes:** ${parts.join(", ")}\n` +
     `**IDs:** ${ids}${session.items.length > 10 ? ` (+${session.items.length - 10} more)` : ""}\n\n` +
     `_Automated PR — CI will validate._`;

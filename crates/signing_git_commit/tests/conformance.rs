@@ -5,12 +5,10 @@
 
 use std::collections::BTreeMap;
 
-use part_registry_domain::{
-    ActionKind, IdentitySource, KeyId, Operator, OperatorId, SigAlgorithm, Signature,
-};
-use part_registry_port_tests::signing_provider_conformance;
-use part_registry_signing::{SigningContext, SigningProvider};
-use part_registry_signing_git_commit::GitCommitSigner;
+use qx_domain::{ActionKind, IdentitySource, KeyId, Operator, OperatorId, SigAlgorithm, Signature};
+use qx_port_tests::signing_provider_conformance;
+use qx_signing::{SigningContext, SigningProvider};
+use qx_signing_git_commit::GitCommitSigner;
 
 fn sample_operator() -> Operator {
     Operator {

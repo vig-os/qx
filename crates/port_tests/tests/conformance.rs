@@ -13,8 +13,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use part_registry_contract::Contract;
-use part_registry_validators::record::{validate_record, RecordContext, Severity};
+use qx_contract::Contract;
+use qx_validators::record::{validate_record, RecordContext, Severity};
 use serde_json::Value;
 
 fn conformance_dir() -> String {

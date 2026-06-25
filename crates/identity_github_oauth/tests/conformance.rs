@@ -7,12 +7,12 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
-use part_registry_domain::IdentitySource;
-use part_registry_identity::IdentityProvider;
-use part_registry_identity_github_oauth::{
+use qx_domain::IdentitySource;
+use qx_identity::IdentityProvider;
+use qx_identity_github_oauth::{
     CachedToken, GithubHttp, GithubOauthIdentity, GithubUserResponse, HttpError, MemoryTokenStore,
 };
-use part_registry_port_tests::identity_provider_conformance;
+use qx_port_tests::identity_provider_conformance;
 
 #[derive(Default)]
 struct FakeHttp {
@@ -27,15 +27,13 @@ impl GithubHttp for FakeHttp {
             .take()
             .unwrap_or_else(|| Err(HttpError::Transport("unset".into())))
     }
-    fn post_device_code(
-        &self,
-    ) -> Result<part_registry_identity_github_oauth::DeviceCodeResponse, HttpError> {
+    fn post_device_code(&self) -> Result<qx_identity_github_oauth::DeviceCodeResponse, HttpError> {
         Err(HttpError::Transport("not used in conformance".into()))
     }
     fn poll_access_token(
         &self,
         _d: &str,
-    ) -> Result<part_registry_identity_github_oauth::AccessTokenResponse, HttpError> {
+    ) -> Result<qx_identity_github_oauth::AccessTokenResponse, HttpError> {
         Err(HttpError::Transport("not used in conformance".into()))
     }
 }
@@ -90,7 +88,7 @@ fn github_oauth_identity_roundtrip_basic() {
     let caps = id.capabilities(&op);
     assert_eq!(
         caps,
-        part_registry_identity::Capabilities::default(),
+        qx_identity::Capabilities::default(),
         "MVP returns Capabilities::default()"
     );
     // Silence unused warning for the BTreeMap import.

@@ -9,7 +9,7 @@
 - Related: ADR-013 (data repo), ADR-016 (semantic-diff classifier),
   ADR-019 (proposal sink / PR flow), ADR-020 (identity + authz port;
   hardcoded MVP table), ADR-030 (shells, op×spoke parity §8), ADR-033
-  (registry anatomy — `.part-registry/` home)
+  (registry anatomy — `.qx/` home)
 - Feeds: `decisions/explorations/operations-catalog.md`
 
 ## Context
@@ -62,7 +62,7 @@ there is no per-host policy logic to reimplement.
 
 ### 3. The manifest declares policy + features (not an authz engine)
 
-`.part-registry/manifest.toml` (ADR-033 anatomy) declares, per registry:
+`.qx/manifest.toml` (ADR-033 anatomy) declares, per registry:
 
 - **Identity / metadata** — registry id, name, description, owner.
 - **Enabled operations at the `(op-family × collection)` grain**
@@ -94,7 +94,7 @@ Roles resolve from both, per the user decision:
 
 - **IdP claims** (ADR-020 `Operator.claims`) where the IdP provides them
   (e.g. GitHub team membership, OIDC groups).
-- **`.part-registry/roles.toml`** — a self-describing, versioned,
+- **`.qx/roles.toml`** — a self-describing, versioned,
   PR-reviewed map (`operator-id` / team → roles) that is IdP-agnostic and
   auditable.
 
@@ -150,7 +150,7 @@ host that enforces.
   catalog; a registry's manifest may legitimately disable a subset
   (parity = "every shell offers every *enabled* op", not "every op
   always").
-- **`manifest.toml` + `roles.toml`** live in `.part-registry/` (ADR-033).
+- **`manifest.toml` + `roles.toml`** live in `.qx/` (ADR-033).
 
 ## Corrections
 
@@ -207,6 +207,6 @@ host that enforces.
 - ADR-019 — Proposal sink / PR flow
 - ADR-020 — Identity & authorization port (default table → default manifest)
 - ADR-030 — Shells + op×spoke parity (§8)
-- ADR-033 — Registry anatomy (`.part-registry/` home)
+- ADR-033 — Registry anatomy (`.qx/` home)
 - GitHub CODEOWNERS — <https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners>
 - GitHub branch protection — <https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches>

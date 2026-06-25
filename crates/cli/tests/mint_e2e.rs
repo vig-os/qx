@@ -11,9 +11,9 @@
 
 mod common;
 
-use part_registry_cli::{run_mint, MintArgs};
-use part_registry_domain::{ActionKind, PartFilter, PART_ID_ALPHABET, PART_ID_LEN};
-use part_registry_storage::AuditFilter;
+use qx_cli::{run_mint, MintArgs};
+use qx_domain::{ActionKind, PartFilter, PART_ID_ALPHABET, PART_ID_LEN};
+use qx_storage::AuditFilter;
 
 #[test]
 fn mint_three_ids_produces_diff_and_audit_entries() {
@@ -99,7 +99,7 @@ fn mint_summary_text_matches_python_shape() {
         local: false,
     };
     let outcome = run_mint(&args, &wiring).unwrap();
-    let s = part_registry_cli::render_mint_summary(&outcome, &wiring.repo_root);
+    let s = qx_cli::render_mint_summary(&outcome, &wiring.repo_root);
     assert!(s.starts_with("minted 2 ids in batch B-fixture\n"));
     assert!(s.contains("  registry: "));
     assert!(s.contains("render labels:  label --batch B-fixture --layout horz"));
@@ -128,7 +128,7 @@ fn audit_entry_roundtrips_through_storage_with_empty_signatures() {
     assert!(e.chain_hash.is_none());
     // The minted_id is the audit target.
     match &e.target {
-        part_registry_domain::TargetRef::Part { id } => {
+        qx_domain::TargetRef::Part { id } => {
             assert_eq!(id, &outcome.minted[0]);
         }
         other => panic!("expected Part target, got {other:?}"),

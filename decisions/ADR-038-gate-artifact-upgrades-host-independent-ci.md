@@ -43,7 +43,7 @@ host-locked — "GH gone" must not break the *audit*.
 
 ### 1. The gate is vendored in the data repo (availability ≠ trust)
 
-`.part-registry/gate/` carries: the **static (musl) `pr` binary**
+`.qx/gate/` carries: the **static (musl) `pr` binary**
 (zstd), its `sha256`, the **attestation bundle**, the **source
 tarball**, and the **Nix recipe** (flakeref + `flake.lock` snapshot +
 narHash). Plain blobs — never LFS. Trust is unchanged from ADR-034 §2:
@@ -57,7 +57,7 @@ pin → signed release → tool-repo attestation. Manifest knob:
 holds only the current gate; upgrades replace it; git history retains
 predecessors (rotation would mean rewriting history — forbidden by the
 ADR-037 model). Historical re-validation is
-`git show <upgrade-commit>:.part-registry/gate/…` from the repo alone.
+`git show <upgrade-commit>:.qx/gate/…` from the repo alone.
 Identity/authenticity/availability split: hash in the stream (ADR-037
 gate event) = identity; attestation = authenticity; blob in history =
 availability. For the 2040 horizon the **exported build closure** (full
@@ -109,7 +109,7 @@ Two levels replace a single `[min,max]` cliff (refines ADR-033):
   (orchestrator). One derivation tree → binary, image, closure, recipe
   cannot drift apart.
 - **Release pipeline publishes the runner image to ghcr**
-  (`ghcr.io/<org>/part-registry-runner:<tag>` + digest), alongside the
+  (`ghcr.io/<org>/qx-runner:<tag>` + digest), alongside the
   existing binary + sha256 + (future) attestations — ADR-025's artifact
   set grows by the image and the recipe.
 - **Data-repo workflows are logic-free shims**: fetch-or-use-vendored
@@ -172,7 +172,7 @@ only honesty about where enforcement actually lives. Measured sizes
 - Tool repo: flake gains `packages.gate` (musl) / `packages.
   runner-image` / `checks.*`; release.yml gains the ghcr push job and
   the recipe/closure artifacts; `install.sh` becomes a release asset.
-- Data repos: anatomy gains `.part-registry/gate/` (ADR-033 note);
+- Data repos: anatomy gains `.qx/gate/` (ADR-033 note);
   workflows gain `anchor.yml`/`bundle.yml`; check workflow prefers the
   vendored gate once seeded (`fetched` remains for casual registries).
 - `pr upgrade` joins the CLI surface; a release-watcher bot is optional

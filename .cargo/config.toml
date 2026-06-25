@@ -7,4 +7,4 @@ target-dir = "target"
 
 # Place wasm-specific build aliases here once a `wasm-pack`-based flow
 # is wired in (strangler-fig step 8). Today the wasm crate builds via
-# `cargo build --target wasm32-unknown-unknown -p part-registry-wasm`.
+# `cargo build --target wasm32-unknown-unknown -p qx-wasm`.

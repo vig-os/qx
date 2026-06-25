@@ -21,7 +21,7 @@
 
 use std::path::PathBuf;
 
-use part_registry_codec::{render, Layout, TextFormat};
+use qx_codec::{render, Layout, TextFormat};
 
 const FIXED_ID: &str = "K7M3PQ9RT5VAXY";
 
@@ -145,7 +145,7 @@ fn rust_label_qr_round_trips_through_decoder() {
     // property; the QR mask bit-diff with segno is irrelevant to
     // scanability.
     use image::{DynamicImage, ImageBuffer, Luma};
-    use part_registry_codec::{decode_qr, encode};
+    use qx_codec::{decode_qr, encode};
     let matrix = encode(FIXED_ID, false).unwrap();
     let qz = matrix.quiet_zone();
     let total = matrix.total_modules();

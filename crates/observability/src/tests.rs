@@ -15,11 +15,11 @@
 
 use std::sync::{Arc, Mutex};
 
-use part_registry_domain::{
+use qx_domain::{
     Action, AuditEntry, Hash, IdentitySource, KeyId, Operator, OperatorId, PartId, RekorProof,
     RequestId, Signature, TargetRef,
 };
-use part_registry_storage::{
+use qx_storage::{
     AuditFilter, Part, PartFilter, PrintEvent, PrintEventFilter, RepoError, Repository,
 };
 use serde_json::Value as Json;
@@ -338,10 +338,7 @@ fn discrete_form_event_reconstructs_audit_entry() {
     let captured = audit.lock().unwrap().clone();
     assert_eq!(captured.len(), 1);
     assert_eq!(captured[0].request_id, rid);
-    assert_eq!(
-        captured[0].action.kind(),
-        part_registry_domain::ActionKind::RowBind
-    );
+    assert_eq!(captured[0].action.kind(), qx_domain::ActionKind::RowBind);
     match &captured[0].target {
         TargetRef::Part { id } => assert_eq!(id.as_str(), "ABCDEFGHJKMNPQ"),
         other => panic!("expected Part target, got {other:?}"),
@@ -532,10 +529,7 @@ fn mint_audit_entry_constructs_row_add() {
         sample_part_id(),
         Json::Object(Default::default()),
     );
-    assert_eq!(
-        entry.action.kind(),
-        part_registry_domain::ActionKind::RowAdd
-    );
+    assert_eq!(entry.action.kind(), qx_domain::ActionKind::RowAdd);
     assert!(matches!(entry.target, TargetRef::Part { .. }));
 }
 
@@ -550,10 +544,7 @@ fn bind_audit_entry_constructs_row_bind() {
         fields.clone(),
         Json::Object(Default::default()),
     );
-    assert_eq!(
-        entry.action.kind(),
-        part_registry_domain::ActionKind::RowBind
-    );
+    assert_eq!(entry.action.kind(), qx_domain::ActionKind::RowBind);
     match entry.action {
         Action::RowBind { fields: f, .. } => assert_eq!(f, fields),
         other => panic!("expected RowBind, got {other:?}"),
@@ -574,10 +565,7 @@ fn edit_audit_entry_constructs_row_edit() {
         after.clone(),
         Json::Object(Default::default()),
     );
-    assert_eq!(
-        entry.action.kind(),
-        part_registry_domain::ActionKind::RowEdit
-    );
+    assert_eq!(entry.action.kind(), qx_domain::ActionKind::RowEdit);
 }
 
 #[test]

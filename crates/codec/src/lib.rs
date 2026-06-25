@@ -1,4 +1,4 @@
-//! `part-registry-codec` — QR encoder, decoder, and SVG label rendering.
+//! `qx-codec` — QR encoder, decoder, and SVG label rendering.
 //!
 //! Strangler-fig step 1 per ADR-017 §"Strangler-fig migration sequence".
 //! Wraps the `qrcode` 0.14 crate (placeholder for the eventual

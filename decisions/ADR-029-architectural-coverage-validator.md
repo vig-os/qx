@@ -104,11 +104,11 @@ satisfied*.
 | **Per-crate ad-hoc tests** — each crate writes its own coverage check against its own obligations | Distributes ownership | Fragments the audit surface across N crates; an auditor must visit every crate to assemble the picture; no single artefact answers "is anything forgotten"; obligations duplicated and drift between crates | Rejected — defeats the audit-artefact purpose |
 | **Compose existing tools only** — `cargo-deny` (license + version pinning), `cargo-vet` (audit trail), `cargo-machete` (unused deps), wrapper script glues them | Less custom code; benefits from upstream maintenance | Each upstream tool is partial: none know about ADR cross-refs, none know about conformance-function call obligations, none know about ADR-023 trigger watchers, none read `decisions/*.md` frontmatter; still needs custom logic for ~60% of the matrix | Rejected as the *whole* solution; adopted as *feeders* into the matrix (see Decision) |
 | **Standalone Python script outside the workspace** | Quick to iterate; doesn't pollute `Cargo.toml` | Separate runtime (Python + venv) on every contributor's machine, conflicting with the Rust-only toolchain commitment in ADR-017; cannot use `cargo metadata` natively without re-parsing TOML; drift between script and workspace as crates are added | Rejected — runtime dependency conflict with ADR-017 |
-| **Rust binary `part-registry-coverage` inside `crates/port_tests/`** reading a declarative `coverage.toml` at the repo root plus workspace state from `cargo metadata` plus `decisions/*.md` plus (when present) the SOUP inventory file | Uses `cargo metadata` as the workspace SSOT; co-located with ADR-027 conformance framework (one crate, one audit pointer); deterministic; single artefact (`target/coverage-matrix.{json,md}`); composable with `cargo-deny` and `cargo-vet` as feeders | One more binary in `port_tests`; needs `toml`, `pulldown-cmark`, `cargo_metadata`, `serde_json` as deps; obligations file must be kept current | **Chosen** — only option that produces a single auditor-readable artefact while using `cargo metadata` as the workspace truth |
+| **Rust binary `qx-coverage` inside `crates/port_tests/`** reading a declarative `coverage.toml` at the repo root plus workspace state from `cargo metadata` plus `decisions/*.md` plus (when present) the SOUP inventory file | Uses `cargo metadata` as the workspace SSOT; co-located with ADR-027 conformance framework (one crate, one audit pointer); deterministic; single artefact (`target/coverage-matrix.{json,md}`); composable with `cargo-deny` and `cargo-vet` as feeders | One more binary in `port_tests`; needs `toml`, `pulldown-cmark`, `cargo_metadata`, `serde_json` as deps; obligations file must be kept current | **Chosen** — only option that produces a single auditor-readable artefact while using `cargo metadata` as the workspace truth |
 
 ## Decision
 
-A new binary `part-registry-coverage` is added to
+A new binary `qx-coverage` is added to
 `crates/port_tests/` (alongside the existing library target that
 hosts the Tier 1–4 conformance suites per ADR-027). The binary reads:
 
@@ -212,7 +212,7 @@ obligations apply to which element.
 The full TOML schema (field names, optional vs required keys,
 example rows for all six dimensions) is captured in the design
 analysis at
-`/private/tmp/claude-501/-Users-larsgerchow-Projects-eXoma-part-registry/86cb9a40-4ebd-4eb3-bcad-341510bcd9c9/tasks/ae92ea58592b1a940.output`
+`/private/tmp/claude-501/-Users-larsgerchow-Projects-eXoma-qx/86cb9a40-4ebd-4eb3-bcad-341510bcd9c9/tasks/ae92ea58592b1a940.output`
 §2 ("The obligations specification") and will be reproduced in the
 implementation issue. The ADR carries the high-level shape only:
 
@@ -269,7 +269,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo run -p part-registry-port-tests --bin part-registry-coverage
+      - run: cargo run -p qx-port-tests --bin qx-coverage
       - uses: marocchino/sticky-pull-request-comment@v2
         with:
           path: target/coverage-matrix.md
@@ -373,7 +373,7 @@ on contributors and on the project itself:
   SOUP gaps. When ADR-028 lands, the dimension activates and the
   validator begins enforcing it as `ERROR` in CI.
 - **Adapter-conformance discipline.** Adapter PRs must wire
-  `tests/conformance.rs` calling `part_registry_port_tests::*` for
+  `tests/conformance.rs` calling `qx_port_tests::*` for
   their port. This was already an ADR-027 §Tier 4 obligation
   enforced by a drift test; this ADR enforces it symmetrically from
   the `coverage.toml` side so a deleted drift test cannot silently
@@ -448,7 +448,7 @@ This ADR does **not** commit the project to:
   code 3, mirroring this ADR), and coverage teeth (every in-force ADR has
   ≥1 row, so a new ADR can't land without declaring its obligations). It
   emits feeder-JSON (`{dimension, obligation, satisfied, citation,
-  exempt_until}`) — the contract the future `part-registry-coverage`
+  exempt_until}`) — the contract the future `qx-coverage`
   joiner consumes. **Extraction trigger (per ADR-030 §8):** when a second
   consumer needs it (another repo, or guardrails benching its own gate
   set), the joiner + feeder-JSON schema promote into the shared guardrails
@@ -472,7 +472,7 @@ This ADR does **not** commit the project to:
   the entire cross-cutting test discipline. Soft threshold: ~1500
   LoC of validator source, or when the validator's dependency
   closure begins to materially slow `cargo test -p
-  part-registry-port-tests`. Re-opens at that threshold.
+  qx-port-tests`. Re-opens at that threshold.
 - **When does the obligations file migrate from TOML to a
   JSON-Schema'd format?** TOML is human-editable and matches the
   rest of the Rust toolchain. If a generative consumer (e.g. a
@@ -508,7 +508,7 @@ This ADR does **not** commit the project to:
 - [ADR-027 — Port conformance + forward-compatibility tests](ADR-027-port-conformance-tests.md) — per-source-line drift discipline; this ADR extends to per-architectural-element
 - [ADR-028 — SOUP validation per IEC 62304 §5.3](ADR-028-soup-validation.md) — SOUP inventory schema; this ADR enforces inventory completeness. Both ADRs depend on each other but neither blocks the other: ADR-029 degrades to WARN on the SOUP dimension when the inventory file is absent.
 - [`METHODOLOGY.md`](METHODOLOGY.md) — audit principles, Correction protocol
-- Design analysis report: `/private/tmp/claude-501/-Users-larsgerchow-Projects-eXoma-part-registry/86cb9a40-4ebd-4eb3-bcad-341510bcd9c9/tasks/ae92ea58592b1a940.output` — full `coverage.toml` schema, tool architecture, rollout sequence
+- Design analysis report: `/private/tmp/claude-501/-Users-larsgerchow-Projects-eXoma-qx/86cb9a40-4ebd-4eb3-bcad-341510bcd9c9/tasks/ae92ea58592b1a940.output` — full `coverage.toml` schema, tool architecture, rollout sequence
 - `prek` — <https://prek.dev> (Rust-native pre-commit reimplementation)
 - `pre-commit` — <https://pre-commit.com> (canonical Python implementation, fallback)
 - `cargo-metadata` — <https://crates.io/crates/cargo_metadata>

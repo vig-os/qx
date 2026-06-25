@@ -24,8 +24,8 @@ test.beforeEach(async ({ page }) => {
     });
   });
   await page.addInitScript(() => {
-    window.localStorage.removeItem("part-registry.print-plan");
-    window.localStorage.removeItem("part-registry.print-output-mode");
+    window.localStorage.removeItem("qx.print-plan");
+    window.localStorage.removeItem("qx.print-output-mode");
   });
 });
 

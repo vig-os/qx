@@ -21,7 +21,7 @@ export { generateId, generateIds } from "../registry/mint-id";
 
 // ---- Print plan integration ----
 
-const PRINT_PLAN_KEY = "part-registry.print-plan";
+const PRINT_PLAN_KEY = "qx.print-plan";
 
 interface PrintPlanItem {
   id: string;

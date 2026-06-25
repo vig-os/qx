@@ -27,7 +27,7 @@ font_v1 = json.loads(Path("design/glyph-font.v1.json").read_text())
 font_v2 = json.loads(Path("design/glyph-font.v2.json").read_text())
 
 html = """<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>part-registry font editor</title>
+<html><head><meta charset="utf-8"><title>qx font editor</title>
 <style>
 body{font-family:monospace;margin:14px;background:#fafafa}
 #glyphs button{margin:1px;width:26px;height:26px;font-weight:bold;cursor:pointer}
