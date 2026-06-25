@@ -10,13 +10,11 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use part_registry_domain::{
+use qx_domain::{
     Action, AuditEntry, Hash, Operator, OperatorId, OperatorRef, Part, PartId, PartSortKey,
     PartStatus, RequestId, Signature, TargetRef, Timestamp,
 };
-use part_registry_storage::{
-    AuditFilter, PartFilter, PrintEvent, PrintEventFilter, RepoError, Repository,
-};
+use qx_storage::{AuditFilter, PartFilter, PrintEvent, PrintEventFilter, RepoError, Repository};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use sha2::{Digest, Sha256};

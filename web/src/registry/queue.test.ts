@@ -204,7 +204,7 @@ describe("session migration", () => {
         notes: "",
       },
     ];
-    localStorage.setItem("part-registry.bind-queue", JSON.stringify(legacy));
+    localStorage.setItem("qx.bind-queue", JSON.stringify(legacy));
 
     const migrated = await session.migrateOldQueue();
     expect(migrated).toBe(1);
@@ -215,6 +215,6 @@ describe("session migration", () => {
     expect(q[0].id).toBe("ABCDEFGHJKMNPQ");
 
     // Old key should be cleared
-    expect(localStorage.getItem("part-registry.bind-queue")).toBeNull();
+    expect(localStorage.getItem("qx.bind-queue")).toBeNull();
   });
 });

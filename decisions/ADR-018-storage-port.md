@@ -237,7 +237,7 @@ arm; no caller needs to change.
 ### Repo split (per ADR-019)
 
 Storage adapters operate against the **data repo** (the cloned working
-tree of `part-registry-data` or wherever ADR-019 lands the data
+tree of `qx-data` or wherever ADR-019 lands the data
 repository). The **code repo** is not "storage" in this sense; the
 code repo holds Rust crates, the data repo holds CSVs. The CSV+git
 adapter takes a path to the data-repo working tree as its

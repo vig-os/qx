@@ -1,4 +1,4 @@
-//! `part-registry-storage-jsonl-git` — `Repository` adapter over JSONL
+//! `qx-storage-jsonl-git` — `Repository` adapter over JSONL
 //! files per ADR-035 §4 (JSONL primary; one entity per line; CSV
 //! demotes to the export path).
 //!
@@ -61,12 +61,12 @@
 //! target but the full implementation is gated behind
 //! `#[cfg(not(target_arch = "wasm32"))]`. The wasm32 build offers a
 //! stub `JsonlGitRepository` whose methods return
-//! [`part_registry_storage::RepoError::Backend`] with an "unsupported
+//! [`qx_storage::RepoError::Backend`] with an "unsupported
 //! target" message — same pattern as `storage_csv_git`.
 //!
-//! [`Part`]: part_registry_domain::Part
-//! [`AuditEntry`]: part_registry_domain::AuditEntry
-//! [`Repository::snapshot_hash`]: part_registry_storage::Repository::snapshot_hash
+//! [`Part`]: qx_domain::Part
+//! [`AuditEntry`]: qx_domain::AuditEntry
+//! [`Repository::snapshot_hash`]: qx_storage::Repository::snapshot_hash
 
 #![forbid(unsafe_code)]
 
@@ -88,8 +88,8 @@ pub use imp::{JsonlGitConfig, JsonlGitRepository};
 mod wasm_stub {
     use std::path::PathBuf;
 
-    use part_registry_domain::{AuditEntry, Hash, PartId};
-    use part_registry_storage::{
+    use qx_domain::{AuditEntry, Hash, PartId};
+    use qx_storage::{
         AuditFilter, Part, PartFilter, PrintEvent, PrintEventFilter, RepoError, Repository,
     };
 

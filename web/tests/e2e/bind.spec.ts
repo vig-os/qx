@@ -26,7 +26,7 @@ test.beforeEach(async ({ page }) => {
   });
   // Clear the bind queue between tests.
   await page.addInitScript(() => {
-    window.localStorage.removeItem("part-registry.bind-queue");
+    window.localStorage.removeItem("qx.bind-queue");
   });
 });
 

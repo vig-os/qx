@@ -13,8 +13,8 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 
-use part_registry_codec::Padding;
-use part_registry_domain::ProposalRef;
+use qx_codec::Padding;
+use qx_domain::ProposalRef;
 
 // -------------------------------------------------------------------
 // Request

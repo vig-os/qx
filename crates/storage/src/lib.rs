@@ -1,4 +1,4 @@
-//! `part-registry-storage` — `Repository` trait per ADR-018.
+//! `qx-storage` — `Repository` trait per ADR-018.
 //!
 //! Read + audit-append only. State-changing mutations to `Part`
 //! records flow through `ProposalSink` (ADR-019); the trait deliberately
@@ -11,18 +11,18 @@
 //! Per foundation issue #28: `Part`, `PrintEvent`, `PartFilter`,
 //! `AuditFilter`, `PrintEventFilter` now live in `crates/domain/`.
 //! Re-exported here for adapter convenience so adapters import
-//! everything from `part_registry_storage::*` without a separate
-//! `part_registry_domain` import.
+//! everything from `qx_storage::*` without a separate
+//! `qx_domain` import.
 
 #![forbid(unsafe_code)]
 
 use thiserror::Error;
 
 // Re-export the storage-shaped domain types so adapters can do
-// `use part_registry_storage::{Repository, Part, AuditEntry, ...};`
-// without a separate `part_registry_domain` import. Per ADR-018 these
+// `use qx_storage::{Repository, Part, AuditEntry, ...};`
+// without a separate `qx_domain` import. Per ADR-018 these
 // types live in `crates/domain/`; the trait surface lives here.
-pub use part_registry_domain::{
+pub use qx_domain::{
     AuditEntry, AuditFilter, Hash, Part, PartFilter, PartId, PrintEvent, PrintEventFilter,
 };
 

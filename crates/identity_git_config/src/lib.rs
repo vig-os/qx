@@ -1,4 +1,4 @@
-//! `part-registry-identity-git-config` — first MVP `IdentityProvider`
+//! `qx-identity-git-config` — first MVP `IdentityProvider`
 //! adapter (CLI surface) per ADR-020.
 //!
 //! Reads operator identity from git config (`user.name`, `user.email`,
@@ -22,8 +22,8 @@
 
 use std::collections::BTreeMap;
 
-use part_registry_domain::{IdentitySource, KeyId, Operator, OperatorId};
-use part_registry_identity::{Capabilities, IdentityError, IdentityProvider};
+use qx_domain::{IdentitySource, KeyId, Operator, OperatorId};
+use qx_identity::{Capabilities, IdentityError, IdentityProvider};
 
 /// CLI identity adapter. Lazy — every `current()` / `refresh()` call
 /// re-reads git config so a mid-session `git config user.email ...`

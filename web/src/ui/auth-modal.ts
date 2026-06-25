@@ -25,7 +25,7 @@ export interface AuthModalResult {
 }
 
 /** Event emitted when auth state changes (connect/disconnect). */
-export const AUTH_STATE_CHANGED = "part-registry:auth-state-changed";
+export const AUTH_STATE_CHANGED = "qx:auth-state-changed";
 
 export function emitAuthStateChanged(): void {
   window.dispatchEvent(new CustomEvent(AUTH_STATE_CHANGED));

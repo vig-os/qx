@@ -69,7 +69,7 @@ cargo check --workspace --all-targets
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -Dwarnings
 cargo fmt --all
-cargo build --target wasm32-unknown-unknown -p part-registry-wasm
+cargo build --target wasm32-unknown-unknown -p qx-wasm
 ```
 
 The pinned toolchain is in `rust-toolchain.toml` (channel `1.85.0`,

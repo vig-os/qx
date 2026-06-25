@@ -1,4 +1,4 @@
-//! `part-registry-config` — 12-factor configuration loader per ADR-021.
+//! `qx-config` — 12-factor configuration loader per ADR-021.
 //!
 //! Single read site for every deploy-varying value. Domain crates
 //! never call `std::env::var`; ADR-027 §Tier 4 drift-detection
@@ -83,7 +83,7 @@ pub struct RepoConfig {
     /// env: `PART_REGISTRY__REPO__LOCAL_CLONE_PATH`
     ///
     /// When unset, [`Config::resolve_data_path`] derives the path as
-    /// `$XDG_DATA_HOME/part-registry/<owner>-<repo>/` (Linux) or the
+    /// `$XDG_DATA_HOME/qx/<owner>-<repo>/` (Linux) or the
     /// platform-equivalent under `dirs::data_dir()`. Operators only
     /// set this for hermetic test environments or shared-storage
     /// hosts where XDG resolution is wrong.
@@ -277,7 +277,7 @@ impl Config {
 
     /// Parse defaults plus an additional intermediate TOML override
     /// layer plus env per ADR-021. Used by tests and per-deploy
-    /// override files (e.g. `~/.config/part-registry/config.toml`).
+    /// override files (e.g. `~/.config/qx/config.toml`).
     ///
     /// Precedence: defaults < `toml` argument < env vars.
     pub fn from_env_with_overrides(toml: &str) -> Result<Self, ConfigError> {
@@ -348,7 +348,7 @@ impl Config {
     ///
     /// Priority:
     ///   1. `repo.local_clone_path` if the operator set it explicitly.
-    ///   2. `<data_dir>/part-registry/<owner>-<repo>/` where
+    ///   2. `<data_dir>/qx/<owner>-<repo>/` where
     ///      `<data_dir>` is `dirs::data_dir()` — `$XDG_DATA_HOME` on
     ///      Linux, `~/Library/Application Support` on macOS,
     ///      `%APPDATA%` on Windows.
@@ -362,7 +362,7 @@ impl Config {
         }
         let base = dirs::data_dir().ok_or(ConfigError::NoDataDir)?;
         let (owner, repo) = self.data_repo_owner_repo()?;
-        Ok(base.join("part-registry").join(format!("{owner}-{repo}")))
+        Ok(base.join("qx").join(format!("{owner}-{repo}")))
     }
 }
 
@@ -635,7 +635,7 @@ mod tests {
         // We don't pin the absolute prefix (host-dependent), only the
         // tail — the XDG layer is `dirs::data_dir()`'s job to test.
         assert!(
-            p.ends_with("part-registry/exo-pet-exopet-registry-sandbox"),
+            p.ends_with("qx/exo-pet-exopet-registry-sandbox"),
             "unexpected resolved path: {p:?}"
         );
     }

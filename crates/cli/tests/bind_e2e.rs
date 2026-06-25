@@ -11,9 +11,9 @@
 
 mod common;
 
-use part_registry_cli::{run_bind, BindArgs};
-use part_registry_domain::ActionKind;
-use part_registry_storage::AuditFilter;
+use qx_cli::{run_bind, BindArgs};
+use qx_domain::ActionKind;
+use qx_storage::AuditFilter;
 
 const ID_A: &str = "K7M3PQ9RT5VAXY";
 const ID_B: &str = "K7M3PQABCDEFGH"; // shares 8-char prefix K7M3PQAB? No: ID_A=K7M3PQ9R, ID_B=K7M3PQAB

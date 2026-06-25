@@ -1,4 +1,4 @@
-//! `part-registry-app` — the application layer per ADR-030/035.
+//! `qx-app` — the application layer per ADR-030/035.
 //!
 //! One serde command protocol ([`Request`] → [`Response`]) over a
 //! generic collection engine; every shell (CLI, TUI, serve, MCP,

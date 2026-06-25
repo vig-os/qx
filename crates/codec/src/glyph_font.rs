@@ -1,4 +1,4 @@
-//! nx75 — the part-registry anchor font, PARITY-DISPATCHED OPTICAL
+//! nx75 — the qx anchor font, PARITY-DISPATCHED OPTICAL
 //! MASTERS.
 //!
 //! A first-party 7x5 ANCHOR font for the nano14 id alphabet shipping

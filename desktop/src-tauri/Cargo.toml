@@ -2,9 +2,9 @@
 # the webview loads the webapp bundle and its transport invokes the
 # Rust app layer in-process — no HTTP hop.
 [package]
-name = "part-registry-desktop"
+name = "qx-desktop"
 version = "0.1.0"
-description = "Tauri v2 desktop shell over the part-registry app layer (ADR-030 §3)"
+description = "Tauri v2 desktop shell over the qx app layer (ADR-030 §3)"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -18,11 +18,11 @@ tauri = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 
-part-registry-app = { path = "../../crates/app" }
-# `part-registry-cli` provides the production adapter wiring
+qx-app = { path = "../../crates/app" }
+# `qx-cli` provides the production adapter wiring
 # (`Wiring::from_config`) + observability init, same as the `pr`
 # binary — the desktop shell never imports adapter crates directly
 # (ADR-030 architectural invariant).
-part-registry-cli = { path = "../../crates/cli" }
-part-registry-config = { path = "../../crates/config" }
-part-registry-observability = { path = "../../crates/observability" }
+qx-cli = { path = "../../crates/cli" }
+qx-config = { path = "../../crates/config" }
+qx-observability = { path = "../../crates/observability" }

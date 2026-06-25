@@ -10,9 +10,9 @@
 
 mod common;
 
-use part_registry_cli::{run_label, FormatArg, LabelArgs, LayoutArg, StatusArg};
-use part_registry_codec::TextFormat;
-use part_registry_storage::PrintEventFilter;
+use qx_cli::{run_label, FormatArg, LabelArgs, LayoutArg, StatusArg};
+use qx_codec::TextFormat;
+use qx_storage::PrintEventFilter;
 
 const FIXED_ID_A: &str = "K7M3PQ9RT5VAXY";
 const FIXED_ID_B: &str = "ABCDEFGHJKMNPQ";

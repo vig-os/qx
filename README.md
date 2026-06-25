@@ -1,4 +1,4 @@
-# part-registry
+# qx
 
 Per-instance physical identification for hardware parts: nano-id canonical
 IDs, QR labels, mint-then-bind workflow. Designed for permanence — labels
@@ -147,7 +147,7 @@ for the policy story.
 
 ```bash
 # Run the rule-set test suite
-cargo test -p part-registry-validators
+cargo test -p qx-validators
 ```
 
 Rules encoded:
@@ -182,7 +182,7 @@ open-source while operator data stays scoped to its registry:
 CLI binaries resolve the target data repo from
 `PART_REGISTRY__REPO__DATA_REPO_URL` (defaults to the sandbox so a
 vanilla `cargo run` never writes to the audit-of-record registry).
-The clone lives at `$XDG_DATA_HOME/part-registry/<owner>-<repo>/` —
+The clone lives at `$XDG_DATA_HOME/qx/<owner>-<repo>/` —
 see `crates/config/src/lib.rs:resolve_data_path`.
 
 ### Bootstrapping a new data repo

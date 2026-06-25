@@ -1,5 +1,5 @@
 [package]
-name = "part-registry-devtools"
+name = "qx-devtools"
 version = "0.1.0"
 description = "Repo gate tooling — obligations-check, the ADR-029 obligations bench (Rust port of the retired tools/obligations_check.py)"
 edition.workspace = true

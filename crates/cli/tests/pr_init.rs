@@ -1,6 +1,6 @@
-//! End-to-end tests for `pr init` (ADR-039) — scaffolding a deployable
-//! "company HQ" data repo. Drives the compiled `pr` binary and proves the
-//! scaffold passes its OWN `pr check` gate (the deployment is valid out of
+//! End-to-end tests for `qx init` (ADR-039) — scaffolding a deployable
+//! company data repo. Drives the compiled `pr` binary and proves the
+//! scaffold passes its OWN `qx check` gate (the deployment is valid out of
 //! the box and stays valid as real records are added).
 
 #![allow(clippy::expect_used)]
@@ -10,7 +10,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 fn pr(args: &[&str], dir: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_pr"))
+    Command::new(env!("CARGO_BIN_EXE_qx"))
         .args(args)
         .current_dir(dir)
         .output()
@@ -25,12 +25,12 @@ fn init_scaffolds_a_repo_that_passes_its_own_gate() {
     let out = pr(&["init", "--path", "."], dir);
     assert!(
         out.status.success(),
-        "pr init failed: {}",
+        "qx init failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
 
     // The scaffold exists.
-    assert!(dir.join(".part-registry/contract.json").exists());
+    assert!(dir.join(".qx/contract.json").exists());
     assert!(dir.join("collections/parts.jsonl").exists());
     assert!(dir.join("collections/companies.jsonl").exists());
     assert!(dir.join("collections/contacts.jsonl").exists());
@@ -41,7 +41,7 @@ fn init_scaffolds_a_repo_that_passes_its_own_gate() {
     let out = pr(&["check", "--path", "."], dir);
     assert!(
         out.status.success(),
-        "fresh scaffold should pass pr check: {}",
+        "fresh scaffold should pass qx check: {}",
         String::from_utf8_lossy(&out.stderr)
     );
 }

@@ -18,12 +18,12 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use part_registry_domain::{
+use qx_domain::{
     Action, ActionKind, AuditEntry, Hash, IdentitySource, KeyId, Operator, OperatorId, OperatorRef,
     Part, PartFilter, PartId, PartStatus, RekorProof, RequestId, Signature, TargetRef, Timestamp,
 };
-use part_registry_storage::{AuditFilter, PrintEvent, PrintEventFilter, Repository};
-use part_registry_storage_jsonl_git::{JsonlGitConfig, JsonlGitRepository};
+use qx_storage::{AuditFilter, PrintEvent, PrintEventFilter, Repository};
+use qx_storage_jsonl_git::{JsonlGitConfig, JsonlGitRepository};
 use serde_json::json;
 use tempfile::TempDir;
 use time::macros::datetime;
@@ -180,7 +180,7 @@ fn raw_lines(root: &Path, rel: &str) -> Vec<String> {
 #[test]
 fn jsonl_git_conforms_to_repository() {
     let (_tmp, repo) = fresh_repo();
-    part_registry_port_tests::repository_conformance(repo);
+    qx_port_tests::repository_conformance(repo);
 }
 
 // -------------------------------------------------------------------
@@ -556,7 +556,7 @@ fn snapshot_hash_treats_missing_file_as_empty() {
 #[test]
 fn open_rejects_missing_path() {
     let cfg = JsonlGitConfig {
-        repo_path: PathBuf::from("/does/not/exist/part-registry-test-xyz"),
+        repo_path: PathBuf::from("/does/not/exist/qx-test-xyz"),
         commit_on_write: false,
         signing_key_id: None,
     };
@@ -587,7 +587,7 @@ fn malformed_jsonl_line_is_schema_mismatch() {
     fs::write(&path, text).unwrap();
     let err = repo.list_parts(&PartFilter::default()).unwrap_err();
     assert!(
-        matches!(err, part_registry_storage::RepoError::SchemaMismatch(_)),
+        matches!(err, qx_storage::RepoError::SchemaMismatch(_)),
         "expected SchemaMismatch, got {err:?}"
     );
 }

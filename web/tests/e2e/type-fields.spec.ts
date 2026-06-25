@@ -25,7 +25,7 @@ test.beforeEach(async ({ page }) => {
   });
   await page.addInitScript(() => {
     window.localStorage.clear();
-    window.localStorage.removeItem("part-registry.bind-queue");
+    window.localStorage.removeItem("qx.bind-queue");
   });
 });
 
@@ -104,7 +104,7 @@ test.describe("typeFields bind form (#171)", () => {
 
     // Verify it persisted to the session store (IndexedDB-backed).
     const metaStr = await page.evaluate(async () => {
-      const open = indexedDB.open("part-registry");
+      const open = indexedDB.open("qx");
       return await new Promise<string>((resolve) => {
         open.onsuccess = () => {
           const db = open.result;

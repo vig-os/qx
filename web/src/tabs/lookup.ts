@@ -55,7 +55,7 @@ const DEFAULT_VISIBLE = new Set([
   "id", "status", "type", "vendor", "batch", "location",
 ]);
 
-const COLS_KEY = "part-registry.lookup.columns";
+const COLS_KEY = "qx.lookup.columns";
 
 function loadVisibleColumns(): Set<string> {
   try {

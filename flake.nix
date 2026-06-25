@@ -1,5 +1,5 @@
 {
-  description = "part-registry — Class B regulated traceability platform (per ADR-017)";
+  description = "qx — Class B regulated traceability platform (per ADR-017)";
 
   # Per #35 Phase 3: one `nix develop` brings up the full dev environment
   # — Rust toolchain pinned to `rust-toolchain.toml`, Node 22 + npm, uv
@@ -111,7 +111,7 @@
         # checked-in Cargo.lock so the derivation is hermetic; the vendor step
         # fetches the whole workspace lock once and is cached thereafter.
         devtools = rustPlatformPinned.buildRustPackage {
-          pname = "part-registry-devtools";
+          pname = "qx-devtools";
           version = "0.1.0";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
@@ -160,19 +160,19 @@
           # so crane can't infer a name. Pin it explicitly so the
           # derivation names read cleanly + the placeholder warning
           # stays out of CI logs.
-          pname = "part-registry-workspace";
+          pname = "qx-workspace";
           version = "0.0.0";
           strictDeps = true;
           # Workspace tests exercise feature-gated code (the cli `serve`
           # fixture we missed in a prior pass). Build vendored deps with
           # every feature on so the cargoArtifacts cache stays warm for
           # every downstream check.
-          # --exclude part-registry-desktop: the Tauri shell drags the
+          # --exclude qx-desktop: the Tauri shell drags the
           # gtk/webkit native closure into every Linux check (glib-sys
           # build scripts fail without it) for a ~100-line dispatch
           # wrapper. It is checked by its own lighter `desktop-check`
           # below instead of taxing the shared deps artifact.
-          cargoExtraArgs = "--workspace --exclude part-registry-desktop --all-features";
+          cargoExtraArgs = "--workspace --exclude qx-desktop --all-features";
           # Native deps a few transitive crates need to LINK during the
           # vendor build (openssl-sys via reqwest, pkg-config consumers).
           nativeBuildInputs = [ pkgs.pkg-config ];
@@ -193,10 +193,10 @@
         # web-e2e so they don't reach back through cargo at test time.
         wasmArtifact = craneLib.buildPackage (commonArgs // {
           inherit cargoArtifacts;
-          pname = "part-registry-wasm";
+          pname = "qx-wasm";
           version = "0.1.0";
           # crane injects --release itself; repeating it errors
-          cargoExtraArgs = "--target wasm32-unknown-unknown -p part-registry-wasm";
+          cargoExtraArgs = "--target wasm32-unknown-unknown -p qx-wasm";
           # The default `cargo install` step at the end of buildPackage
           # has nothing to install for a cdylib — skip it; the wasm
           # artifact lands in $cargoBuildLog's target/ dir which we
@@ -209,8 +209,8 @@
             mkdir -p $out
             wasm-bindgen --target web \
               --out-dir $out \
-              --out-name part_registry_wasm \
-              target/wasm32-unknown-unknown/release/part_registry_wasm.wasm
+              --out-name qx_wasm \
+              target/wasm32-unknown-unknown/release/qx_wasm.wasm
           '';
         });
 
@@ -222,10 +222,10 @@
         # guarantee enforced by construction, not by discipline.
         wasmCleanArtifact = craneLib.buildPackage (commonArgs // {
           inherit cargoArtifacts;
-          pname = "part-registry-wasm-clean";
+          pname = "qx-wasm-clean";
           version = "0.1.0";
           cargoExtraArgs =
-            "--target wasm32-unknown-unknown -p part-registry-contract -p part-registry-validators";
+            "--target wasm32-unknown-unknown -p qx-contract -p qx-validators";
           doNotPostBuildInstallCargoBinaries = true;
           doNotLinkInheritedArtifacts = true;
           doCheck = false;
@@ -249,7 +249,7 @@
         # Update by setting to "" once, then pasting the value the build
         # error reports back.
         webNodeModules = pkgs.buildNpmPackage {
-          pname = "part-registry-web-node-modules";
+          pname = "qx-web-node-modules";
           version = "0.0.1";
           src = webSrc;
           npmDepsHash = "sha256-45u6extUUqQJoLrcWWuS9qvMNNTKLX++Bh63HRfYBlY=";
@@ -266,7 +266,7 @@
         # Playwright env vars (`env`), and our cheatsheet (`hook`).
         devShells.default = guardrails.lib.${system}.mkDevShell {
           inherit pkgs;
-          name = "part-registry-dev";
+          name = "qx-dev";
 
           extra = with pkgs; [
             # Rust workspace
@@ -316,7 +316,7 @@
           # Appended after the guardrails banner so the project cheatsheet
           # is the last thing printed on shell entry.
           hook = ''
-            echo "part-registry dev shell"
+            echo "qx dev shell"
             echo "  rust:      $(rustc --version)"
             echo "  node:      $(node --version)"
             echo "  wasm-pack: $(wasm-pack --version)"
@@ -456,7 +456,7 @@
           '';
 
           # Wasm build — `cargo build --target wasm32-unknown-unknown
-          # -p part-registry-wasm`. Exists as a derivation in its own
+          # -p qx-wasm`. Exists as a derivation in its own
           # right so other checks (web-unit, pages.yml) can reuse the
           # bindgen output without re-building.
           wasm = wasmArtifact;
@@ -545,7 +545,7 @@
             inherit cargoArtifacts;
             pname = "pr";
             # crane injects --release itself; repeating it errors
-            cargoExtraArgs = "-p part-registry-cli --bin pr";
+            cargoExtraArgs = "-p qx-cli --bin qx";
             doCheck = false;
           });
         };

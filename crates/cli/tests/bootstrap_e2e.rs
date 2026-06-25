@@ -10,7 +10,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use part_registry_cli::{bootstrap_data_repo, bootstrap_data_repo_with_options, CliError};
+use qx_cli::{bootstrap_data_repo, bootstrap_data_repo_with_options, CliError};
 
 /// Spin up a "remote" bare repo seeded with one commit on `main`
 /// containing a single `registry.csv` (header only).

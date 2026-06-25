@@ -21,7 +21,7 @@
 //! - **ProposalSink**: returns a protocol `Backend` error directing to
 //!   the OAuth + PR wiring (ADR-019/020) — mutations *classify and
 //!   validate* in-browser but cannot yet open PRs from the serverless
-//!   deploy. `pr serve` (ADR-030 §2) is the write-capable host.
+//!   deploy. `qx serve` (ADR-030 §2) is the write-capable host.
 //!
 //! No panics on caller input: every failure maps into the protocol
 //! error envelope so the FE handles one shape.
@@ -34,14 +34,14 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use wasm_bindgen::prelude::*;
 
-use part_registry_app::{dispatch as app_dispatch, AppContext, ErrorKind, Request, Response};
-use part_registry_domain::{
+use qx_app::{dispatch as app_dispatch, AppContext, ErrorKind, Request, Response};
+use qx_domain::{
     AuditEntry, Hash, IdentitySource, Operator, OperatorId, Part, PartId, PartStatus, PrintEvent,
     Proposal, ProposalRef, ProposalStatus,
 };
-use part_registry_identity::{Capabilities, IdentityError, IdentityProvider};
-use part_registry_storage::{AuditFilter, PartFilter, PrintEventFilter, RepoError, Repository};
-use part_registry_transport::{ProposalError, ProposalSink};
+use qx_identity::{Capabilities, IdentityError, IdentityProvider};
+use qx_storage::{AuditFilter, PartFilter, PrintEventFilter, RepoError, Repository};
+use qx_transport::{ProposalError, ProposalSink};
 
 // -------------------------------------------------------------------
 // Browser ports
@@ -123,7 +123,7 @@ impl ProposalSink for BrowserSink {
     fn submit(&self, _proposal: Proposal) -> Result<ProposalRef, ProposalError> {
         Err(ProposalError::Backend(
             "browser submission lands with the OAuth + PR wiring (ADR-019/020); \
-             use `pr serve` or the CLI for writes today"
+             use `qx serve` or the CLI for writes today"
                 .to_owned()
                 .into(),
         ))

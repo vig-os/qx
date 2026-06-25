@@ -1,4 +1,4 @@
-//! `part-registry-storage-csv-git` — first `Repository` adapter per
+//! `qx-storage-csv-git` — first `Repository` adapter per
 //! ADR-018. CSV+git substrate as fixed by ADR-013 / ADR-015 / ADR-022.
 //!
 //! ## Layout
@@ -56,7 +56,7 @@
 //! stub `CsvGitRepository` whose methods return
 //! [`RepoError::Backend`] with an "unsupported target" message; this
 //! keeps `cargo build --target wasm32-unknown-unknown -p
-//! part-registry-wasm` green even though the wasm leaf does not
+//! qx-wasm` green even though the wasm leaf does not
 //! transitively depend on this crate today.
 
 #![forbid(unsafe_code)]
@@ -79,8 +79,8 @@ pub use imp::{CsvGitConfig, CsvGitRepository};
 mod wasm_stub {
     use std::path::PathBuf;
 
-    use part_registry_domain::{AuditEntry, Hash, PartId};
-    use part_registry_storage::{
+    use qx_domain::{AuditEntry, Hash, PartId};
+    use qx_storage::{
         AuditFilter, Part, PartFilter, PrintEvent, PrintEventFilter, RepoError, Repository,
     };
 

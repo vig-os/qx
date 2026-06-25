@@ -1,45 +1,35 @@
 [package]
-name = "part-registry-cli"
+name = "qx-cli"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+# The single `qx` command per ADR-030 §2 — one native artifact for the
+# whole shell family. `qx mint` / `qx label` / `qx bind` are the parity
+# delegates (formerly standalone bins, folded in for a clean qx build);
+# the protocol subcommands run over app::dispatch, plus `qx check`.
 [[bin]]
-name = "mint"
-path = "src/bin/mint.rs"
-
-[[bin]]
-name = "label"
-path = "src/bin/label.rs"
-
-[[bin]]
-name = "bind"
-path = "src/bin/bind.rs"
-
-# The multicall binary per ADR-030 §2 — mint/label/bind (parity
-# delegates) + the protocol subcommands over app::dispatch + `check`.
-[[bin]]
-name = "pr"
-path = "src/bin/pr.rs"
+name = "qx"
+path = "src/bin/qx.rs"
 
 [dependencies]
-part-registry-app = { path = "../app" }
-part-registry-domain = { path = "../domain" }
-part-registry-config = { path = "../config" }
-part-registry-observability = { path = "../observability" }
-part-registry-storage = { path = "../storage" }
-part-registry-storage-csv-git = { path = "../storage_csv_git" }
-part-registry-identity = { path = "../identity" }
-part-registry-identity-git-config = { path = "../identity_git_config" }
-part-registry-transport = { path = "../transport" }
-part-registry-transport-github-pr = { path = "../transport_github_pr" }
-part-registry-signing = { path = "../signing" }
-part-registry-signing-git-commit = { path = "../signing_git_commit" }
-part-registry-codec = { path = "../codec" }
-part-registry-validators = { path = "../validators" }
-part-registry-contract = { path = "../contract" }
+qx-app = { path = "../app" }
+qx-domain = { path = "../domain" }
+qx-config = { path = "../config" }
+qx-observability = { path = "../observability" }
+qx-storage = { path = "../storage" }
+qx-storage-csv-git = { path = "../storage_csv_git" }
+qx-identity = { path = "../identity" }
+qx-identity-git-config = { path = "../identity_git_config" }
+qx-transport = { path = "../transport" }
+qx-transport-github-pr = { path = "../transport_github_pr" }
+qx-signing = { path = "../signing" }
+qx-signing-git-commit = { path = "../signing_git_commit" }
+qx-codec = { path = "../codec" }
+qx-validators = { path = "../validators" }
+qx-contract = { path = "../contract" }
 clap = { workspace = true }
 csv = { workspace = true }
 anyhow = { workspace = true }
@@ -53,21 +43,21 @@ uuid = { workspace = true }
 # already pulled in via `uuid`; named here for crate-local discipline.
 getrandom = "0.2"
 
-# `pr serve` (ADR-030 §2) — optional so the lean CLI/CI build stays
+# `qx serve` (ADR-030 §2) — optional so the lean CLI/CI build stays
 # free of the async stack (compile-target tiering per guardrails
 # CONVENTIONS / ADR-030 cargo-feature discipline).
 axum = { version = "0.8", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "signal"], optional = true }
 tower-http = { version = "0.6", features = ["fs"], optional = true }
 
-# `pr mcp` (ADR-030 §2) — stdio MCP server; optional like serve.
+# `qx mcp` (ADR-030 §2) — stdio MCP server; optional like serve.
 rmcp = { version = "1", features = ["transport-io", "server"], optional = true }
 
-# `pr tui` (ADR-030 §2) — terminal shell; optional like serve/mcp.
+# `qx tui` (ADR-030 §2) — terminal shell; optional like serve/mcp.
 ratatui = { version = "0.29", optional = true }
 crossterm = { version = "0.28", optional = true }
 
-# In-core raster for `pr print --emit png|jpeg|pdf` (ADR-031 §8).
+# In-core raster for `qx print --emit png|jpeg|pdf` (ADR-031 §8).
 # Optional + default-on so the shipped `pr` rasterises without an
 # external `rsvg-convert`; `--no-default-features` keeps the lean CI
 # build. The wasm façade does not depend on this crate, so the FE
@@ -81,9 +71,9 @@ default = ["raster"]
 serve = ["dep:axum", "dep:tokio", "dep:tower-http"]
 mcp = ["dep:rmcp", "dep:tokio"]
 tui = ["dep:ratatui", "dep:crossterm"]
-# In-core SVG -> png/jpeg/pdf for `pr print --emit` (default-on).
+# In-core SVG -> png/jpeg/pdf for `qx print --emit` (default-on).
 raster = ["dep:resvg", "dep:svg2pdf", "dep:image"]
-# DEV-ONLY: `pr mint --local` writes straight to the local
+# DEV-ONLY: `qx mint --local` writes straight to the local
 # registry.csv (LocalRegistrySink), bypassing the GitHub PR flow.
 # Never in `default` — must be opted in explicitly and must never
 # ship in a release/main build.

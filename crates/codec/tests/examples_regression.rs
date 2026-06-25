@@ -2,13 +2,13 @@
 //! assert byte-for-byte equality with the committed files.
 //!
 //! This catches silent rendering drift when codec internals change.
-//! Run `REGEN_EXAMPLES=1 cargo test -p part-registry-codec --test examples_regression`
+//! Run `REGEN_EXAMPLES=1 cargo test -p qx-codec --test examples_regression`
 //! to overwrite the committed files after an intentional change.
 
 use std::fs;
 use std::path::PathBuf;
 
-use part_registry_codec::{recommend_format, render_label, Layout};
+use qx_codec::{recommend_format, render_label, Layout};
 
 /// One row in the gallery table (mirrors `examples/README.md`).
 struct ExampleSpec {
@@ -162,7 +162,7 @@ fn examples_match_committed_svgs() {
     if !mismatches.is_empty() {
         panic!(
             "Example SVGs out of date — run \
-             `REGEN_EXAMPLES=1 cargo test -p part-registry-codec --test examples_regression` \
+             `REGEN_EXAMPLES=1 cargo test -p qx-codec --test examples_regression` \
              to update.\n\nMismatches:\n  {}",
             mismatches.join("\n  ")
         );

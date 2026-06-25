@@ -63,9 +63,9 @@ export interface JobItem {
   extras: Record<string, number>;
 }
 
-const PLAN_KEY = "part-registry.print-plan";
-const MODE_KEY = "part-registry.print-output-mode";
-const MODE_OPTS_KEY = "part-registry.print-output-mode-opts";
+const PLAN_KEY = "qx.print-plan";
+const MODE_KEY = "qx.print-output-mode";
+const MODE_OPTS_KEY = "qx.print-output-mode-opts";
 const DEFAULT_MODE_ID = "dk-continuous";
 
 /** Brother QL-820NWBc prints at 300 DPI (dots per inch). */

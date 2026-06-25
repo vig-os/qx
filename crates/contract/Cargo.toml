@@ -1,5 +1,5 @@
 [package]
-name = "part-registry-contract"
+name = "qx-contract"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -13,7 +13,7 @@ path = "src/lib.rs"
 # SSOT for "what is a valid contract": the Rust types ARE the schema;
 # schema/contract.schema.json mirrors them for editor tooling. No I/O,
 # serde + serde_json + thiserror only, so the crate compiles identically
-# to native (CI / pr check) and wasm32 (FE form-gen + preflight).
+# to native (CI / qx check) and wasm32 (FE form-gen + preflight).
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }

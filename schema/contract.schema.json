@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://part-registry/schema/contract.schema.json",
-  "title": "part-registry contract (ADR-039 canonical form)",
-  "description": "Meta-schema for a registry's .part-registry/contract.json. One canonical form: collection-generic descriptors (ADR-035 §0), the ADR-039 §2 scalar set (type ≠ widget). Governance is git-native (ADR-039 §6, revised): the ONLY in-file version is `format_version` (engine↔contract parse capability); contract identity is its content hash; who/when/why/approved is projected from the host review (PR reviews + merge commit), never stored here; effective-dating is commit-resolved. The tool's Rust types are the SSOT; this JSON Schema mirrors them for editor tooling + the CI meta-schema gate. CI validates the shipped contract against this file AND a fixture instance against the contract on every PR (no stale meta-schema, ADR-039 §4).",
+  "$id": "https://qx/schema/contract.schema.json",
+  "title": "qx contract (ADR-039 canonical form)",
+  "description": "Meta-schema for a registry's .qx/contract.json. One canonical form: collection-generic descriptors (ADR-035 §0), the ADR-039 §2 scalar set (type ≠ widget). Governance is git-native (ADR-039 §6, revised): the ONLY in-file version is `format_version` (engine↔contract parse capability); contract identity is its content hash; who/when/why/approved is projected from the host review (PR reviews + merge commit), never stored here; effective-dating is commit-resolved. The tool's Rust types are the SSOT; this JSON Schema mirrors them for editor tooling + the CI meta-schema gate. CI validates the shipped contract against this file AND a fixture instance against the contract on every PR (no stale meta-schema, ADR-039 §4).",
   "type": "object",
   "required": ["format_version", "collections"],
   "additionalProperties": false,

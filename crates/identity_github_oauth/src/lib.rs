@@ -1,4 +1,4 @@
-//! `part-registry-identity-github-oauth` — FE/CLI `IdentityProvider`
+//! `qx-identity-github-oauth` — FE/CLI `IdentityProvider`
 //! adapter per ADR-020.
 //!
 //! GitHub OAuth device flow yields a verified GitHub identity:
@@ -8,7 +8,7 @@
 //! ## Two surfaces, one trait
 //!
 //! - **Native (CLI / future server)**: blocking HTTP via `reqwest`,
-//!   token cache at `~/.config/part-registry/github-token.json`.
+//!   token cache at `~/.config/qx/github-token.json`.
 //! - **wasm32 (browser FE)**: HTTP via the browser fetch API, token
 //!   cache in `localStorage`. The FE layer is wired in `crates/wasm/`;
 //!   this crate exposes only the type seams (the `TokenStore` trait
@@ -44,8 +44,8 @@ use std::sync::{Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
 
-use part_registry_domain::{IdentitySource, Operator, OperatorId, Timestamp};
-use part_registry_identity::{Capabilities, IdentityError, IdentityProvider};
+use qx_domain::{IdentitySource, Operator, OperatorId, Timestamp};
+use qx_identity::{Capabilities, IdentityError, IdentityProvider};
 
 // -------------------------------------------------------------------
 // Token store
@@ -123,7 +123,7 @@ impl TokenStore for MemoryTokenStore {
 }
 
 /// File-backed token cache at
-/// `$XDG_CONFIG_HOME/part-registry/github-token.json` (or `~/.config/`
+/// `$XDG_CONFIG_HOME/qx/github-token.json` (or `~/.config/`
 /// on macOS/Linux defaults). Native only; gated off on wasm32.
 #[cfg(not(target_arch = "wasm32"))]
 pub struct FileTokenStore {
@@ -134,7 +134,7 @@ pub struct FileTokenStore {
 impl FileTokenStore {
     /// Use the platform default location.
     pub fn default_path() -> Option<std::path::PathBuf> {
-        dirs::config_dir().map(|d| d.join("part-registry").join("github-token.json"))
+        dirs::config_dir().map(|d| d.join("qx").join("github-token.json"))
     }
 
     pub fn new(path: impl Into<std::path::PathBuf>) -> Self {
@@ -278,7 +278,7 @@ impl ReqwestGithubHttp {
         access_token: impl Into<String>,
     ) -> Result<Self, HttpError> {
         let client = reqwest::blocking::Client::builder()
-            .user_agent(concat!("part-registry/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("qx/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|e| HttpError::Transport(e.to_string()))?;
         Ok(Self {

@@ -14,11 +14,11 @@ cd "$(git rev-parse --show-toplevel)"
 
 if [[ "${1:-}" == "--update" ]]; then
     echo "Regenerating examples/ SVGs..."
-    REGEN_EXAMPLES=1 cargo test -p part-registry-codec \
+    REGEN_EXAMPLES=1 cargo test -p qx-codec \
         --test examples_regression -- --nocapture 2>&1
     echo "Done. Review changes with 'git diff examples/'."
 else
     echo "Checking examples/ SVGs match Rust renderer output..."
-    cargo test -p part-registry-codec --test examples_regression 2>&1
+    cargo test -p qx-codec --test examples_regression 2>&1
     echo "All examples up to date."
 fi

@@ -8,7 +8,7 @@
 
 use std::collections::HashSet;
 
-use part_registry_domain::{PART_ID_ALPHABET, PART_ID_LEN};
+use qx_domain::{PART_ID_ALPHABET, PART_ID_LEN};
 use rand::Rng;
 
 // ------------------------------------------------------------------

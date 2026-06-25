@@ -1,6 +1,6 @@
-//! End-to-end tests for the contract-driven `pr check` path (ADR-039,
+//! End-to-end tests for the contract-driven `qx check` path (ADR-039,
 //! task #20). Drives the compiled `pr` binary against a temp data repo
-//! holding a canonical `.part-registry/contract.json` + `collections/
+//! holding a canonical `.qx/contract.json` + `collections/
 //! *.jsonl`, exercising:
 //!
 //! - structural mode (no `--base`): every record validated against its
@@ -37,15 +37,15 @@ const TWO_COLLECTION_CONTRACT: &str = r#"{
 }"#;
 
 fn write_repo(dir: &Path, contract: &str, parts: &str, companies: &str) {
-    fs::create_dir_all(dir.join(".part-registry")).unwrap();
+    fs::create_dir_all(dir.join(".qx")).unwrap();
     fs::create_dir_all(dir.join("collections")).unwrap();
-    fs::write(dir.join(".part-registry/contract.json"), contract).unwrap();
+    fs::write(dir.join(".qx/contract.json"), contract).unwrap();
     fs::write(dir.join("collections/parts.jsonl"), parts).unwrap();
     fs::write(dir.join("collections/companies.jsonl"), companies).unwrap();
 }
 
 fn pr_check(dir: &Path, base: Option<&str>) -> std::process::Output {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_pr"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_qx"));
     cmd.arg("check").arg("--path").arg(dir);
     if let Some(b) = base {
         cmd.arg("--base").arg(b);
@@ -135,8 +135,8 @@ fn invalid_contract_fails_the_gate() {
     let bad = r#"{ "format_version": 1, "collections": [
         { "name": "parts", "id": { "scheme": "nano14", "default": true, "mintable": true },
           "fields": [ { "key": "v", "type": "reference", "label": "V" } ] } ] }"#;
-    fs::create_dir_all(dir.join(".part-registry")).unwrap();
-    fs::write(dir.join(".part-registry/contract.json"), bad).unwrap();
+    fs::create_dir_all(dir.join(".qx")).unwrap();
+    fs::write(dir.join(".qx/contract.json"), bad).unwrap();
     let out = pr_check(dir, None);
     assert!(!out.status.success(), "expected invalid-contract failure");
     assert!(String::from_utf8_lossy(&out.stderr).contains("contract invalid"));

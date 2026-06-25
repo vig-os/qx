@@ -28,9 +28,9 @@ frontend-bundle-<tag>.tar.gz
     │   ├── config.ts
     │   ├── ... (full source)
     │   └── wasm/
-    │       ├── part_registry_wasm.js
-    │       ├── part_registry_wasm_bg.wasm
-    │       └── part_registry_wasm.d.ts
+    │       ├── qx_wasm.js
+    │       ├── qx_wasm_bg.wasm
+    │       └── qx_wasm.d.ts
     ├── test-fixtures/
     └── README.md
 ```

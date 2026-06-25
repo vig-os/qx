@@ -102,7 +102,7 @@ resources). Concretely:
    signing) is named via env vars and resolved through `Config`.
 3. Defaults ship in `crates/config/defaults.toml`, embedded into the
    binary via `include_str!`. Env vars override defaults. An optional
-   per-deploy file (`~/.config/part-registry/config.toml` for CLI,
+   per-deploy file (`~/.config/qx/config.toml` for CLI,
    build-time `import.meta.env.PART_REGISTRY_*` for FE) overrides
    defaults but is itself overridden by env vars.
 4. No file under `crates/{domain,codec,validators,storage,identity,transport,signing}/`
@@ -260,9 +260,9 @@ impl Config {
 
 | Target | Defaults source | Override mechanism | Notes |
 |---|---|---|---|
-| Native CLI (`mint`, `label`, `bind`) | `crates/config/defaults.toml` (compiled in via `include_str!`) | `PART_REGISTRY_*` env vars; optional `~/.config/part-registry/config.toml`; per-invocation `clap` flags | CLI flags override env which overrides file which overrides defaults |
+| Native CLI (`mint`, `label`, `bind`) | `crates/config/defaults.toml` (compiled in via `include_str!`) | `PART_REGISTRY_*` env vars; optional `~/.config/qx/config.toml`; per-invocation `clap` flags | CLI flags override env which overrides file which overrides defaults |
 | Browser WASM (FE) | `crates/config/defaults.toml` (compiled into the WASM bundle) | Build-time `import.meta.env.PART_REGISTRY_*` injected by Vite at `npm run build`; runtime `/config.json` endpoint fetched at app startup for adapter selection | Vite `define` plugin substitutes build-time vars; runtime fetch covers values that vary per FE deploy without rebuild |
-| Future Tauri / desktop | `crates/config/defaults.toml` (bundled in the app) | OS env vars; user config file at the OS-conventional path (`~/Library/Application Support/part-registry/config.toml` on macOS, `%APPDATA%\part-registry\config.toml` on Windows, `~/.config/part-registry/config.toml` on Linux) | Same schema as CLI; deploy file location differs per OS |
+| Future Tauri / desktop | `crates/config/defaults.toml` (bundled in the app) | OS env vars; user config file at the OS-conventional path (`~/Library/Application Support/qx/config.toml` on macOS, `%APPDATA%\hq\config.toml` on Windows, `~/.config/qx/config.toml` on Linux) | Same schema as CLI; deploy file location differs per OS |
 | Future embedded (handheld scanner) | `crates/config/defaults.toml` (bundled) | Env at boot from device-provisioning; no user-writable config file by default | Schema is the same; provisioning tool writes env at first boot |
 
 ## Migration audit
@@ -331,7 +331,7 @@ match.
 on first run — useful for `cargo install part-registry` and for
 embedded targets with no filesystem; (2) the defaults are visible
 in source review, not buried in a deploy step. The deploy file at
-`~/.config/part-registry/config.toml` is optional; if absent, env
+`~/.config/qx/config.toml` is optional; if absent, env
 overrides defaults directly.
 
 **Why `PART_REGISTRY_*` as the env prefix.** Avoids collision with
@@ -387,7 +387,7 @@ provider merged last.
   reading the host's environment. CI runs with `env -i
   PART_REGISTRY_*=...` to prevent host env leakage.
 - **Audit trail for config changes.** Production deploys check
-  `~/.config/part-registry/config.toml` (or the per-OS equivalent)
+  `~/.config/qx/config.toml` (or the per-OS equivalent)
   into version control under the deploy-team's repo, not the data
   repo. ADR-022's audit trail records the resolved config snapshot
   at process startup so an auditor can reconstruct which adapter

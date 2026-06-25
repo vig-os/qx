@@ -176,7 +176,7 @@ test.describe("payload format preview", () => {
     // Pre-set a plan item before page load
     await page.addInitScript(() => {
       const plan = [{ id: "ABCDEFGHJKMNPQ", layoutId: "horz", size: 11, copies: 1, extras: {} }];
-      window.localStorage.setItem("part-registry.print-plan", JSON.stringify(plan));
+      window.localStorage.setItem("qx.print-plan", JSON.stringify(plan));
     });
     await page.goto("/");
     await page.locator("nav.tabs .tab-btn >> text=Print").click();

@@ -1,8 +1,8 @@
 //! Generate test QR images for scanner testing.
 //! Creates SVGs in web/public/test-images/
 
-use part_registry_codec::svg::{render_horz, render_vert};
-use part_registry_codec::TextFormat;
+use qx_codec::svg::{render_horz, render_vert};
+use qx_codec::TextFormat;
 use std::fs;
 
 fn main() {

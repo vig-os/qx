@@ -1,4 +1,4 @@
-//! `pr tui` — terminal shell over the command protocol (ADR-030 §2,
+//! `qx tui` — terminal shell over the command protocol (ADR-030 §2,
 //! feature `tui`).
 //!
 //! A thin ratatui front: a pageable entity table with status cycling +
@@ -22,7 +22,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState};
 use serde_json::Value as Json;
 
-use part_registry_app::{dispatch, AppContext, Filter, Page, Request, Response};
+use qx_app::{dispatch, AppContext, Filter, Page, Request, Response};
 
 const PAGE_SIZE: u32 = 25;
 

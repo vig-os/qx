@@ -3,12 +3,12 @@
 // flips the `data-theme` attribute on <html>.
 //
 // Default: follow `prefers-color-scheme`. Manual override stored in
-// localStorage under "part-registry.theme".
+// localStorage under "qx.theme".
 
 import type { AppContext, Plugin, PluginHost } from "../core/types";
 import { icon } from "../ui/icons";
 
-const KEY = "part-registry.theme";
+const KEY = "qx.theme";
 type Theme = "light" | "dark" | "auto";
 
 function getStored(): Theme {

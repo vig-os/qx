@@ -33,7 +33,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test.describe("part-registry FE smoke", () => {
+test.describe("qx FE smoke", () => {
   test("boots without console errors and renders all tabs", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
@@ -131,7 +131,7 @@ test.describe("part-registry FE smoke", () => {
       const res = await fetch(href as string);
       return res.json();
     }, manifestHref);
-    expect(manifest.name).toBe("part-registry");
+    expect(manifest.name).toBe("qx");
     expect(manifest.display).toBe("standalone");
     expect(manifest.icons.length).toBeGreaterThan(0);
 
@@ -228,8 +228,8 @@ test.describe("Print matrix studio (#11)", () => {
       });
     });
     await page.addInitScript(() => {
-      window.localStorage.removeItem("part-registry.print-plan");
-      window.localStorage.removeItem("part-registry.print-output-mode");
+      window.localStorage.removeItem("qx.print-plan");
+      window.localStorage.removeItem("qx.print-output-mode");
     });
   });
 
@@ -290,7 +290,7 @@ test.describe("Lookup inline edit → bind queue (#6)", () => {
     });
     // Reset the queue between tests; preview's origin is shared.
     await page.addInitScript(() => {
-      window.localStorage.removeItem("part-registry.bind-queue");
+      window.localStorage.removeItem("qx.bind-queue");
     });
   });
 

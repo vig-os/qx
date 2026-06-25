@@ -25,10 +25,10 @@ interface WasmPkg {
   registry_set_operator: (id: string, displayName: string) => void;
 }
 
-const PKG_PATH = "../wasm-pkg/part_registry_wasm.js";
+const PKG_PATH = "../wasm-pkg/qx_wasm.js";
 
 async function loadPkg(): Promise<WasmPkg> {
-  const candidates = import.meta.glob("../wasm-pkg/part_registry_wasm.js");
+  const candidates = import.meta.glob("../wasm-pkg/qx_wasm.js");
   const load = candidates[PKG_PATH];
   if (!load) {
     throw new Error(

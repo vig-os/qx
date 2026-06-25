@@ -8,7 +8,7 @@
 //!
 //! Two surfaces, one function (ADR-039 §4):
 //!
-//! - **CI / `pr check`** — authoritative, full id universe → FK enforced.
+//! - **CI / `qx check`** — authoritative, full id universe → FK enforced.
 //! - **FE preflight** — advisory; the universe may be partial. A target
 //!   collection absent from [`RecordContext::known_ids`] means "universe
 //!   unknown here" and the FK check is skipped, never falsely failed.
@@ -22,7 +22,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use part_registry_contract::{Closed, Collection, Field, FieldType, ObjectSchema, OnUnknown};
+use qx_contract::{Closed, Collection, Field, FieldType, ObjectSchema, OnUnknown};
 use serde_json::{Map, Value};
 
 /// Severity of a single record issue. `Warn` never blocks a merge; it is
@@ -484,7 +484,7 @@ fn check_object(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use part_registry_contract::Contract;
+    use qx_contract::Contract;
 
     const EXAMPLE: &str = include_str!("../../../schema/contract.example.json");
 

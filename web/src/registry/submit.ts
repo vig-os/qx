@@ -44,8 +44,8 @@ export class SubmitError extends Error {
 // (GitHub username) is fetched once via GET /user and cached alongside
 // the token for the duration of the session.
 
-const PAT_KEY = "part-registry.github-pat";
-const USER_KEY = "part-registry.github-user";
+const PAT_KEY = "qx.github-pat";
+const USER_KEY = "qx.github-user";
 
 export function getStoredToken(): string | null {
   try {
@@ -393,7 +393,7 @@ export async function submitBatch(
     .map((q) => q.id)
     .join(", ");
   const prBody =
-    `Proposed by the part-registry web UI.\n\n` +
+    `Proposed by the qx web UI.\n\n` +
     `**Changes:** ${parts.join(", ")}\n` +
     `**IDs:** ${ids}${queue.length > 10 ? ` (+${queue.length - 10} more)` : ""}\n\n` +
     `_Automated PR — CI will validate._`;

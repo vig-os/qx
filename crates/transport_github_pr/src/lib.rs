@@ -1,4 +1,4 @@
-//! `part-registry-transport-github-pr` — first MVP `ProposalSink`
+//! `qx-transport-github-pr` — first MVP `ProposalSink`
 //! adapter per ADR-019. Opens GitHub PRs against the data repository
 //! via the GitHub REST API.
 //!
@@ -46,14 +46,12 @@ use std::collections::BTreeMap;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
-use part_registry_domain::{
+use qx_domain::{
     Action, ActionKind, Diff, DiffEdit, DiffRow, Operator, Proposal, ProposalRef, ProposalStatus,
     Signature,
 };
-use part_registry_transport::{ProposalError, ProposalSink};
-use part_registry_validators::{
-    print_log_sort_key, registry_sort_key, PRINT_LOG_HEADER, REGISTRY_HEADER,
-};
+use qx_transport::{ProposalError, ProposalSink};
+use qx_validators::{print_log_sort_key, registry_sort_key, PRINT_LOG_HEADER, REGISTRY_HEADER};
 
 // -------------------------------------------------------------------
 // Config
@@ -302,7 +300,7 @@ impl ReqwestGithubPrHttp {
         token: impl Into<String>,
     ) -> Result<Self, HttpError> {
         let client = reqwest::blocking::Client::builder()
-            .user_agent(concat!("part-registry/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("qx/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|e| HttpError::Transport(e.to_string()))?;
         Ok(Self {
@@ -899,7 +897,7 @@ fn file_matches_edit(file: TargetFile, edit: &DiffEdit) -> bool {
 fn sort_rows(file: TargetFile, rows: &mut [BTreeMap<String, String>]) {
     match file {
         TargetFile::Registry => {
-            // Mirrors `part_registry_validators::registry_sort_key`:
+            // Mirrors `qx_validators::registry_sort_key`:
             // ascending by `id`.
             let _ = registry_sort_key; // explicit re-export anchor for grep
             rows.sort_by(|a, b| {
@@ -1274,10 +1272,10 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
-    use part_registry_domain::{
+    use qx_domain::{
         DiffRow, HeaderChange, IdentitySource, KeyId, OperatorId, PartId, RekorProof, RequestId,
     };
-    use part_registry_port_tests::proposal_sink_conformance;
+    use qx_port_tests::proposal_sink_conformance;
 
     // ----- HTTP test double -----------------------------------------
 

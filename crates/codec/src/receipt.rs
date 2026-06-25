@@ -34,10 +34,10 @@ pub struct Receipt {
     pub fg: String,
     /// Background color, canonical SVG form (`"none"` = no bg rect).
     pub bg: String,
-    /// Always `"nx75"` — the part-registry anchor font (ADR-031 §8
+    /// Always `"nx75"` — the qx anchor font (ADR-031 §8
     /// final typography).
     pub font: String,
-    /// `concat("pr ", env!("CARGO_PKG_VERSION"))` — the codec's
+    /// `concat("qx ", env!("CARGO_PKG_VERSION"))` — the codec's
     /// version stamp.
     pub generator: String,
     /// Resolved §10 repeat geometry — present only on composed strips
@@ -48,9 +48,9 @@ pub struct Receipt {
 }
 
 /// Codec version stamp used by [`Receipt::generator`]. Includes the
-/// "pr " prefix so the metadata identifies this binary explicitly.
+/// "qx " prefix so the metadata identifies this binary explicitly.
 pub fn generator() -> String {
-    format!("pr {}", env!("CARGO_PKG_VERSION"))
+    format!("qx {}", env!("CARGO_PKG_VERSION"))
 }
 
 /// XML-escape a string for embedding inside `<metadata>`. The receipt
@@ -115,7 +115,7 @@ mod tests {
             fg: "black".into(),
             bg: "white".into(),
             font: "nx75".into(),
-            generator: "pr 0.1.0".into(),
+            generator: "qx 0.1.0".into(),
             repeat: None,
         }
     }

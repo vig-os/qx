@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "part-registry",
+  "productName": "qx",
   "version": "0.1.0",
-  "identifier": "com.morepet.part-registry",
+  "identifier": "com.morepet.qx",
   "build": {
     "devUrl": "http://localhost:5173",
     "frontendDist": "../../webapp/dist"
@@ -10,7 +10,7 @@
   "app": {
     "windows": [
       {
-        "title": "part-registry",
+        "title": "qx",
         "width": 1100,
         "height": 760
       }

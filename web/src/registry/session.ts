@@ -55,15 +55,15 @@ export interface SessionVoid {
 
 // ---- IndexedDB wrapper ----
 
-const DB_NAME = "part-registry";
+const DB_NAME = "qx";
 const STORE_NAME = "session";
 const SESSION_KEY = "current";
 
 // localStorage fallback key
-const LS_SESSION_KEY = "part-registry.session";
+const LS_SESSION_KEY = "qx.session";
 
 // Old bind queue key (for migration)
-const OLD_QUEUE_KEY = "part-registry.bind-queue";
+const OLD_QUEUE_KEY = "qx.bind-queue";
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 

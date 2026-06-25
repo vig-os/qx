@@ -13,10 +13,10 @@ import { getConfig } from "../config/deploy-config";
 
 // ---- localStorage keys ----
 
-const KEY_CODE_TYPE = "part-registry.label.codeType";
-const KEY_FORMAT = "part-registry.label.format";
-const KEY_SHOW_TEXT = "part-registry.label.showText";
-const KEY_PAYLOAD_FORMAT = "part-registry.label.payloadFormat";
+const KEY_CODE_TYPE = "qx.label.codeType";
+const KEY_FORMAT = "qx.label.format";
+const KEY_SHOW_TEXT = "qx.label.showText";
+const KEY_PAYLOAD_FORMAT = "qx.label.payloadFormat";
 
 // Code type IDs match the `id` field in code-types.json.
 // "standard_qr" | "micro_qr" | "data_matrix" (or any future type).

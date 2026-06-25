@@ -1,11 +1,11 @@
 {
-  "name": "part-registry-web",
+  "name": "qx-web",
   "private": true,
   "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build:wasm": "cd .. && cargo build --target wasm32-unknown-unknown -p part-registry-wasm --release && \"${WASM_BINDGEN:-$HOME/.cargo/bin/wasm-bindgen}\" --target web --out-dir web/src/wasm --out-name part_registry_wasm target/wasm32-unknown-unknown/release/part_registry_wasm.wasm",
+    "build:wasm": "cd .. && cargo build --target wasm32-unknown-unknown -p qx-wasm --release && \"${WASM_BINDGEN:-$HOME/.cargo/bin/wasm-bindgen}\" --target web --out-dir web/src/wasm --out-name qx_wasm target/wasm32-unknown-unknown/release/qx_wasm.wasm",
     "build:fe": "tsc -b && vite build",
     "build": "npm run build:wasm && npm run build:fe",
     "preview": "vite preview",

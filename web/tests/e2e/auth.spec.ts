@@ -175,8 +175,8 @@ test.describe("Toolbar auth indicator", () => {
 
     // Pre-set token in sessionStorage
     await page.addInitScript(() => {
-      window.sessionStorage.setItem("part-registry.github-pat", "github_pat_fake");
-      window.sessionStorage.setItem("part-registry.github-user", "test-user");
+      window.sessionStorage.setItem("qx.github-pat", "github_pat_fake");
+      window.sessionStorage.setItem("qx.github-user", "test-user");
     });
 
     await page.goto("/");
@@ -200,8 +200,8 @@ test.describe("Toolbar auth indicator", () => {
     });
 
     await page.addInitScript(() => {
-      window.sessionStorage.setItem("part-registry.github-pat", "github_pat_fake");
-      window.sessionStorage.setItem("part-registry.github-user", "test-user");
+      window.sessionStorage.setItem("qx.github-pat", "github_pat_fake");
+      window.sessionStorage.setItem("qx.github-user", "test-user");
     });
 
     await page.goto("/");

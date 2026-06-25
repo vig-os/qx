@@ -3317,345 +3317,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "part-registry-app"
-version = "0.1.0"
-dependencies = [
- "getrandom 0.2.17",
- "part-registry-codec",
- "part-registry-domain",
- "part-registry-identity",
- "part-registry-observability",
- "part-registry-storage",
- "part-registry-transport",
- "part-registry-validators",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "time",
- "tracing",
-]
-
-[[package]]
-name = "part-registry-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "clap",
- "crossterm",
- "csv",
- "getrandom 0.2.17",
- "http-body-util",
- "image",
- "part-registry-app",
- "part-registry-codec",
- "part-registry-config",
- "part-registry-contract",
- "part-registry-domain",
- "part-registry-identity",
- "part-registry-identity-git-config",
- "part-registry-observability",
- "part-registry-signing",
- "part-registry-signing-git-commit",
- "part-registry-storage",
- "part-registry-storage-csv-git",
- "part-registry-transport",
- "part-registry-transport-github-pr",
- "part-registry-validators",
- "ratatui",
- "resvg 0.44.0",
- "rmcp",
- "serde",
- "serde_json",
- "svg2pdf",
- "tempfile",
- "thiserror 2.0.18",
- "time",
- "tokio",
- "tower",
- "tower-http",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "part-registry-codec"
-version = "0.1.0"
-dependencies = [
- "image",
- "qrcode2",
- "roxmltree",
- "rxing",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "part-registry-config"
-version = "0.1.0"
-dependencies = [
- "dirs 5.0.1",
- "figment",
- "serde",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "part-registry-contract"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "part-registry-desktop"
-version = "0.1.0"
-dependencies = [
- "part-registry-app",
- "part-registry-cli",
- "part-registry-config",
- "part-registry-observability",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
-]
-
-[[package]]
-name = "part-registry-devtools"
-version = "0.1.0"
-dependencies = [
- "glob",
- "tempfile",
- "time",
- "toml 0.8.23",
-]
-
-[[package]]
-name = "part-registry-domain"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "time",
- "uuid",
-]
-
-[[package]]
-name = "part-registry-identity"
-version = "0.1.0"
-dependencies = [
- "part-registry-domain",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "part-registry-identity-git-config"
-version = "0.1.0"
-dependencies = [
- "part-registry-domain",
- "part-registry-identity",
- "part-registry-port-tests",
- "tempfile",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "part-registry-identity-github-oauth"
-version = "0.1.0"
-dependencies = [
- "dirs 5.0.1",
- "mockito",
- "part-registry-domain",
- "part-registry-identity",
- "part-registry-port-tests",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "time",
-]
-
-[[package]]
-name = "part-registry-observability"
-version = "0.1.0"
-dependencies = [
- "part-registry-config",
- "part-registry-domain",
- "part-registry-storage",
- "part-registry-storage-csv-git",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "time",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "part-registry-port-tests"
-version = "0.1.0"
-dependencies = [
- "glob",
- "hex",
- "image",
- "part-registry-codec",
- "part-registry-contract",
- "part-registry-domain",
- "part-registry-identity",
- "part-registry-signing",
- "part-registry-storage",
- "part-registry-transport",
- "part-registry-validators",
- "rand 0.8.6",
- "serde",
- "serde_json",
- "sha2",
- "toml 0.8.23",
-]
-
-[[package]]
-name = "part-registry-signing"
-version = "0.1.0"
-dependencies = [
- "part-registry-domain",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "part-registry-signing-git-commit"
-version = "0.1.0"
-dependencies = [
- "part-registry-domain",
- "part-registry-port-tests",
- "part-registry-signing",
- "tempfile",
- "thiserror 2.0.18",
- "time",
-]
-
-[[package]]
-name = "part-registry-storage"
-version = "0.1.0"
-dependencies = [
- "part-registry-domain",
- "serde",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "part-registry-storage-csv-git"
-version = "0.1.0"
-dependencies = [
- "csv",
- "part-registry-domain",
- "part-registry-port-tests",
- "part-registry-storage",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 2.0.18",
- "time",
- "uuid",
-]
-
-[[package]]
-name = "part-registry-storage-jsonl-git"
-version = "0.1.0"
-dependencies = [
- "part-registry-domain",
- "part-registry-port-tests",
- "part-registry-storage",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "time",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "part-registry-transport"
-version = "0.1.0"
-dependencies = [
- "part-registry-domain",
- "serde",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "part-registry-transport-github-pr"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "mockito",
- "part-registry-domain",
- "part-registry-port-tests",
- "part-registry-transport",
- "part-registry-validators",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "time",
- "uuid",
-]
-
-[[package]]
-name = "part-registry-transport-table"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "part-registry-domain",
- "part-registry-port-tests",
- "part-registry-transport",
- "part-registry-transport-github-pr",
- "uuid",
-]
-
-[[package]]
-name = "part-registry-validators"
-version = "0.1.0"
-dependencies = [
- "part-registry-contract",
- "part-registry-domain",
- "regex",
- "serde_json",
- "thiserror 2.0.18",
- "time",
-]
-
-[[package]]
-name = "part-registry-wasm"
-version = "0.1.0"
-dependencies = [
- "csv",
- "getrandom 0.2.17",
- "part-registry-app",
- "part-registry-codec",
- "part-registry-domain",
- "part-registry-identity",
- "part-registry-observability",
- "part-registry-storage",
- "part-registry-transport",
- "part-registry-validators",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "time",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4081,6 +3742,345 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "qx-app"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.2.17",
+ "qx-codec",
+ "qx-domain",
+ "qx-identity",
+ "qx-observability",
+ "qx-storage",
+ "qx-transport",
+ "qx-validators",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "time",
+ "tracing",
+]
+
+[[package]]
+name = "qx-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "clap",
+ "crossterm",
+ "csv",
+ "getrandom 0.2.17",
+ "http-body-util",
+ "image",
+ "qx-app",
+ "qx-codec",
+ "qx-config",
+ "qx-contract",
+ "qx-domain",
+ "qx-identity",
+ "qx-identity-git-config",
+ "qx-observability",
+ "qx-signing",
+ "qx-signing-git-commit",
+ "qx-storage",
+ "qx-storage-csv-git",
+ "qx-transport",
+ "qx-transport-github-pr",
+ "qx-validators",
+ "ratatui",
+ "resvg 0.44.0",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "svg2pdf",
+ "tempfile",
+ "thiserror 2.0.18",
+ "time",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "qx-codec"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "qrcode2",
+ "roxmltree",
+ "rxing",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "qx-config"
+version = "0.1.0"
+dependencies = [
+ "dirs 5.0.1",
+ "figment",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "qx-contract"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "qx-desktop"
+version = "0.1.0"
+dependencies = [
+ "qx-app",
+ "qx-cli",
+ "qx-config",
+ "qx-observability",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+]
+
+[[package]]
+name = "qx-devtools"
+version = "0.1.0"
+dependencies = [
+ "glob",
+ "tempfile",
+ "time",
+ "toml 0.8.23",
+]
+
+[[package]]
+name = "qx-domain"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "time",
+ "uuid",
+]
+
+[[package]]
+name = "qx-identity"
+version = "0.1.0"
+dependencies = [
+ "qx-domain",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "qx-identity-git-config"
+version = "0.1.0"
+dependencies = [
+ "qx-domain",
+ "qx-identity",
+ "qx-port-tests",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "qx-identity-github-oauth"
+version = "0.1.0"
+dependencies = [
+ "dirs 5.0.1",
+ "mockito",
+ "qx-domain",
+ "qx-identity",
+ "qx-port-tests",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "time",
+]
+
+[[package]]
+name = "qx-observability"
+version = "0.1.0"
+dependencies = [
+ "qx-config",
+ "qx-domain",
+ "qx-storage",
+ "qx-storage-csv-git",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "time",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "qx-port-tests"
+version = "0.1.0"
+dependencies = [
+ "glob",
+ "hex",
+ "image",
+ "qx-codec",
+ "qx-contract",
+ "qx-domain",
+ "qx-identity",
+ "qx-signing",
+ "qx-storage",
+ "qx-transport",
+ "qx-validators",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "sha2",
+ "toml 0.8.23",
+]
+
+[[package]]
+name = "qx-signing"
+version = "0.1.0"
+dependencies = [
+ "qx-domain",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "qx-signing-git-commit"
+version = "0.1.0"
+dependencies = [
+ "qx-domain",
+ "qx-port-tests",
+ "qx-signing",
+ "tempfile",
+ "thiserror 2.0.18",
+ "time",
+]
+
+[[package]]
+name = "qx-storage"
+version = "0.1.0"
+dependencies = [
+ "qx-domain",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "qx-storage-csv-git"
+version = "0.1.0"
+dependencies = [
+ "csv",
+ "qx-domain",
+ "qx-port-tests",
+ "qx-storage",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.18",
+ "time",
+ "uuid",
+]
+
+[[package]]
+name = "qx-storage-jsonl-git"
+version = "0.1.0"
+dependencies = [
+ "qx-domain",
+ "qx-port-tests",
+ "qx-storage",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "time",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "qx-transport"
+version = "0.1.0"
+dependencies = [
+ "qx-domain",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "qx-transport-github-pr"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "mockito",
+ "qx-domain",
+ "qx-port-tests",
+ "qx-transport",
+ "qx-validators",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "time",
+ "uuid",
+]
+
+[[package]]
+name = "qx-transport-table"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "qx-domain",
+ "qx-port-tests",
+ "qx-transport",
+ "qx-transport-github-pr",
+ "uuid",
+]
+
+[[package]]
+name = "qx-validators"
+version = "0.1.0"
+dependencies = [
+ "qx-contract",
+ "qx-domain",
+ "regex",
+ "serde_json",
+ "thiserror 2.0.18",
+ "time",
+]
+
+[[package]]
+name = "qx-wasm"
+version = "0.1.0"
+dependencies = [
+ "csv",
+ "getrandom 0.2.17",
+ "qx-app",
+ "qx-codec",
+ "qx-domain",
+ "qx-identity",
+ "qx-observability",
+ "qx-storage",
+ "qx-transport",
+ "qx-validators",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "time",
+ "wasm-bindgen",
 ]
 
 [[package]]

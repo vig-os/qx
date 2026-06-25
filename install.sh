@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# part-registry — one-line registry (data repo) setup, per ADR-038 §5.
+# qx — one-line registry (data repo) setup, per ADR-038 §5.
 #
 #   curl -fsSL https://raw.githubusercontent.com/MorePET/part-registry/main/install.sh \
 #     | bash -s -- <owner/repo> [bootstrap flags]

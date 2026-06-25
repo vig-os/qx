@@ -1,4 +1,4 @@
-// Playwright config for part-registry FE e2e (#35 Phase 3).
+// Playwright config for qx FE e2e (#35 Phase 3).
 //
 // Headless by default. Runs against a Vite preview server bound to a
 // local port so tests are deterministic + offline.

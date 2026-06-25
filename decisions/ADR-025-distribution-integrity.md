@@ -81,7 +81,7 @@ The MVP distribution-integrity stack is:
    bundle whose hash does not match.
 
 4. **CLI self-update is out of scope for the MVP.** Operators install
-   via `cargo install part-registry-cli` (against crates.io once
+   via `cargo install qx-cli` (against crates.io once
    published, or against the git tag) or download a pre-built
    release binary and verify against the `dist-hashes.json` and the
    signed tag manually. A future ADR (or amendment) introduces

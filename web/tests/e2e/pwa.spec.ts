@@ -36,7 +36,7 @@ test.describe("PWA", () => {
       const res = await fetch(href as string);
       return res.json();
     }, manifestHref);
-    expect(manifest.name).toBe("part-registry");
+    expect(manifest.name).toBe("qx");
     expect(manifest.display).toBe("standalone");
     expect(manifest.icons.length).toBeGreaterThan(0);
   });

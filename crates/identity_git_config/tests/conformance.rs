@@ -7,10 +7,10 @@
 use std::fs;
 use std::sync::Mutex;
 
-use part_registry_domain::IdentitySource;
-use part_registry_identity::IdentityProvider;
-use part_registry_identity_git_config::GitConfigIdentity;
-use part_registry_port_tests::identity_provider_conformance;
+use qx_domain::IdentitySource;
+use qx_identity::IdentityProvider;
+use qx_identity_git_config::GitConfigIdentity;
+use qx_port_tests::identity_provider_conformance;
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 

@@ -1,5 +1,5 @@
 [package]
-name = "part-registry-wasm"
+name = "qx-wasm"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -11,19 +11,19 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-part-registry-app = { path = "../app" }
-part-registry-storage = { path = "../storage" }
-part-registry-transport = { path = "../transport" }
-part-registry-identity = { path = "../identity" }
-part-registry-domain = { path = "../domain" }
+qx-app = { path = "../app" }
+qx-storage = { path = "../storage" }
+qx-transport = { path = "../transport" }
+qx-identity = { path = "../identity" }
+qx-domain = { path = "../domain" }
 # Encoder + SVG renderer only; the `decoder` feature pulls rxing
 # (~1.4 MB compressed) which we don't need on the FE — production
 # scanning stays on `zxing-wasm` per `web/README.md`. The A/B parity
 # harness runs from the native test target (codec with decoder on),
 # not from this façade. Foundation issue #33 §"Bundle size".
-part-registry-codec = { path = "../codec", default-features = false }
-part-registry-validators = { path = "../validators" }
-part-registry-observability = { path = "../observability" }
+qx-codec = { path = "../codec", default-features = false }
+qx-validators = { path = "../validators" }
+qx-observability = { path = "../observability" }
 wasm-bindgen = { workspace = true }
 serde-wasm-bindgen = { workspace = true }
 serde = { workspace = true }

@@ -224,7 +224,7 @@ the appropriate `Box<dyn IdentityProvider>`.
    (`PART_REGISTRY__TRANSPORT__GITHUB_TOKEN`); also accept the
    conventional `GITHUB_TOKEN` / `GH_TOKEN` names. This is the CI path.
 2. **Cached token** — `FileTokenStore`
-   (`~/.config/part-registry/github-token.json`) from a prior login;
+   (`~/.config/qx/github-token.json`) from a prior login;
    `verified_at` = token issue time.
 3. **Borrow system auth** *(opt-in adapter, no hard dependency)* —
    `gh auth token`, a git credential helper, or the OS keychain, **if

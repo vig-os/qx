@@ -26,7 +26,7 @@ test.beforeEach(async ({ page }) => {
     window.localStorage.clear();
     // The session store lives in IndexedDB — reset it so queue counts
     // are deterministic between tests.
-    indexedDB.deleteDatabase("part-registry");
+    indexedDB.deleteDatabase("qx");
   });
 });
 

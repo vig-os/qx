@@ -216,7 +216,7 @@ is actually *usable* rather than technically-present.
 expiry + exit codes) and project-specific *feeders* (op×spoke, crates,
 ports, SOUP). The joiner and the feeder-JSON schema
 (`{dimension, obligation, satisfied, citation, exempt_until}`) are
-generic governance, not part-registry-specific. Two pieces ship to the
+generic governance, not qx-specific. Two pieces ship to the
 shared guardrails flake **now** — the expiry primitive
 (`guardrails-ok-until:YYYY-MM-DD` + a `guardrails-expired-escapes` gate)
 and the feeder-JSON schema published there as a documented convention —

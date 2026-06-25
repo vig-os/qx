@@ -4,11 +4,9 @@
 
 use std::collections::BTreeMap;
 
-use part_registry_domain::{
-    Diff, DiffRow, IdentitySource, Operator, OperatorId, PartId, Proposal, RequestId,
-};
-use part_registry_port_tests::proposal_sink_conformance;
-use part_registry_transport_table::TableSink;
+use qx_domain::{Diff, DiffRow, IdentitySource, Operator, OperatorId, PartId, Proposal, RequestId};
+use qx_port_tests::proposal_sink_conformance;
+use qx_transport_table::TableSink;
 
 fn sample() -> Proposal {
     let diff = Diff {
