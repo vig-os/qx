@@ -19,6 +19,7 @@ qx-app = { path = "../app" }
 qx-domain = { path = "../domain" }
 qx-config = { path = "../config" }
 qx-observability = { path = "../observability" }
+qx-storage-jsonl-git = { path = "../storage_jsonl_git" }
 qx-storage = { path = "../storage" }
 qx-storage-csv-git = { path = "../storage_csv_git" }
 qx-identity = { path = "../identity" }

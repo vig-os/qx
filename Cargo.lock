@@ -3887,6 +3887,7 @@ dependencies = [
  "qx-signing-git-commit",
  "qx-storage",
  "qx-storage-csv-git",
+ "qx-storage-jsonl-git",
  "qx-transport",
  "qx-transport-github-pr",
  "qx-validators",

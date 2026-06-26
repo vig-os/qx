@@ -525,14 +525,22 @@ impl Wiring {
         // `PARTREG_OFFLINE=true` for hermetic test/dev runs.
         let repo_path = cfg.resolve_data_path()?;
         bootstrap_data_repo(&cfg.repo.data_repo_url, &cfg.repo.branch, &repo_path)?;
-        let mut csv_cfg = CsvGitConfig::new(repo_path.clone());
-        // For now, the CLI does not commit on audit-append — leave
-        // that to the data-repo automation (signed commits land via
-        // `transport_github_pr` once the live sink is wired through
-        // Config; see #35 Phase 3).
-        csv_cfg.commit_on_write = false;
-        let repo = CsvGitRepository::open(repo_path.clone(), csv_cfg)?;
-        let repo_arc: Arc<dyn Repository> = Arc::new(repo);
+        // Detect the storage shape (ADR-035 cutover): a legacy
+        // `registry.csv` selects the CSV adapter; a qx-init'd repo (no
+        // registry.csv, `collections/*.jsonl` instead) is JSONL-native.
+        let repo_arc: Arc<dyn Repository> = if repo_path.join("registry.csv").exists() {
+            let mut csv_cfg = CsvGitConfig::new(repo_path.clone());
+            // The CLI does not commit on audit-append — left to the
+            // data-repo automation (signed commits via transport_github_pr).
+            csv_cfg.commit_on_write = false;
+            Arc::new(CsvGitRepository::open(repo_path.clone(), csv_cfg)?)
+        } else {
+            let jsonl_cfg = qx_storage_jsonl_git::JsonlGitConfig::new(repo_path.clone());
+            Arc::new(qx_storage_jsonl_git::JsonlGitRepository::open(
+                repo_path.clone(),
+                jsonl_cfg,
+            )?)
+        };
 
         // Identity -----------------------------------------------------
         let identity: Box<dyn IdentityProvider> = match cfg.identity.adapter {
