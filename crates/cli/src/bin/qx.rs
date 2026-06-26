@@ -1208,7 +1208,75 @@ fn check_contract(
             Severity::Warn => notices.push(line),
         }
     }
+
+    // Content-addressed attachment integrity (ADR-035 §4): every
+    // attachment blob exists and hashes to its declared ref.
+    for line in check_attachment_blobs(&contract, &head_records, path) {
+        failures.push(line);
+    }
     validated
+}
+
+/// Verify content-addressed attachment blobs (ADR-035 §4): every
+/// attachment value's blob must exist at `attachments/<hex>.<ext>` and
+/// sha256 to its declared `ref` (tamper-evident). The object SHAPE is
+/// already enforced by `validate_record`; this checks the bytes on disk.
+fn check_attachment_blobs(
+    contract: &Contract,
+    head_records: &BTreeMap<String, Vec<Map<String, Value>>>,
+    path: &Path,
+) -> Vec<String> {
+    use sha2::{Digest, Sha256};
+    let mut errs = Vec::new();
+    for coll in &contract.collections {
+        let attach_keys: Vec<&str> = coll
+            .fields
+            .iter()
+            .filter(|f| matches!(f.type_, qx_contract::FieldType::Attachment))
+            .map(|f| f.key.as_str())
+            .collect();
+        if attach_keys.is_empty() {
+            continue;
+        }
+        let Some(recs) = head_records.get(&coll.name) else {
+            continue;
+        };
+        for rec in recs {
+            let id = rec.get("id").and_then(Value::as_str).unwrap_or("?");
+            for key in &attach_keys {
+                let Some(obj) = rec.get(*key).and_then(Value::as_object) else {
+                    continue;
+                };
+                let (Some(r), Some(name)) = (
+                    obj.get("ref").and_then(Value::as_str),
+                    obj.get("name").and_then(Value::as_str),
+                ) else {
+                    continue;
+                };
+                let Some(hex) = r.strip_prefix("sha256:") else {
+                    continue;
+                };
+                let ext = name.rsplit('.').next().unwrap_or("");
+                let blob = path.join("attachments").join(format!("{hex}.{ext}"));
+                match std::fs::read(&blob) {
+                    Err(_) => errs.push(format!(
+                        "{}[{id}].{key}: attachment blob missing at attachments/{hex}.{ext}",
+                        coll.name
+                    )),
+                    Ok(bytes) => {
+                        let digest = format!("{:x}", Sha256::digest(&bytes));
+                        if digest != hex {
+                            errs.push(format!(
+                                "{}[{id}].{key}: attachment blob hashes to {digest}, not ref {hex} (tampered)",
+                                coll.name
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    errs
 }
 
 /// Read a `collections/*.jsonl` file into generic JSON objects. A missing
