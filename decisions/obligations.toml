@@ -369,7 +369,7 @@ adr = "ADR-035"
 statement = "components is a core relation; validators enforce ref-existence + acyclicity + void/cascade policy"
 kind = "test"
 status = "pending"
-tracking = "ADR-035 §1a; graph-integrity validators not yet built"
+tracking = "ADR-035 §1a; ref-existence (validate_record FK) + acyclicity (validate_collection_graph in crates/validators, wired into qx check; M-B — proven by graph_acyclicity_detects_cycles + e2e cyclic_component_graph_fails_the_gate) DONE. REMAINING: void/cascade policy enforcement on the void transition (app-layer)"
 
 [[obligation]]
 id = "jsonl-storage"

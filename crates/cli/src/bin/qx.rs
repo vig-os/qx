@@ -35,7 +35,7 @@ use qx_domain::{
     PartStatus, RequestId,
 };
 use qx_observability::{request_id_span, ObservabilityConfig};
-use qx_validators::record::{validate_record, RecordContext, Severity};
+use qx_validators::record::{validate_collection_graph, validate_record, RecordContext, Severity};
 use qx_validators::{
     policy_decision, registry_sort_key, validate_sort_stable, validate_status_transition,
     validate_unique_ids, Policy,
@@ -1167,6 +1167,12 @@ fn check_contract(
                 }
             }
             validated += 1;
+        }
+        // Cross-record graph integrity for `acyclic` relations (ADR-035
+        // §1a): a cycle is invalid regardless of which records the PR
+        // touched, so it runs over all current records of the collection.
+        for issue in validate_collection_graph(coll, recs) {
+            failures.push(format!("{}.{}: {}", coll.name, issue.path, issue.message));
         }
     }
     validated
