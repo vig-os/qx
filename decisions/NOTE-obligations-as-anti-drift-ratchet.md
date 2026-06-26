@@ -78,6 +78,99 @@ per-repo Rust binary.
   binary, its flake derivation, and the `cargo run` coupling in the
   pre-commit path.
 
+## Tracked mode — `satisfied_by` is executable evidence (guardrails #26 companion)
+
+Coverage mode proves an ADR is *tracked*. Tracked mode must prove an
+obligation is *true* — and today it doesn't: `status = satisfied` +
+`satisfied_by = <glob>` only proves **presence** (the path resolves). It
+can lie — the path exists but doesn't implement the obligation, or it
+did once and silently regressed.
+
+Guardrails #26 (**docs-as-tests**: make the how-to runnable and run it,
+wired as `flake.nix → checks`) supplies the missing half: a **proof**.
+Fold it in by upgrading `satisfied_by` from "a path exists" to "an
+executable proof passes, wired into the check set." Typed, graduated
+evidence:
+
+| evidence kind | proves | guarded by |
+|---|---|---|
+| `path:` | presence (weakest; design/process obligations) | glob resolves |
+| `derived-doc:` | doc ↔ its generator | `derived-docs` |
+| `doctest:` / `trycmd:` / `mdbook:` / `conformance:` | **behavior** | wired into `flake.nix → checks` (CI runs it) |
+
+The **tracked-mode gate** then enforces: for any `satisfied` obligation
+whose `kind` is *behavioral*, the evidence must be an executable kind
+**and that check must exist in the flake check set** (so it actually
+runs in CI — the same no-local/CI-drift wiring docs-as-tests uses). A
+behavioral obligation marked satisfied with only a `path:` is itself a
+finding: *under-evidenced*. If behavior drifts, the proof fails → CI
+fails → the obligation is no longer satisfiable, automatically — nobody
+noticing required. Satisfaction stops being a human-typed status and
+becomes a green check the gate points at.
+
+**Honest limit (carried from #26):** docs-as-tests verifies *executable*
+content, not prose. Design/process obligations stay `path:`-evidenced
+and are honestly flagged "presence, not proof" — obligations must not
+pretend a prose claim is proven.
+
+This is the full can't-drift ladder, each rung turning an assertion into
+a verified fact: **`derived-docs`** (doc ↔ generator) → **docs-as-tests**
+(how-to ↔ behavior) → **obligations-with-executable-evidence** (ADR
+`satisfied` ↔ a passing proof). And it snaps to #26's ADR-lifecycle rule
+(*Accepted = decided **and** evidenced*) into one closed loop:
+
+> **Accepted ⟺ every obligation `satisfied` ⟺ its executable proof is green in CI.**
+
+An ADR can't flip Accepted until its obligations carry live, passing
+proofs — which is exactly why ADR-040 is correctly **Proposed**: its
+floor-enforcement claim isn't evidenced until spike #216 produces the
+proof.
+
+## Enforcement — so an agent can't sneak or forget
+
+A gate only counts if it can't be bypassed silently. You cannot stop an
+agent from *typing* a bypass — but you can make every bypass **(a) not
+actually work, (b) loud and counted, and (c) require a human to make
+stick.** Defense in depth, with the authority **independent of the
+agent**:
+
+1. **CI is the authority; local hooks are a fast advisory mirror.** The
+   obligations + docs-as-tests checks live in `flake.nix → checks` and CI
+   re-runs them by hash (`nix flake check`). `SKIP=`, `git commit
+   --no-verify`, a `guardrails-ok` line, or a hasty local pass dodge only
+   the *local copy* — CI re-checks the real thing independently. An agent
+   cannot sneak past by bypassing locally.
+2. **The checks must be REQUIRED at the merge** (branch protection,
+   ADR-034). A check that exists but isn't *required* is theatre — that
+   is exactly how this session's auto-merge slipped a `flake.nix` hash
+   break onto `main` (flake-checks weren't required). Making them
+   required makes a red obligation/proof *mechanically* block the merge.
+   **Highest-leverage single change.**
+3. **Escapes are loud and bounded, never silent.** `guardrails-ok` gets
+   an expiry — `guardrails-ok-until:YYYY-MM-DD` + a
+   `guardrails-expired-escapes` gate (ADR-030 §8) — plus a budget gate
+   that fails if the count of escapes (or `path:`-only behavioral
+   obligations) *grows*. An agent can't quietly annotate its way out;
+   escapes expire and are counted.
+4. **The "kind dodge" is caught.** Marking a behavioral obligation
+   `kind: design` to dodge the executable-evidence requirement is itself
+   flagged: a heuristic trips when a statement reads behavioral
+   (validates / rejects / enforces / renders / …) but evidence is
+   `path:`-only → "under-evidenced, looks behavioral." Forces an
+   explicit, reviewable choice.
+5. **The gate can't be weakened in the dark.** Gate config
+   (`.pre-commit-config.yaml`, the obligations rule, branch protection)
+   is CODEOWNERS-pinned, and CI runs the *released/vendored* gate by hash
+   (ADR-038), not the working-tree copy. Removing a hook, loosening a
+   rule, or dropping a required check routes through human approval; CI
+   keeps using the pinned gate until a CODEOWNERS-approved upgrade.
+
+The bypass still *exists* (you can always type `--no-verify`) — but
+against the authoritative layer it is *ineffective, visible, and
+expensive*. That is "can't sneak or forget easily." It is also
+self-evidencing: this session's slip slipped precisely because rung 2
+was not yet in place.
+
 ## Adoption
 
 Because drift is *inherent* to agent-driven development (not a rigor
