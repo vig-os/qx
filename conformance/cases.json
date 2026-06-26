@@ -73,8 +73,20 @@
       "expect": [] },
 
     { "name": "attachment-extension-rejected", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0018", "status": "unbound", "datasheet": "spec.docx" },
-      "expect": [ { "path": "datasheet", "severity": "error", "contains": "not in allowed set" } ] },
+      "record": { "id": "PART0018", "status": "unbound", "datasheet": { "ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "name": "spec.docx" } },
+      "expect": [ { "path": "datasheet.name", "severity": "error", "contains": "not in allowed set" } ] },
+
+    { "name": "attachment-not-object-rejected", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0021", "status": "unbound", "datasheet": "spec.pdf" },
+      "expect": [ { "path": "datasheet", "severity": "error", "contains": "expected an attachment object" } ] },
+
+    { "name": "attachment-bad-ref-rejected", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0022", "status": "unbound", "datasheet": { "ref": "notahash", "name": "spec.pdf" } },
+      "expect": [ { "path": "datasheet.ref", "severity": "error", "contains": "sha256" } ] },
+
+    { "name": "attachment-valid-object", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0023", "status": "unbound", "datasheet": { "ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "name": "spec.pdf", "desc": "Rev 3 datasheet" } },
+      "expect": [] },
 
     { "name": "nested-object-type-error", "collection": "parts", "status": "unbound",
       "record": { "id": "PART0019", "status": "unbound", "measurement": { "passed": "yes" } },
@@ -109,7 +121,8 @@
       "record": { "id": "PART0099", "status": "bound", "type": "bolt", "count": 5,
         "torque": "12.34", "ratio": 0.5, "active": true, "made_on": "2026-01-15",
         "checked_at": "2026-01-15T10:00:00Z", "grade": "a", "tag": "x",
-        "manufacturer": "COMP0001", "datasheet": "spec.pdf",
+        "manufacturer": "COMP0001",
+        "datasheet": { "ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "name": "spec.pdf" },
         "measurement": { "value": "1.234", "unit": "Nm", "passed": true } },
       "expect": [] },
 

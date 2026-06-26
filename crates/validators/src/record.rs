@@ -419,24 +419,71 @@ fn push_unknown(policy: OnUnknown, path: &str, msg: String, issues: &mut Vec<Rec
 }
 
 fn check_attachment(field: &Field, value: &Value, path: &str, issues: &mut Vec<RecordIssue>) {
-    let Some(s) = value.as_str() else {
+    // ADR-035 §4: an attachment value is a content-addressed, out-of-line
+    // object with `ref` (the `sha256:<64 hex>` integrity anchor), `name`
+    // (the filename — carries the extension and the human download name),
+    // and an optional `desc` caption. Never a bare string or stored path.
+    let Some(obj) = value.as_object() else {
         issues.push(RecordIssue::error(
             path,
-            "expected an attachment reference (string)",
+            "expected an attachment object { ref, name, desc? }",
         ));
         return;
     };
-    if let Some(constraint) = field.constraint.as_deref() {
-        // constraint is a pipe-separated extension allow-list, e.g. "pdf|png".
+    match obj.get("ref").and_then(Value::as_str) {
+        None => issues.push(RecordIssue::error(
+            format!("{path}.ref"),
+            "attachment requires a string `ref`",
+        )),
+        Some(r) if !is_sha256_ref(r) => issues.push(RecordIssue::error(
+            format!("{path}.ref"),
+            format!("attachment `ref` `{r}` is not a `sha256:<64 hex>` id"),
+        )),
+        Some(_) => {}
+    }
+    let name = obj.get("name").and_then(Value::as_str);
+    if name.is_none() {
+        issues.push(RecordIssue::error(
+            format!("{path}.name"),
+            "attachment requires a string `name`",
+        ));
+    }
+    if let Some(d) = obj.get("desc") {
+        if !d.is_string() {
+            issues.push(RecordIssue::error(
+                format!("{path}.desc"),
+                "attachment `desc` must be a string",
+            ));
+        }
+    }
+    // The value shape is exactly ref/name/desc — no stored path/who/when.
+    for k in obj.keys() {
+        if k != "ref" && k != "name" && k != "desc" {
+            issues.push(RecordIssue::error(
+                format!("{path}.{k}"),
+                format!("unknown attachment key `{k}`"),
+            ));
+        }
+    }
+    // The per-field extension constraint (`attachment(pdf|png)`) narrows
+    // the media type via the `name`'s extension.
+    if let (Some(constraint), Some(n)) = (field.constraint.as_deref(), name) {
         let allowed: Vec<&str> = constraint.split('|').map(str::trim).collect();
-        let ext = s.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+        let ext = n.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
         if !allowed.iter().any(|a| a.eq_ignore_ascii_case(&ext)) {
             issues.push(RecordIssue::error(
-                path,
+                format!("{path}.name"),
                 format!("attachment extension `{ext}` not in allowed set [{constraint}]"),
             ));
         }
     }
+}
+
+/// A `sha256:` content-address: the literal prefix + 64 lowercase hex.
+fn is_sha256_ref(s: &str) -> bool {
+    s.strip_prefix("sha256:")
+        .map(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()))
+        .unwrap_or(false)
 }
 
 fn check_object(
@@ -757,9 +804,9 @@ mod tests {
     fn attachment_extension_enforced() {
         let c = contract();
         let companies = c.collection("companies").unwrap();
-        // certification constraint "pdf"; give a .docx.
-        let record =
-            obj(r#"{ "label": "Acme", "role": "manufacturer", "certification": "cert.docx" }"#);
+        // certification constraint "pdf"; give a .docx (ADR-035 §4 object).
+        let record = obj(r#"{ "label": "Acme", "role": "manufacturer",
+                 "certification": { "ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "name": "cert.docx" } }"#);
         let issues = validate_record(
             companies,
             &record,
@@ -768,7 +815,49 @@ mod tests {
         );
         assert!(issues
             .iter()
-            .any(|i| i.path == "certification" && i.message.contains("not in allowed set")));
+            .any(|i| i.path == "certification.name" && i.message.contains("not in allowed set")));
+    }
+
+    #[test]
+    fn attachment_requires_content_addressed_object() {
+        // ADR-035 §4: an attachment value is { ref: sha256:…, name, desc? }.
+        let c = contract();
+        let companies = c.collection("companies").unwrap();
+        // A bare string is no longer a valid attachment.
+        let as_string =
+            obj(r#"{ "label": "Acme", "role": "manufacturer", "certification": "cert.pdf" }"#);
+        let i1 = validate_record(
+            companies,
+            &as_string,
+            Some("active"),
+            &RecordContext::default(),
+        );
+        assert!(i1
+            .iter()
+            .any(|i| i.path == "certification" && i.message.contains("attachment object")));
+        // A non-sha256 ref is rejected.
+        let bad_ref = obj(
+            r#"{ "label": "Acme", "role": "manufacturer", "certification": { "ref": "nope", "name": "cert.pdf" } }"#,
+        );
+        let i2 = validate_record(
+            companies,
+            &bad_ref,
+            Some("active"),
+            &RecordContext::default(),
+        );
+        assert!(i2
+            .iter()
+            .any(|i| i.path == "certification.ref" && i.message.contains("sha256")));
+        // A well-formed object with the allowed extension is clean.
+        let ok = obj(
+            r#"{ "label": "Acme", "role": "manufacturer", "certification": { "ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "name": "cert.pdf", "desc": "ISO cert" } }"#,
+        );
+        let i3 = validate_record(companies, &ok, Some("active"), &RecordContext::default());
+        assert!(
+            i3.iter()
+                .all(|i| i.path != "certification" && !i.path.starts_with("certification.")),
+            "got {i3:?}"
+        );
     }
 
     #[test]
