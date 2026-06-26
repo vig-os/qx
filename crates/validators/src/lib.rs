@@ -402,6 +402,9 @@ fn decide_one(action: &Action, operator: &Operator, policy: &Policy) -> AuthDeci
             }
         }
         ActionKind::RowAdd | ActionKind::RowBind | ActionKind::RowEdit => AuthDecision::Allow,
+        // A generic entity-store upsert is a non-destructive write (the
+        // PR review + gate enforce the contract); allow, like RowEdit.
+        ActionKind::RecordWrite => AuthDecision::Allow,
     }
 }
 

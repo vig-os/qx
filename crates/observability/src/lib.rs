@@ -362,6 +362,7 @@ fn action_kind_str(action: &Action) -> &'static str {
         qx_domain::ActionKind::RowEdit => "row_edit",
         qx_domain::ActionKind::HeaderChange => "header_change",
         qx_domain::ActionKind::BulkChange => "bulk_change",
+        qx_domain::ActionKind::RecordWrite => "record_write",
     }
 }
 

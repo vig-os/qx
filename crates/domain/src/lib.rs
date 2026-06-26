@@ -300,6 +300,9 @@ pub enum ActionKind {
     RowEdit,
     HeaderChange,
     BulkChange,
+    /// A generic entity-store record upsert (ADR-035): keyed on
+    /// {collection, id}, not the parts-row vocabulary.
+    RecordWrite,
 }
 
 /// `ChangeClass` is an alias for `ActionKind` per ADR-016 §"Semantic
@@ -348,6 +351,12 @@ pub enum Action {
         description: String,
         count: u32,
     },
+    /// A generic entity-store record upsert (ADR-035) — the collection
+    /// and id it targets, so policy/audit key on {collection, op-kind}.
+    RecordWrite {
+        collection: String,
+        id: String,
+    },
 }
 
 impl Action {
@@ -362,6 +371,7 @@ impl Action {
             Action::RowEdit { .. } => ActionKind::RowEdit,
             Action::HeaderChange { .. } => ActionKind::HeaderChange,
             Action::BulkChange { .. } => ActionKind::BulkChange,
+            Action::RecordWrite { .. } => ActionKind::RecordWrite,
         }
     }
 }
@@ -547,6 +557,17 @@ impl Diff {
                     });
                 }
             }
+        }
+
+        // Generic entity-store writes (ADR-035): each record upsert is a
+        // RecordWrite action keyed on {collection, id}, so generic-
+        // collection changes are classified for policy + audit (not
+        // silently un-classified).
+        for rw in &self.record_writes {
+            out.push(Action::RecordWrite {
+                collection: rw.collection.clone(),
+                id: rw.id.clone(),
+            });
         }
 
         out
@@ -1198,6 +1219,35 @@ mod tests {
         match &actions[0] {
             Action::BulkChange { count, .. } => assert_eq!(*count, 2),
             other => panic!("expected BulkChange, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_record_writes_emits_record_write_actions() {
+        // Generic entity-store writes are classified (no longer silently
+        // un-classified / policy-bypassing).
+        let mut rec = serde_json::Map::new();
+        rec.insert(
+            "id".into(),
+            serde_json::Value::String("CMPY2223AAAAAA".into()),
+        );
+        let diff = Diff {
+            record_writes: vec![RecordWrite {
+                collection: "companies".into(),
+                id: "CMPY2223AAAAAA".into(),
+                record: rec,
+            }],
+            ..Default::default()
+        };
+        let actions = diff.classify();
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].kind(), ActionKind::RecordWrite);
+        match &actions[0] {
+            Action::RecordWrite { collection, id } => {
+                assert_eq!(collection, "companies");
+                assert_eq!(id, "CMPY2223AAAAAA");
+            }
+            other => panic!("expected RecordWrite, got {other:?}"),
         }
     }
 
