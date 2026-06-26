@@ -21,7 +21,7 @@ use qx_codec::{
 };
 use qx_domain::{
     Diff, DiffEdit, DiffRow, Operator, OperatorRef, Part, PartId, PartStatus, PrintEvent, Proposal,
-    ProposalRef, RequestId, PART_ID_ALPHABET, PART_ID_LEN,
+    ProposalRef, RecordWrite, RequestId, PART_ID_ALPHABET, PART_ID_LEN,
 };
 use qx_identity::IdentityProvider;
 use qx_observability::{bind_audit_entry, emit_audit, mint_audit_entry, void_audit_entry};
@@ -474,12 +474,92 @@ fn operator(ctx: &AppContext) -> Result<Operator, Response> {
         .map_err(|e| Response::error(ErrorKind::Auth, e.to_string()))
 }
 
+/// Generic entity-store create (ADR-035): mint a nano14 id disjoint from
+/// the collection's existing records, build a record from `fields`, and
+/// submit a `record_writes` proposal targeting
+/// `collections/<collection>.jsonl`. Only nano14-scheme collections mint
+/// here; imported schemes (udi/gs1) would supply their own id.
+fn generic_create(
+    ctx: &AppContext,
+    collection: &str,
+    fields: &BTreeMap<String, String>,
+) -> Response {
+    if let Err(r) = served_collection(ctx, collection) {
+        return r;
+    }
+    let scheme = ctx
+        .contract
+        .as_ref()
+        .and_then(|c| c.collection(collection))
+        .map(|c| c.id.scheme.clone())
+        .unwrap_or_else(|| "nano14".to_string());
+    if scheme != "nano14" {
+        return Response::error(
+            ErrorKind::Unsupported,
+            format!("create for id scheme {scheme:?} not yet supported (mint covers nano14)"),
+        );
+    }
+    let op = match operator(ctx) {
+        Ok(o) => o,
+        Err(r) => return r,
+    };
+    let existing: HashSet<String> = match ctx.repo.list_collection(collection) {
+        Ok(recs) => recs
+            .iter()
+            .filter_map(|r| r.get("id").and_then(|v| v.as_str()).map(String::from))
+            .collect(),
+        Err(e) => return Response::error(ErrorKind::Backend, e.to_string()),
+    };
+    let id = match mint_part_id(&existing) {
+        Ok(p) => p.as_str().to_string(),
+        Err(e) => return Response::error(ErrorKind::Backend, e),
+    };
+    let mut record = serde_json::Map::new();
+    record.insert("id".to_string(), serde_json::Value::String(id.clone()));
+    for (k, v) in fields {
+        record.insert(k.clone(), serde_json::Value::String(v.clone()));
+    }
+    let diff = Diff {
+        record_writes: vec![RecordWrite {
+            collection: collection.to_string(),
+            id: id.clone(),
+            record,
+        }],
+        ..Diff::default()
+    };
+    let request_id = RequestId::new();
+    let proposal = Proposal {
+        diff: diff.clone(),
+        batch_label: None,
+        author: op,
+        signatures: Vec::new(),
+        change_classification: diff.classify(),
+        message: format!("create {collection}: {id}"),
+        request_id,
+    };
+    match ctx.sink.submit(proposal) {
+        Ok(proposal_ref) => Response::ok(json!({
+            "id": id,
+            "collection": collection,
+            "proposal": proposal_ref.url,
+        })),
+        Err(e) => Response::error(ErrorKind::Backend, e.to_string()),
+    }
+}
+
 fn create(
     ctx: &AppContext,
     collection: &str,
     n: Option<u32>,
     fields: &BTreeMap<String, String>,
 ) -> Response {
+    // Generic entity-store create for declared non-parts collections
+    // (ADR-035): mint an id and write a record with the given fields,
+    // via the JSONL `record_writes` channel. Parts keep their blank-mint
+    // semantics below (mint-then-bind, ADR-012).
+    if collection != "parts" {
+        return generic_create(ctx, collection, fields);
+    }
     if let Err(r) = known_collection(ctx, collection) {
         return r;
     }

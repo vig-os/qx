@@ -48,7 +48,7 @@ use serde::{Deserialize, Serialize};
 
 use qx_domain::{
     Action, ActionKind, Diff, DiffEdit, DiffRow, Operator, Proposal, ProposalRef, ProposalStatus,
-    Signature,
+    RecordWrite, Signature,
 };
 use qx_transport::{ProposalError, ProposalSink};
 use qx_validators::{print_log_sort_key, registry_sort_key, PRINT_LOG_HEADER, REGISTRY_HEADER};
@@ -761,6 +761,60 @@ fn emit_csv(header: &[String], rows: &[BTreeMap<String, String>]) -> String {
 /// doesn't exist yet). Re-sorts per ADR-013 / ADR-015 stable-sort
 /// rules and returns the new content + the existing-blob SHA (if any)
 /// — caller threads the SHA through to `PUT contents`.
+/// Distinct collections touched by the proposal's `record_writes`, sorted
+/// for a deterministic file-write order.
+fn record_write_collections(diff: &Diff) -> Vec<String> {
+    let mut set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for rw in &diff.record_writes {
+        set.insert(rw.collection.clone());
+    }
+    set.into_iter().collect()
+}
+
+/// Upsert each `record_write` for `collection` into the JSONL text:
+/// replace the line whose `id` matches, else append. One JSON document
+/// per line, insertion order preserved. Pure — unit-tested.
+fn apply_record_writes_to_jsonl(
+    existing: &str,
+    collection: &str,
+    writes: &[RecordWrite],
+) -> Result<String, String> {
+    let mut order: Vec<String> = Vec::new();
+    let mut by_id: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    for line in existing.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let v: serde_json::Value = serde_json::from_str(line).map_err(|e| e.to_string())?;
+        let id = v
+            .get("id")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        if !by_id.contains_key(&id) {
+            order.push(id.clone());
+        }
+        by_id.insert(id, line.to_string());
+    }
+    for rw in writes.iter().filter(|w| w.collection == collection) {
+        let line = serde_json::to_string(&serde_json::Value::Object(rw.record.clone()))
+            .map_err(|e| e.to_string())?;
+        if !by_id.contains_key(&rw.id) {
+            order.push(rw.id.clone());
+        }
+        by_id.insert(rw.id.clone(), line);
+    }
+    let mut out = String::new();
+    for id in &order {
+        if let Some(line) = by_id.get(id) {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    Ok(out)
+}
+
 fn apply_diff_to_file(
     file: TargetFile,
     diff: &Diff,
@@ -1061,6 +1115,36 @@ impl<H: GithubPrHttp> GithubPrProposalSink<H> {
                 .put_contents(owner, repo, file.path(), &put_body)?;
         }
 
+        // 3b. Generic entity-store writes (ADR-035): upsert each record
+        //     into collections/<collection>.jsonl by id.
+        for coll in record_write_collections(&proposal.diff) {
+            let path = format!("collections/{coll}.jsonl");
+            let existing = self.http.get_contents(owner, repo, &path, base)?;
+            let existing_text = match &existing {
+                Some(e) => decode_b64_content(&e.content)
+                    .map_err(|e| HttpError::Transport(e.to_string()))?,
+                None => String::new(),
+            };
+            let new_content = apply_record_writes_to_jsonl(
+                &existing_text,
+                &coll,
+                &proposal.diff.record_writes,
+            )
+            .map_err(|e| HttpError::Transport(format!("apply_record_writes({path}): {e}")))?;
+            let put_body = PutContentsRequest {
+                message: format!(
+                    "{} ({path})",
+                    proposal.message.lines().next().unwrap_or("proposal")
+                ),
+                content: b64_encode(&new_content),
+                branch: branch.to_owned(),
+                sha: existing.as_ref().map(|e| e.sha.clone()),
+                committer: self.committer(),
+                author: self.author_for(&proposal.author),
+            };
+            self.http.put_contents(owner, repo, &path, &put_body)?;
+        }
+
         // 4. Open the PR.
         let pr_body = CreatePullRequest {
             title: build_pr_title(proposal),
@@ -1276,6 +1360,43 @@ mod tests {
         DiffRow, HeaderChange, IdentitySource, KeyId, OperatorId, PartId, RekorProof, RequestId,
     };
     use qx_port_tests::proposal_sink_conformance;
+
+    #[test]
+    fn record_writes_upsert_into_jsonl() {
+        let rec = |id: &str, label: &str| {
+            let mut m = serde_json::Map::new();
+            m.insert("id".into(), serde_json::Value::String(id.into()));
+            m.insert("label".into(), serde_json::Value::String(label.into()));
+            m
+        };
+        let existing = "{\"id\":\"A\",\"label\":\"Old\"}\n{\"id\":\"B\",\"label\":\"Bee\"}\n";
+        let writes = vec![
+            RecordWrite {
+                collection: "companies".into(),
+                id: "A".into(),
+                record: rec("A", "New"),
+            },
+            RecordWrite {
+                collection: "companies".into(),
+                id: "C".into(),
+                record: rec("C", "Cee"),
+            },
+            RecordWrite {
+                collection: "other".into(),
+                id: "Z".into(),
+                record: rec("Z", "Z"),
+            },
+        ];
+        let out = apply_record_writes_to_jsonl(existing, "companies", &writes).unwrap();
+        // A updated in place, B kept, C appended; the other-collection write ignored.
+        assert!(out.contains("\"label\":\"New\"") && !out.contains("\"label\":\"Old\""));
+        assert!(out.contains("\"id\":\"B\"") && out.contains("\"id\":\"C\""));
+        assert!(
+            !out.contains("\"id\":\"Z\""),
+            "wrong-collection write must be skipped"
+        );
+        assert_eq!(out.lines().count(), 3);
+    }
 
     // ----- HTTP test double -----------------------------------------
 

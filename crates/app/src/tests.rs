@@ -449,6 +449,56 @@ fn list_serves_a_generic_contract_collection() {
     assert!(none.data().is_none());
 }
 
+#[test]
+fn generic_create_writes_a_record_via_record_writes() {
+    use std::sync::Arc;
+    let contract = qx_contract::Contract::from_bytes(
+        br#"{"format_version":1,"collections":[
+        {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+         "lifecycle":{"statuses":["unbound","bound","void"],"initial":"unbound",
+           "transitions":{"unbound":["bound","void"],"bound":["void"],"void":[]}},
+         "fields":[{"key":"type","type":"string","label":"Type"}]},
+        {"name":"companies","id":{"scheme":"nano14","default":false,"mintable":true},
+         "fields":[{"key":"label","type":"string","label":"Label"}]}]}"#,
+    )
+    .unwrap();
+    let submitted = Arc::new(Mutex::new(Vec::new()));
+    let ctx = AppContext {
+        repo: Arc::new(MemRepo::new(Vec::new())),
+        identity: Box::new(FixedIdentity),
+        sink: Box::new(MemSink {
+            submitted: submitted.clone(),
+        }),
+        registry_name: "test-registry".into(),
+        contract: Some(Arc::new(contract)),
+    };
+
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Create","collection":"companies","fields":{"label":"Acme"}}),
+    );
+    let d = r.data().expect("ok");
+    assert_eq!(d["collection"], json!("companies"));
+    let new_id = d["id"].as_str().expect("minted id").to_string();
+
+    // The submitted proposal carries one record_write for companies with
+    // the minted id + the supplied fields (the JSONL entity-store write).
+    let props = submitted.lock().unwrap();
+    assert_eq!(props.len(), 1);
+    let rw = &props[0].diff.record_writes;
+    assert_eq!(rw.len(), 1);
+    assert_eq!(rw[0].collection, "companies");
+    assert_eq!(rw[0].id, new_id);
+    assert_eq!(
+        rw[0].record.get("label").and_then(|v| v.as_str()),
+        Some("Acme")
+    );
+    assert_eq!(
+        rw[0].record.get("id").and_then(|v| v.as_str()),
+        Some(new_id.as_str())
+    );
+}
+
 // -------------------------------------------------------------------
 // Create (mint) / Transition / Edit
 // -------------------------------------------------------------------
