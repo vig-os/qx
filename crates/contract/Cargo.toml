@@ -18,3 +18,9 @@ path = "src/lib.rs"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+
+# Test-only (does NOT touch the wasm-clean lib): the meta-schema gate
+# validates schema/contract.example.json against schema/contract.schema.json.
+# `default-features = false` keeps it offline (no reqwest remote-$ref).
+[dev-dependencies]
+jsonschema = { version = "0.18", default-features = false }
