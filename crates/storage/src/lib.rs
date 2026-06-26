@@ -43,6 +43,14 @@ pub enum RepoError {
 // -------------------------------------------------------------------
 
 pub trait Repository: Send + Sync {
+    /// Whether this store is JSONL-native (ADR-035): parts live in
+    /// `collections/parts.jsonl` and flow through the generic entity path
+    /// (list_collection + record_writes), not the legacy `Part`/CSV path.
+    /// The CSV adapter is `false` (default); the JSONL adapter overrides.
+    fn is_jsonl_native(&self) -> bool {
+        false
+    }
+
     // Read: parts
     fn get_part(&self, id: &PartId) -> Result<Option<Part>, RepoError>;
     fn list_parts(&self, filter: &PartFilter) -> Result<Vec<Part>, RepoError>;

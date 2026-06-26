@@ -233,9 +233,10 @@ fn resolve_part(ctx: &AppContext, query: &str) -> Result<Part, Response> {
 
 fn load_entities(ctx: &AppContext, collection: &str) -> Result<Vec<Entity>, Response> {
     // The default `parts` collection keeps its rich Part projection
-    // (minted/bound timestamps). Other declared collections are served
-    // generically from their JSONL records (ADR-035 entity store).
-    if collection == "parts" {
+    // (minted/bound timestamps). Other declared collections — and parts
+    // themselves on a JSONL-native store — are served generically from
+    // their JSONL records (ADR-035 entity store).
+    if collection == "parts" && !ctx.repo.is_jsonl_native() {
         let parts = ctx
             .repo
             .list_parts(&PartFilter::default())
@@ -726,7 +727,7 @@ fn create(
     // (ADR-035): mint an id and write a record with the given fields,
     // via the JSONL `record_writes` channel. Parts keep their blank-mint
     // semantics below (mint-then-bind, ADR-012).
-    if collection != "parts" {
+    if collection != "parts" || ctx.repo.is_jsonl_native() {
         return generic_create(ctx, collection, fields);
     }
     if let Err(r) = known_collection(ctx, collection) {
@@ -919,7 +920,7 @@ fn transition(
     to: &str,
     fields: &BTreeMap<String, String>,
 ) -> Response {
-    if collection != "parts" {
+    if collection != "parts" || ctx.repo.is_jsonl_native() {
         return generic_transition(ctx, collection, id, to, fields);
     }
     if let Err(r) = known_collection(ctx, collection) {
@@ -1037,7 +1038,7 @@ fn edit(
     id: &str,
     fields: &BTreeMap<String, String>,
 ) -> Response {
-    if collection != "parts" {
+    if collection != "parts" || ctx.repo.is_jsonl_native() {
         return generic_edit(ctx, collection, id, fields);
     }
     if let Err(r) = known_collection(ctx, collection) {
