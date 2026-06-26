@@ -285,3 +285,35 @@ fn effective_dating_catches_a_changed_record() {
     );
     assert!(String::from_utf8_lossy(&out.stderr).contains("PART0001"));
 }
+
+#[test]
+fn cyclic_component_graph_fails_the_gate() {
+    // ADR-035 §1a component-graph-integrity: a self-referential `acyclic`
+    // relation whose records form a cycle is rejected by `qx check`.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    let contract = r#"{ "format_version": 1, "collections": [
+        { "name": "parts", "id": { "scheme": "nano14", "default": true, "mintable": true },
+          "open_properties": true,
+          "relations": [ { "name": "components", "target": "parts", "acyclic": true, "kind": "many-many" } ] } ] }"#;
+    fs::create_dir_all(dir.join(".qx")).unwrap();
+    fs::create_dir_all(dir.join("collections")).unwrap();
+    fs::write(dir.join(".qx/contract.json"), contract).unwrap();
+    // P1 → P2 → P1.
+    fs::write(
+        dir.join("collections/parts.jsonl"),
+        "{\"id\":\"P1\",\"components\":[\"P2\"]}\n{\"id\":\"P2\",\"components\":[\"P1\"]}\n",
+    )
+    .unwrap();
+
+    let out = pr_check(dir, None);
+    assert!(
+        !out.status.success(),
+        "a cyclic component graph must fail the gate"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("cycle"),
+        "expected a cycle error, got:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

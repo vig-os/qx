@@ -481,6 +481,88 @@ fn check_object(
     }
 }
 
+/// Graph-integrity check for a collection's `acyclic` relations (ADR-035
+/// §1a / `component-graph-integrity`). For each relation marked
+/// `acyclic`, the field keyed by the relation name on each record holds
+/// the outgoing edge target ids; a back-edge into the active path is an
+/// Error. Cross-record (unlike [`validate_record`]). FK validity —
+/// targets exist — is `validate_record`'s job; this only catches cycles.
+pub fn validate_collection_graph(
+    collection: &Collection,
+    records: &[Map<String, Value>],
+) -> Vec<RecordIssue> {
+    let mut issues = Vec::new();
+    for rel in &collection.relations {
+        if !rel.acyclic {
+            continue;
+        }
+        let mut adj: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for rec in records {
+            let Some(id) = rec.get("id").and_then(Value::as_str) else {
+                continue;
+            };
+            let edges = rec
+                .get(&rel.name)
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+            adj.insert(id.to_string(), edges);
+        }
+        if let Some(via) = first_cycle(&adj) {
+            issues.push(RecordIssue::error(
+                rel.name.clone(),
+                format!(
+                    "relation `{}` is declared acyclic but a cycle reaches `{via}`",
+                    rel.name
+                ),
+            ));
+        }
+    }
+    issues
+}
+
+/// DFS three-colour cycle detection. Returns the node a back-edge points
+/// at (the witness) if the graph has a cycle, else `None`. Edges to
+/// non-nodes (dangling FKs) are ignored — that is the FK check's concern.
+fn first_cycle(adj: &BTreeMap<String, Vec<String>>) -> Option<String> {
+    // 0 = white (unseen), 1 = gray (on the active path), 2 = black (done).
+    fn dfs(
+        node: &str,
+        adj: &BTreeMap<String, Vec<String>>,
+        color: &mut BTreeMap<String, u8>,
+    ) -> Option<String> {
+        color.insert(node.to_string(), 1);
+        if let Some(nbrs) = adj.get(node) {
+            for n in nbrs {
+                match color.get(n).copied().unwrap_or(0) {
+                    1 => return Some(n.clone()),
+                    0 if adj.contains_key(n) => {
+                        if let Some(c) = dfs(n, adj, color) {
+                            return Some(c);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        color.insert(node.to_string(), 2);
+        None
+    }
+    let mut color: BTreeMap<String, u8> = BTreeMap::new();
+    for node in adj.keys().cloned().collect::<Vec<_>>() {
+        if color.get(&node).copied().unwrap_or(0) == 0 {
+            if let Some(c) = dfs(&node, adj, &mut color) {
+                return Some(c);
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -724,5 +806,34 @@ mod tests {
             .collect();
         assert_eq!(pc.len(), 1);
         assert_eq!(pc[0].severity, Severity::Warn);
+    }
+
+    #[test]
+    fn graph_acyclicity_detects_cycles() {
+        let c = Contract::from_bytes(
+            br#"{"format_version":1,"collections":[
+            {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+             "open_properties":true,
+             "relations":[{"name":"components","target":"parts","acyclic":true,"kind":"many-many"}]}]}"#,
+        )
+        .unwrap();
+        let coll = c.collection("parts").unwrap();
+
+        // Acyclic chain P1 -> P2 -> P3 → no issue.
+        let acyclic = [
+            obj(r#"{"id":"P1","components":["P2"]}"#),
+            obj(r#"{"id":"P2","components":["P3"]}"#),
+            obj(r#"{"id":"P3","components":[]}"#),
+        ];
+        assert!(validate_collection_graph(coll, &acyclic).is_empty());
+
+        // Cycle P1 -> P2 -> P1 → exactly one error.
+        let cyclic = [
+            obj(r#"{"id":"P1","components":["P2"]}"#),
+            obj(r#"{"id":"P2","components":["P1"]}"#),
+        ];
+        let issues = validate_collection_graph(coll, &cyclic);
+        assert_eq!(issues.len(), 1, "expected one cycle issue, got {issues:?}");
+        assert!(issues[0].message.contains("cycle"));
     }
 }
