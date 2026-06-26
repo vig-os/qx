@@ -345,3 +345,35 @@ fn weakening_the_parts_lifecycle_floor_fails_the_gate() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+#[test]
+fn void_policy_block_fails_the_gate() {
+    // ADR-035 §1a: voiding a record still referenced under a `block`
+    // relation is rejected by `qx check`.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    let contract = r#"{ "format_version": 1, "collections": [
+        { "name": "parts", "id": { "scheme": "nano14", "default": true, "mintable": true },
+          "open_properties": true,
+          "relations": [ { "name": "components", "target": "parts", "kind": "many-many", "void_policy": "block" } ] } ] }"#;
+    fs::create_dir_all(dir.join(".qx")).unwrap();
+    fs::create_dir_all(dir.join("collections")).unwrap();
+    fs::write(dir.join(".qx/contract.json"), contract).unwrap();
+    // PARTAAAAAAAAA3 still references voided PARTAAAAAAAAA2 (valid nano14).
+    fs::write(
+        dir.join("collections/parts.jsonl"),
+        "{\"id\":\"PARTAAAAAAAAA2\",\"status\":\"void\"}\n{\"id\":\"PARTAAAAAAAAA3\",\"components\":[\"PARTAAAAAAAAA2\"]}\n",
+    )
+    .unwrap();
+
+    let out = pr_check(dir, None);
+    assert!(
+        !out.status.success(),
+        "referencing a voided record under block must fail the gate"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("void_policy"),
+        "expected a void_policy error, got:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

@@ -22,7 +22,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qx_contract::{Closed, Collection, Field, FieldType, IdScheme, ObjectSchema, OnUnknown};
+use qx_contract::{
+    Closed, Collection, Contract, Field, FieldType, IdScheme, ObjectSchema, OnUnknown, VoidPolicy,
+};
 use serde_json::{Map, Value};
 
 /// Severity of a single record issue. `Warn` never blocks a merge; it is
@@ -659,6 +661,70 @@ fn first_cycle(adj: &BTreeMap<String, Vec<String>>) -> Option<String> {
     None
 }
 
+/// Cross-collection void-policy enforcement (ADR-035 §1a /
+/// `component-graph-integrity`). When a record is voided
+/// (`status == "void"`) but is still referenced through a relation whose
+/// `void_policy` is `block` (Error) or `warn` (Warn), surface an issue
+/// against the referencing record's relation. `cascade` is allowed — the
+/// dependent edges are expected to be voided too. Takes every
+/// collection's records keyed by name (the cross-collection universe
+/// `qx check` already builds).
+pub fn validate_void_policy(
+    contract: &Contract,
+    records: &BTreeMap<String, Vec<Map<String, Value>>>,
+) -> Vec<RecordIssue> {
+    let mut issues = Vec::new();
+    for source in &contract.collections {
+        let Some(source_recs) = records.get(&source.name) else {
+            continue;
+        };
+        for rel in &source.relations {
+            let severity = match rel.void_policy {
+                VoidPolicy::Block => Severity::Error,
+                VoidPolicy::Warn => Severity::Warn,
+                VoidPolicy::Cascade => continue,
+            };
+            let Some(target_recs) = records.get(&rel.target) else {
+                continue;
+            };
+            let voided: BTreeSet<&str> = target_recs
+                .iter()
+                .filter(|r| r.get("status").and_then(Value::as_str) == Some("void"))
+                .filter_map(|r| r.get("id").and_then(Value::as_str))
+                .collect();
+            if voided.is_empty() {
+                continue;
+            }
+            for rec in source_recs {
+                let src_id = rec.get("id").and_then(Value::as_str).unwrap_or("?");
+                for target_id in relation_edges(rec, &rel.name) {
+                    if voided.contains(target_id) {
+                        let msg = format!(
+                            "relation `{}`: `{src_id}` references voided `{target_id}` (void_policy)",
+                            rel.name
+                        );
+                        issues.push(match severity {
+                            Severity::Error => RecordIssue::error(rel.name.clone(), msg),
+                            Severity::Warn => RecordIssue::warn(rel.name.clone(), msg),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    issues
+}
+
+/// The outgoing edge ids a record holds under a relation field, accepting
+/// either a single id string (many-one) or an array of ids (many-many).
+fn relation_edges<'a>(rec: &'a Map<String, Value>, field: &str) -> Vec<&'a str> {
+    match rec.get(field) {
+        Some(Value::String(s)) => vec![s.as_str()],
+        Some(Value::Array(a)) => a.iter().filter_map(Value::as_str).collect(),
+        _ => Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1006,5 +1072,52 @@ mod tests {
         let dev = dev_c.collection("devices").unwrap();
         let imported = obj(r#"{"id":"(01)00844588003288"}"#);
         assert!(validate_record(dev, &imported, None, &RecordContext::default()).is_empty());
+    }
+
+    #[test]
+    fn void_policy_flags_references_to_voided_records() {
+        let block = Contract::from_bytes(
+            br#"{"format_version":1,"collections":[
+            {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+             "open_properties":true,
+             "relations":[{"name":"components","target":"parts","kind":"many-many","void_policy":"block"}]}]}"#,
+        )
+        .unwrap();
+        let mut records = BTreeMap::new();
+        records.insert(
+            "parts".to_string(),
+            vec![
+                obj(r#"{"id":"P2","status":"void"}"#),
+                obj(r#"{"id":"P1","components":["P2"]}"#),
+            ],
+        );
+        let issues = validate_void_policy(&block, &records);
+        assert_eq!(issues.len(), 1, "{issues:?}");
+        assert_eq!(issues[0].severity, Severity::Error);
+        assert!(issues[0].message.contains("voided `P2`"), "{issues:?}");
+
+        // `warn` policy downgrades to a Warn, never blocking.
+        let warn = Contract::from_bytes(
+            br#"{"format_version":1,"collections":[
+            {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+             "open_properties":true,
+             "relations":[{"name":"components","target":"parts","kind":"many-many","void_policy":"warn"}]}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            validate_void_policy(&warn, &records)[0].severity,
+            Severity::Warn
+        );
+
+        // No voided target → no issue.
+        let mut clean = BTreeMap::new();
+        clean.insert(
+            "parts".to_string(),
+            vec![
+                obj(r#"{"id":"P2","status":"bound"}"#),
+                obj(r#"{"id":"P1","components":["P2"]}"#),
+            ],
+        );
+        assert!(validate_void_policy(&block, &clean).is_empty());
     }
 }

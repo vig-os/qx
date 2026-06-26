@@ -35,7 +35,9 @@ use qx_domain::{
     PartStatus, RequestId,
 };
 use qx_observability::{request_id_span, ObservabilityConfig};
-use qx_validators::record::{validate_collection_graph, validate_record, RecordContext, Severity};
+use qx_validators::record::{
+    validate_collection_graph, validate_record, validate_void_policy, RecordContext, Severity,
+};
 use qx_validators::{
     policy_decision, registry_sort_key, validate_sort_stable, validate_status_transition,
     validate_unique_ids, Policy,
@@ -1194,6 +1196,16 @@ fn check_contract(
         // touched, so it runs over all current records of the collection.
         for issue in validate_collection_graph(coll, recs) {
             failures.push(format!("{}.{}: {}", coll.name, issue.path, issue.message));
+        }
+    }
+
+    // Cross-collection void-policy (ADR-035 §1a): a voided record still
+    // referenced through a `block`/`warn` relation is an error/notice.
+    for issue in validate_void_policy(&contract, &head_records) {
+        let line = format!("{}: {}", issue.path, issue.message);
+        match issue.severity {
+            Severity::Error => failures.push(line),
+            Severity::Warn => notices.push(line),
         }
     }
     validated

@@ -368,8 +368,9 @@ id = "component-graph-integrity"
 adr = "ADR-035"
 statement = "components is a core relation; validators enforce ref-existence + acyclicity + void/cascade policy"
 kind = "test"
-status = "pending"
-tracking = "ADR-035 §1a; ref-existence (validate_record FK) + acyclicity (validate_collection_graph in crates/validators, wired into qx check; M-B — proven by graph_acyclicity_detects_cycles + e2e cyclic_component_graph_fails_the_gate) DONE. REMAINING: void/cascade policy enforcement on the void transition (app-layer)"
+status = "satisfied"
+satisfied_by = ["crates/validators/src/record.rs", "crates/cli/tests/pr_check_contract.rs"]
+tracking = "SATISFIED (M-B): all three terms enforced in qx check. ref-existence = validate_record check_reference (FK); acyclicity = validate_collection_graph (DFS, proven by graph_acyclicity_detects_cycles + e2e cyclic_component_graph_fails_the_gate); void/cascade = validate_void_policy (block→error / warn→warn / cascade→allow; cross-collection over the check's record universe; proven by void_policy_flags_references_to_voided_records + e2e void_policy_block_fails_the_gate)"
 
 [[obligation]]
 id = "jsonl-storage"
