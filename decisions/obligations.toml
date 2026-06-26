@@ -622,3 +622,11 @@ statement = "Effective-dating is commit-resolved (a record is governed by the co
 kind = "crate"
 status = "pending"
 tracking = "ADR-039 §6 (revised git-native after review, #204); the gate's commit-resolution + host-governance projection + format_version compat range + the content-hash export stamp not yet built (task #20). Meta-schema now carries only format_version (in-file governance fields removed)"
+
+[[obligation]]
+id = "preset-library-gate-floors"
+adr = "ADR-040"
+statement = "Presets are a declared library (schema/presets/*.contract.json), composed by qx init --preset a,b,c; the engine knows no collection by name. The non-weakenable floor is a declared marker + a gate no-weaken diff rule (gate run by hash, contract change CODEOWNERS-pinned), NOT compiled parts_descriptor(). parts becomes preset #1 and migrates into the library"
+kind = "issue"
+status = "pending"
+tracking = "ADR-040 (Proposed); spike #216 must prove floor-enforcement-via-gate (incl. non-instantiation / rename-around bypass) before parts_descriptor() is retired; refines/supersedes ADR-035 §0 guardrail #1 + ADR-039 §5"
