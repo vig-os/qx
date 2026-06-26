@@ -377,3 +377,50 @@ fn void_policy_block_fails_the_gate() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+// sha256 of an empty byte string — used as a known content-address.
+const EMPTY_SHA: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+fn attachment_repo(dir: &std::path::Path, with_blob: bool) {
+    let contract = r#"{ "format_version": 1, "collections": [
+        { "name": "parts", "id": { "scheme": "nano14", "default": true, "mintable": true },
+          "lifecycle": { "statuses": ["unbound","bound","void"], "initial": "unbound",
+            "transitions": { "unbound": ["bound","void"], "bound": ["void"], "void": [] } },
+          "fields": [ { "key": "datasheet", "type": "attachment", "label": "Datasheet" } ] } ] }"#;
+    fs::create_dir_all(dir.join(".qx")).unwrap();
+    fs::create_dir_all(dir.join("collections")).unwrap();
+    fs::write(dir.join(".qx/contract.json"), contract).unwrap();
+    let rec = format!(
+        "{{\"id\":\"PARTAAAAAAAAA2\",\"datasheet\":{{\"ref\":\"sha256:{EMPTY_SHA}\",\"name\":\"x.pdf\"}}}}\n"
+    );
+    fs::write(dir.join("collections/parts.jsonl"), rec).unwrap();
+    if with_blob {
+        fs::create_dir_all(dir.join("attachments")).unwrap();
+        fs::write(dir.join(format!("attachments/{EMPTY_SHA}.pdf")), b"").unwrap();
+    }
+}
+
+#[test]
+fn attachment_blob_missing_fails_the_gate() {
+    let tmp = tempfile::tempdir().unwrap();
+    attachment_repo(tmp.path(), false);
+    let out = pr_check(tmp.path(), None);
+    assert!(!out.status.success(), "a missing attachment blob must fail");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("attachment blob missing"),
+        "got:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn attachment_blob_present_and_matching_passes() {
+    let tmp = tempfile::tempdir().unwrap();
+    attachment_repo(tmp.path(), true);
+    let out = pr_check(tmp.path(), None);
+    assert!(
+        out.status.success(),
+        "a present, hash-matching blob must pass, got:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

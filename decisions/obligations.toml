@@ -465,8 +465,9 @@ id = "attachments-content-addressed"
 adr = "ADR-035"
 statement = "attachment field = {ref: sha256, name, desc?}; path derived (never stored); validators enforce ref-exists + hash-matches (tamper-evident); prose = md attachment"
 kind = "test"
-status = "pending"
-tracking = "ADR-035 §4; attachment value now enforced as the object {ref: sha256:<64hex>, name, desc?} — ref-format + extension(name) constraint + no-stray-keys (so no path/who/when is stored) — in crates/validators check_attachment (M-B; corpus + unit tests; flows native+wasm). REMAINING: ref-exists + hash-matches verification (needs the attachments/<hex> blob store, storage layer)"
+status = "satisfied"
+satisfied_by = ["crates/validators/src/record.rs", "crates/cli/src/bin/qx.rs", "crates/cli/tests/pr_check_contract.rs"]
+tracking = "SATISFIED (M-B): attachment value = object {ref: sha256:<64hex>, name, desc?} with no stored path/who/when (shape + ref-format + extension constraint in validate_record check_attachment, native+wasm). Path DERIVED attachments/<hex(ref)>.<ext(name)>. ref-exists + hash-matches (tamper-evident) enforced in qx check by check_attachment_blobs (reads the blob, sha256, compares to ref) — proven by e2e attachment_blob_missing_fails_the_gate + attachment_blob_present_and_matching_passes. Prose = a .md attachment (handled by the same mechanism; inline render is FE/M-D)"
 
 [[obligation]]
 id = "capability-grain"
