@@ -118,6 +118,7 @@ pub fn field_value(e: &Entity, key: &str) -> Option<String> {
         "id" => Some(e.id.clone()),
         "status" => e.status.clone(),
         "kind" => e.kind.clone(),
+        "label" => e.label.clone(),
         "created_at" => Some(e.created_at.clone()),
         _ => e
             .fields
