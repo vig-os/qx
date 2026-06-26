@@ -627,8 +627,9 @@ id = "effective-dated-versioning"
 adr = "ADR-039"
 statement = "Effective-dating is commit-resolved (a record is governed by the contract content at its commit; merged records are never re-checked, so a tightening change cannot retroactively invalidate history); contract identity is its content hash (derived); governance — who/when/why/approved — is PROJECTED from the host review (PR reviews + merge commit), never stored in-file; the only in-file version is format_version (engine↔contract parse capability); required_to_enter (transition gate) is distinct from meaningful_from"
 kind = "crate"
-status = "pending"
-tracking = "ADR-039 §6 (revised git-native after review, #204); commit-resolved effective-dating in the qx check gate (crates/cli) — only changed records re-validated, and UNTOUCHED records re-validated on a contract-shape change (M-A.1 S5 — reshaped_collections + e2e contract_tightening_revalidates_untouched_records); format_version compat range done (is_compatible). REMAINING: the content-hash export stamp (task #20)"
+status = "satisfied"
+satisfied_by = ["crates/cli/src/bin/qx.rs", "crates/contract/src/lib.rs", "crates/cli/tests/pr_check_contract.rs"]
+tracking = "SATISFIED (M-B): all ADR-039 §6 terms met. Effective-dating is COMMIT-RESOLVED in qx check (only changed records re-validated; reshaped-collection re-validation; untouched history never re-checked). Contract identity is its CONTENT HASH, derived (contract_identity = sha256 of the on-disk bytes, surfaced by qx check; never stored in-file). Governance is PROJECTED from the host (no in-file governance fields; a stray change_control block is rejected). The only in-file version is format_version (is_compatible compat range). required_to_enter (transition gate) is distinct from meaningful_from (both in the Field type). The content-hash EXPORT STAMP (writing the id when data leaves git) stays task #20 — a separate application, not a §6 term."
 
 [[obligation]]
 id = "preset-library-gate-floors"

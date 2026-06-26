@@ -1133,6 +1133,13 @@ fn check_contract(
         }
     }
 
+    // 1c. Contract identity is its content hash (ADR-039 §6) — DERIVED,
+    //     never stored in-file (the only in-file version is format_version).
+    //     Surface it so the gate run records which contract governed this
+    //     validation (effective-dating: records are governed by the
+    //     contract content at their commit).
+    notices.push(format!("contract identity: {}", contract_identity(&bytes)));
+
     // 2. Read every collection's HEAD records + build the cross-collection
     //    id universe for reference FK checks.
     let mut head_records: BTreeMap<String, Vec<Map<String, Value>>> = BTreeMap::new();
@@ -1607,6 +1614,13 @@ fn rows_to_parts(
     parts
 }
 
+/// The contract's derived identity: `sha256:<hex>` of its on-disk bytes
+/// (ADR-039 §6 — content-addressed, never stored in-file).
+fn contract_identity(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("sha256:{:x}", Sha256::digest(bytes))
+}
+
 /// Returns a violation message if `head` is not `base` plus trailing
 /// additions (ADR-037 §1 append-only): every non-empty base line must
 /// appear unchanged, in order, as a prefix of head's non-empty lines.
@@ -1757,6 +1771,14 @@ fn advise_policy(diff: &Diff, failures: &mut Vec<String>, notices: &mut Vec<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn contract_identity_is_content_addressed() {
+        let a = contract_identity(b"{\"format_version\":1}");
+        assert_eq!(a, contract_identity(b"{\"format_version\":1}"));
+        assert_ne!(a, contract_identity(b"{\"format_version\":2}"));
+        assert!(a.starts_with("sha256:") && a.len() == 7 + 64);
+    }
 
     #[test]
     fn audit_append_only_detects_tampering() {
