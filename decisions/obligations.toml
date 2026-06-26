@@ -300,8 +300,9 @@ id = "registry-self-describing"
 adr = "ADR-033"
 statement = "Data repo carries its own versioned contract in .qx/; tool validates against the declared version"
 kind = "artifact"
-status = "pending"
-tracking = "ADR-033 §2; bootstrap seeds no contract today; contract lives only in the tool repo"
+status = "satisfied"
+satisfied_by = ["crates/cli/src/bin/qx.rs", "crates/contract/src/lib.rs", "crates/cli/tests/pr_check_contract.rs"]
+tracking = "SATISFIED (M-B): qx init seeds the data repo's own .qx/contract.json (qx.rs write_file!), the engine loads it (app_context), and qx check validates every record against THAT declared contract + checks format_version via is_compatible (the declared version). Proven by the pr_check_contract.rs e2e suite (records validated against the seeded contract; tightening re-validates; floor/graph/void/attachment checks all run off it)"
 
 [[obligation]]
 id = "core-plus-custom-schema"
