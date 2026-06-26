@@ -677,6 +677,42 @@ fn jsonl_native_serves_parts_through_the_generic_path() {
     );
 }
 
+#[test]
+fn export_generates_csv_for_any_declared_collection() {
+    use std::sync::Arc;
+    let contract = qx_contract::Contract::from_bytes(
+        br#"{"format_version":1,"collections":[
+        {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+         "lifecycle":{"statuses":["unbound","bound","void"],"initial":"unbound",
+           "transitions":{"unbound":["bound","void"],"bound":["void"],"void":[]}},
+         "fields":[{"key":"type","type":"string","label":"Type"}]},
+        {"name":"companies","id":{"scheme":"nano14","default":false,"mintable":true},
+         "fields":[{"key":"label","type":"string","label":"Label"}]}]}"#,
+    )
+    .unwrap();
+    let companies: Vec<serde_json::Map<String, serde_json::Value>> =
+        vec![serde_json::from_str(r#"{"id":"CMPY2223AAAAAA","label":"Acme"}"#).unwrap()];
+    let ctx = AppContext {
+        repo: Arc::new(MemRepo::new(Vec::new()).with_collection("companies", companies)),
+        identity: Box::new(FixedIdentity),
+        sink: Box::new(MemSink {
+            submitted: Arc::new(Mutex::new(Vec::new())),
+        }),
+        registry_name: "test-registry".into(),
+        contract: Some(Arc::new(contract)),
+    };
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Export","collection":"companies","format":"csv"}),
+    );
+    let d = r.data().expect("ok");
+    let csv = d["content"].as_str().unwrap();
+    // Header carries the declared field columns; the row carries the data.
+    assert!(csv.lines().next().unwrap().contains("label"), "csv: {csv}");
+    assert!(csv.contains("Acme"));
+    assert_eq!(d["rows"], json!(1));
+}
+
 // -------------------------------------------------------------------
 // Create (mint) / Transition / Edit
 // -------------------------------------------------------------------

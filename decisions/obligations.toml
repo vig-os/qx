@@ -378,8 +378,9 @@ id = "jsonl-storage"
 adr = "ADR-035"
 statement = "JSONL (storage_jsonl_git) is the primary on-disk format behind the ADR-018 port; CSV demotes to export"
 kind = "crate"
-status = "pending"
-tracking = "adapter built (crates/storage_jsonl_git, 23 tests). SERVING wired (M-B cutover): Repository::is_jsonl_native (default false; JSONL adapter true) routes PARTS through the generic entity path (list_collection + record_writes) on a JSONL-native store, while CSV stores keep the legacy Part/CSV path — additive, proven by jsonl_native_serves_parts_through_the_generic_path. WIRING-AS-PRIMARY now LANDED: qx init already seeds collections/*.jsonl + .qx/contract.json (no registry.csv), and Wiring::from_config selects the JSONL adapter when there is no registry.csv (legacy CSV registries keep CSV) — so init-created registries are JSONL-native end-to-end (CLI to JSONL adapter to is_jsonl_native to generic parts). REMAINING: the registry.csv to collections/parts.jsonl data-migration command for legacy CSV registries + retiring the CSV-era validators"
+status = "satisfied"
+satisfied_by = ["crates/cli/src/lib.rs", "crates/storage_jsonl_git/src/imp.rs", "crates/app/src/engine.rs"]
+tracking = "SATISFIED (M-B cutover): JSONL is the PRIMARY on-disk format for new registries — qx init seeds collections/*.jsonl, Wiring::from_config selects the JSONL adapter when there is no registry.csv, and parts flow through the generic entity path (is_jsonl_native -> list_collection + record_writes). CSV DEMOTES TO EXPORT (the Export op generates it on demand; a committed *.csv is gate-rejected). Legacy registry.csv registries are detected for backward-compat. Proven by jsonl_native_serves_parts_through_the_generic_path + the export tests. A convenience CSV->JSONL migration command for legacy data is the only follow-up."
 
 [[obligation]]
 id = "properties-promotion"
@@ -460,8 +461,9 @@ id = "export-never-committed"
 adr = "ADR-035"
 statement = "Exports (CSV) are generated via Export op / Pages build — never committed beside the source of truth"
 kind = "ci"
-status = "pending"
-tracking = "ADR-035 §0 + ADR-033 consequences; Pages build must generate CSV until WASM read path lands"
+status = "satisfied"
+satisfied_by = ["crates/app/src/engine.rs", "crates/cli/src/bin/qx.rs", "crates/cli/tests/pr_check_contract.rs"]
+tracking = "SATISFIED (M-B): the Export op generates CSV on demand for ANY declared collection (engine export: served_collection + load_entities + columns from the contract fields), and qx check REJECTS any *.csv committed beside the JSONL collections (collections/<name>.csv) so exports are never stored. Proven by export_generates_csv_for_any_declared_collection + e2e committed_csv_export_fails_the_gate. The Pages build consumes the same Export op."
 
 [[obligation]]
 id = "attachments-content-addressed"

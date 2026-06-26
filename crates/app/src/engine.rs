@@ -2047,7 +2047,7 @@ fn combine_warnings(a: Option<&str>, b: Option<&str>) -> Option<String> {
 // -------------------------------------------------------------------
 
 fn export(ctx: &AppContext, collection: &str, format: &str) -> Response {
-    if let Err(r) = known_collection(ctx, collection) {
+    if let Err(r) = served_collection(ctx, collection) {
         return r;
     }
     if format != "csv" {
@@ -2056,21 +2056,30 @@ fn export(ctx: &AppContext, collection: &str, format: &str) -> Response {
             format!("export format {format:?} not supported (formats: csv)"),
         );
     }
-    let entities = match load_entities(ctx, "parts") {
+    let entities = match load_entities(ctx, collection) {
         Ok(e) => e,
         Err(r) => return r,
     };
-    let columns = [
-        "id",
-        "status",
-        "created_at",
-        "type",
-        "description",
-        "vendor",
-        "part_number",
-        "location",
-        "notes",
-    ];
+    // Columns: the id/status/created_at envelope + the collection's
+    // declared fields (from the contract), or the parts preset columns
+    // when no contract is loaded. CSV is an export VIEW (ADR-035) —
+    // generated on demand, never the source of truth.
+    let mut columns: Vec<String> = vec!["id".into(), "status".into(), "created_at".into()];
+    match ctx.contract.as_ref().and_then(|c| c.collection(collection)) {
+        Some(c) => columns.extend(c.fields.iter().map(|f| f.key.clone())),
+        None => columns.extend(
+            [
+                "type",
+                "description",
+                "vendor",
+                "part_number",
+                "location",
+                "notes",
+            ]
+            .iter()
+            .map(|s| s.to_string()),
+        ),
+    }
     let mut csv = columns.join(",");
     csv.push('\n');
     for e in &entities {

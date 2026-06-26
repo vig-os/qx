@@ -466,3 +466,23 @@ fn audit_log_tampering_fails_the_gate() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+#[test]
+fn committed_csv_export_fails_the_gate() {
+    // ADR-035: CSV is an export view; a *.csv committed beside the JSONL
+    // collections is rejected (generate on demand, never store).
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    write_repo(dir, TWO_COLLECTION_CONTRACT, "", "");
+    fs::write(dir.join("collections/parts.csv"), "id,status\n").unwrap();
+    let out = pr_check(dir, None);
+    assert!(
+        !out.status.success(),
+        "a committed CSV export must fail the gate"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("CSV export"),
+        "expected a committed-CSV-export error, got:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

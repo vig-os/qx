@@ -1056,6 +1056,20 @@ fn check(path: &Path, base: Option<&str>) -> ExitCode {
         }
     }
 
+    // --- Exports never committed (ADR-035): a `*.csv` beside the JSONL
+    //     collections is a committed export. CSV is an export VIEW —
+    //     generated on demand (Export op / Pages build), never stored.
+    if let Ok(entries) = std::fs::read_dir(path.join("collections")) {
+        for e in entries.flatten() {
+            if e.path().extension().and_then(|x| x.to_str()) == Some("csv") {
+                failures.push(format!(
+                    "collections/{}: committed CSV export — generate via the Export op, never commit it beside the JSONL source",
+                    e.file_name().to_string_lossy()
+                ));
+            }
+        }
+    }
+
     if !ran_something {
         eprintln!(
             "qx check: nothing to check — neither registry.csv nor \
