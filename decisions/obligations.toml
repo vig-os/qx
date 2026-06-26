@@ -604,8 +604,9 @@ id = "contract-canonical-form"
 adr = "ADR-039"
 statement = "One canonical contract form: collection-generic descriptors, the scalar set string|enum|integer|number|decimal|date|timestamp|bool|reference|attachment|object (no freeform json field), type != widget (a render block declares the widget); the meta-schema validates the shipped contract + a fixture instance in CI"
 kind = "artifact"
-status = "pending"
-tracking = "ADR-039 §1-2; canonical form + scalar set shipped (crates/contract); schema/contract.schema.json + contract.example.json present. CI meta-schema gate WIRED (M-A.1 S2 — crates/contract/tests/meta_schema.rs validates the example against the schema AND the Rust SSOT) + closed-facet SSOT parity (S1, crates/contract/src/lib.rs). REMAINING: live registry-contract.json migration (FE rewrite, M-D)"
+status = "satisfied"
+satisfied_by = ["crates/contract/tests/meta_schema.rs", "crates/contract/src/lib.rs", "schema/contract.schema.json", "schema/contract.example.json", "schema/presets/company.contract.json"]
+tracking = "SATISFIED (M-A.1): canonical form + full scalar set + type≠widget in crates/contract; the CI meta-schema gate (crates/contract/tests/meta_schema.rs, run by the `test` flake check) validates BOTH the shipped qx-init preset AND the example fixture against schema/contract.schema.json AND the Rust SSOT; closed-facet parity (S1). The separate live registry-contract.json FE migration rides M-D and is not part of this obligation's terms"
 
 [[obligation]]
 id = "contract-ssot-validation"
