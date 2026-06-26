@@ -558,6 +558,7 @@ fn action_kind_str(k: ActionKind) -> &'static str {
         ActionKind::RowEdit => "row_edit",
         ActionKind::HeaderChange => "header_change",
         ActionKind::BulkChange => "bulk_change",
+        ActionKind::RecordWrite => "record_write",
     }
 }
 
