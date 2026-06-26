@@ -424,3 +424,45 @@ fn attachment_blob_present_and_matching_passes() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+#[test]
+fn audit_log_tampering_fails_the_gate() {
+    // ADR-037 §1: a PR that rewrites an existing audit_log.jsonl entry
+    // (not a pure trailing append) is rejected by `qx check --base`.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    git_init(dir);
+    write_repo(dir, TWO_COLLECTION_CONTRACT, "", "");
+    fs::write(
+        dir.join("audit_log.jsonl"),
+        "{\"request_id\":\"a\",\"action\":\"mint\"}\n{\"request_id\":\"b\",\"action\":\"bind\"}\n",
+    )
+    .unwrap();
+    git(&["add", "-A"], dir);
+    git(&["commit", "-m", "base"], dir);
+    let base_sha = {
+        let out = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    // HEAD tampers with the FIRST (existing) entry — not append-only.
+    fs::write(
+        dir.join("audit_log.jsonl"),
+        "{\"request_id\":\"a\",\"action\":\"TAMPERED\"}\n{\"request_id\":\"b\",\"action\":\"bind\"}\n",
+    )
+    .unwrap();
+
+    let out = pr_check(dir, Some(&base_sha));
+    assert!(
+        !out.status.success(),
+        "rewriting an existing audit entry must fail the gate"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("append-only"),
+        "expected an append-only violation, got:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

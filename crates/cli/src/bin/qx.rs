@@ -1045,6 +1045,17 @@ fn check(path: &Path, base: Option<&str>) -> ExitCode {
         0
     };
 
+    // --- Audit log append-only (ADR-037 §1): with a base, the head's
+    //     audit_log.jsonl must be the base content plus trailing lines.
+    if let Some(base_ref) = base {
+        let head = std::fs::read_to_string(path.join("audit_log.jsonl")).unwrap_or_default();
+        // The file may not exist at the base yet (first audit) — empty base.
+        let base_text = git_show(path, base_ref, "audit_log.jsonl").unwrap_or_default();
+        if let Some(violation) = audit_append_only_violation(&base_text, &head) {
+            failures.push(format!("audit_log.jsonl: {violation}"));
+        }
+    }
+
     if !ran_something {
         eprintln!(
             "qx check: nothing to check — neither registry.csv nor \
@@ -1596,6 +1607,31 @@ fn rows_to_parts(
     parts
 }
 
+/// Returns a violation message if `head` is not `base` plus trailing
+/// additions (ADR-037 §1 append-only): every non-empty base line must
+/// appear unchanged, in order, as a prefix of head's non-empty lines.
+fn audit_append_only_violation(base: &str, head: &str) -> Option<String> {
+    let base_lines: Vec<&str> = base.lines().filter(|l| !l.trim().is_empty()).collect();
+    let head_lines: Vec<&str> = head.lines().filter(|l| !l.trim().is_empty()).collect();
+    if head_lines.len() < base_lines.len() {
+        return Some(format!(
+            "{} entry(ies) removed (had {}, now {}) — the audit log is append-only",
+            base_lines.len() - head_lines.len(),
+            base_lines.len(),
+            head_lines.len()
+        ));
+    }
+    for (i, (b, h)) in base_lines.iter().zip(head_lines.iter()).enumerate() {
+        if b != h {
+            return Some(format!(
+                "entry {} changed — existing audit entries are immutable (append-only)",
+                i + 1
+            ));
+        }
+    }
+    None
+}
+
 fn git_show(repo: &Path, git_ref: &str, file: &str) -> Result<String, String> {
     let out = std::process::Command::new("git")
         .args(["show", &format!("{git_ref}:{file}")])
@@ -1721,6 +1757,23 @@ fn advise_policy(diff: &Diff, failures: &mut Vec<String>, notices: &mut Vec<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn audit_append_only_detects_tampering() {
+        let base = "{\"a\":1}\n{\"b\":2}\n";
+        // Pure trailing append → ok.
+        assert!(audit_append_only_violation(base, "{\"a\":1}\n{\"b\":2}\n{\"c\":3}\n").is_none());
+        // A removed entry → violation.
+        assert!(audit_append_only_violation(base, "{\"a\":1}\n")
+            .unwrap()
+            .contains("removed"));
+        // A changed existing entry → violation.
+        assert!(audit_append_only_violation(base, "{\"a\":99}\n{\"b\":2}\n")
+            .unwrap()
+            .contains("changed"));
+        // Empty base (first audit log) → any head is append-only.
+        assert!(audit_append_only_violation("", "{\"a\":1}\n").is_none());
+    }
 
     // ---------- --size: the unit rides the value (ADR-031 §8) ----------
 

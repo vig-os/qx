@@ -529,7 +529,7 @@ adr = "ADR-037"
 statement = "pr check rejects any PR whose diff to audit_log.jsonl is not pure trailing addition; chain links retired for content_hash + checkpoints"
 kind = "gate"
 status = "pending"
-tracking = "ADR-037 §1; diff rule in pr check + checkpoint writer in anchor job not yet built"
+tracking = "ADR-037 §1; the append-only DIFF RULE is BUILT (M-B): qx check --base rejects any audit_log.jsonl change that is not a pure trailing append (existing entries immutable) — audit_append_only_violation in crates/cli, proven by the unit test + e2e audit_log_tampering_fails_the_gate. REMAINING: the hash-chain link (per-entry prev-hash) + the checkpoint writer in the anchor CI job"
 
 [[obligation]]
 id = "merge-sync-witness"
