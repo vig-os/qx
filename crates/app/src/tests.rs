@@ -499,6 +499,83 @@ fn generic_create_writes_a_record_via_record_writes() {
     );
 }
 
+#[test]
+fn generic_edit_and_transition_via_record_writes() {
+    use std::sync::Arc;
+    // companies (no lifecycle, for edit) + tasks (open->done lifecycle).
+    let contract = qx_contract::Contract::from_bytes(
+        br#"{"format_version":1,"collections":[
+        {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+         "lifecycle":{"statuses":["unbound","bound","void"],"initial":"unbound",
+           "transitions":{"unbound":["bound","void"],"bound":["void"],"void":[]}},
+         "fields":[{"key":"type","type":"string","label":"Type"}]},
+        {"name":"companies","id":{"scheme":"nano14","default":false,"mintable":true},
+         "fields":[{"key":"label","type":"string","label":"Label"}]},
+        {"name":"tasks","id":{"scheme":"nano14","default":false,"mintable":true},
+         "lifecycle":{"statuses":["open","done"],"initial":"open",
+           "transitions":{"open":["done"],"done":[]}},
+         "fields":[]}]}"#,
+    )
+    .unwrap();
+    let companies: Vec<serde_json::Map<String, serde_json::Value>> =
+        vec![serde_json::from_str(r#"{"id":"CMPY2223AAAAAA","label":"Old"}"#).unwrap()];
+    let tasks: Vec<serde_json::Map<String, serde_json::Value>> =
+        vec![serde_json::from_str(r#"{"id":"TASK2223AAAAAA","status":"open"}"#).unwrap()];
+    let submitted = Arc::new(Mutex::new(Vec::new()));
+    let ctx = AppContext {
+        repo: Arc::new(
+            MemRepo::new(Vec::new())
+                .with_collection("companies", companies)
+                .with_collection("tasks", tasks),
+        ),
+        identity: Box::new(FixedIdentity),
+        sink: Box::new(MemSink {
+            submitted: submitted.clone(),
+        }),
+        registry_name: "test-registry".into(),
+        contract: Some(Arc::new(contract)),
+    };
+
+    // Edit: merge a field into the existing company record.
+    let e = dispatch_json(
+        &ctx,
+        json!({"op":"Edit","collection":"companies","id":"CMPY2223AAAAAA","fields":{"label":"NewName"}}),
+    );
+    assert!(e.data().is_some(), "edit ok");
+    {
+        let props = submitted.lock().unwrap();
+        let rw = &props.last().unwrap().diff.record_writes;
+        assert_eq!(rw[0].collection, "companies");
+        assert_eq!(
+            rw[0].record.get("label").and_then(|v| v.as_str()),
+            Some("NewName")
+        );
+    }
+
+    // Transition: open -> done (allowed by the tasks lifecycle).
+    let t = dispatch_json(
+        &ctx,
+        json!({"op":"Transition","collection":"tasks","id":"TASK2223AAAAAA","to":"done","fields":{}}),
+    );
+    assert!(t.data().is_some(), "transition ok: {t:?}");
+    {
+        let props = submitted.lock().unwrap();
+        let rw = &props.last().unwrap().diff.record_writes;
+        assert_eq!(rw[0].collection, "tasks");
+        assert_eq!(
+            rw[0].record.get("status").and_then(|v| v.as_str()),
+            Some("done")
+        );
+    }
+
+    // A disallowed transition (done -> open) is rejected.
+    let bad = dispatch_json(
+        &ctx,
+        json!({"op":"Transition","collection":"tasks","id":"TASK2223AAAAAA","to":"nonsense","fields":{}}),
+    );
+    assert!(bad.data().is_none(), "disallowed transition must error");
+}
+
 // -------------------------------------------------------------------
 // Create (mint) / Transition / Edit
 // -------------------------------------------------------------------
