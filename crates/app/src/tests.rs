@@ -576,6 +576,46 @@ fn generic_edit_and_transition_via_record_writes() {
     assert!(bad.data().is_none(), "disallowed transition must error");
 }
 
+#[test]
+fn generic_create_sets_the_lifecycle_initial_status() {
+    use std::sync::Arc;
+    // A `tasks` collection with an open->done lifecycle: a created record
+    // starts at the declared initial status (`open`).
+    let contract = qx_contract::Contract::from_bytes(
+        br#"{"format_version":1,"collections":[
+        {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+         "lifecycle":{"statuses":["unbound","bound","void"],"initial":"unbound",
+           "transitions":{"unbound":["bound","void"],"bound":["void"],"void":[]}},
+         "fields":[{"key":"type","type":"string","label":"Type"}]},
+        {"name":"tasks","id":{"scheme":"nano14","default":false,"mintable":true},
+         "lifecycle":{"statuses":["open","done"],"initial":"open",
+           "transitions":{"open":["done"],"done":[]}},
+         "fields":[]}]}"#,
+    )
+    .unwrap();
+    let submitted = Arc::new(Mutex::new(Vec::new()));
+    let ctx = AppContext {
+        repo: Arc::new(MemRepo::new(Vec::new())),
+        identity: Box::new(FixedIdentity),
+        sink: Box::new(MemSink {
+            submitted: submitted.clone(),
+        }),
+        registry_name: "test-registry".into(),
+        contract: Some(Arc::new(contract)),
+    };
+    let r = dispatch_json(
+        &ctx,
+        json!({"op":"Create","collection":"tasks","fields":{}}),
+    );
+    assert!(r.data().is_some(), "create ok: {r:?}");
+    let rw = &submitted.lock().unwrap()[0].diff.record_writes;
+    assert_eq!(
+        rw[0].record.get("status").and_then(|v| v.as_str()),
+        Some("open"),
+        "a lifecycle collection's new record starts at the initial status"
+    );
+}
+
 // -------------------------------------------------------------------
 // Create (mint) / Transition / Edit
 // -------------------------------------------------------------------

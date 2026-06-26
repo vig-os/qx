@@ -516,6 +516,17 @@ fn generic_create(
     };
     let mut record = serde_json::Map::new();
     record.insert("id".to_string(), serde_json::Value::String(id.clone()));
+    // A lifecycle collection's new record starts at the declared initial
+    // status (ADR-035 — e.g. a JSONL-native part mints at `unbound`).
+    if let Some(initial) = ctx
+        .contract
+        .as_ref()
+        .and_then(|c| c.collection(collection))
+        .and_then(|c| c.lifecycle.as_ref())
+        .map(|lc| lc.initial.clone())
+    {
+        record.insert("status".to_string(), serde_json::Value::String(initial));
+    }
     for (k, v) in fields {
         record.insert(k.clone(), serde_json::Value::String(v.clone()));
     }
