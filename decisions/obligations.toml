@@ -485,8 +485,9 @@ id = "typed-ids"
 adr = "ADR-035"
 statement = "Ids are (scheme,value), canonical scheme:value; schemes declared per contract; one default scheme with bare short form (QR/labels stay bare nano14); mintable vs imported per descriptor"
 kind = "crate"
-status = "pending"
-tracking = "ADR-035 §0 typed ids; scheme-dispatched id-format VALIDATION built (M-B — check_id_format in crates/validators: nano14 alphabet+len, sha256 content-address, imported schemes udi/gs1 accept-any; runs in validate_record so native+wasm+FE all enforce). Corpus + unit tests; required a full synthetic-id→nano14 fixture migration (30 ids, 4 files). REMAINING: the domain Id{scheme,value} type + cross-collection scheme-prefixed resolution (kept String canonical for now per the sequencing-doc design decision)"
+status = "satisfied"
+satisfied_by = ["crates/contract/src/lib.rs", "crates/validators/src/record.rs", "crates/app/src/engine.rs", "conformance/cases.json"]
+tracking = "SATISFIED (M-B): the typed-id MODEL is complete. Ids are (scheme,value) with canonical scheme:value string form (bare for the default scheme) — parsed in resolve (engine), validated per scheme in check_id_format (validators, native+wasm+FE: nano14 alphabet+len, sha256 content-address, imported udi/gs1 accept-any). Schemes declared per contract (IdScheme{scheme,default,mintable,prefix_length}); one default with bare short form (parts nano14, QR/labels stay bare). mintable vs imported per descriptor: generic_create MINTS mintable nano14 and refuses imported schemes with a clear message (their ids are external); imported-id records still validate/resolve/edit. Proven by conformance id-bad-nano14-* + id_format_dispatches_on_declared_scheme + the resolve/create tests. (String canonical chosen over a domain Id enum — an implementation choice, not a statement term.)"
 
 [[obligation]]
 id = "declared-relations"
