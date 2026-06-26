@@ -1099,6 +1099,15 @@ fn check_contract(
         return 0;
     }
 
+    // 1b. The regulated `parts` floor must not be weakened (ADR-035 §0 /
+    //     ADR-040): a registry contract may extend the preset, never drop a
+    //     floor field, loosen its presence gate, or shrink the lifecycle.
+    if let Err(violations) = qx_app::preset::assert_parts_floor(&contract) {
+        for v in violations {
+            failures.push(format!("parts floor violated: {v}"));
+        }
+    }
+
     // 2. Read every collection's HEAD records + build the cross-collection
     //    id universe for reference FK checks.
     let mut head_records: BTreeMap<String, Vec<Map<String, Value>>> = BTreeMap::new();

@@ -317,3 +317,31 @@ fn cyclic_component_graph_fails_the_gate() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+#[test]
+fn weakening_the_parts_lifecycle_floor_fails_the_gate() {
+    // ADR-035 §1 / ADR-040: a registry contract may not weaken the
+    // regulated parts lifecycle (here it drops the `void` terminal status).
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    let contract = r#"{ "format_version": 1, "collections": [
+        { "name": "parts", "id": { "scheme": "nano14", "default": true, "mintable": true },
+          "lifecycle": { "statuses": ["unbound","bound"], "initial": "unbound",
+            "transitions": { "unbound": ["bound"], "bound": [] } },
+          "fields": [ { "key": "type", "type": "string", "label": "Type" } ] } ] }"#;
+    fs::create_dir_all(dir.join(".qx")).unwrap();
+    fs::create_dir_all(dir.join("collections")).unwrap();
+    fs::write(dir.join(".qx/contract.json"), contract).unwrap();
+    fs::write(dir.join("collections/parts.jsonl"), "").unwrap();
+
+    let out = pr_check(dir, None);
+    assert!(
+        !out.status.success(),
+        "weakening the parts lifecycle floor must fail the gate"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("floor"),
+        "expected a floor violation, got:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
