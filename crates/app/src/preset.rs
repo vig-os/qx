@@ -177,10 +177,80 @@ pub fn assert_parts_floor(contract: &qx_contract::Contract) -> Result<(), Vec<St
     }
 }
 
+/// Map a parsed `contract::Collection` to the `Describe` payload
+/// (ADR-039: the contract types ARE the schema, so this is a mechanical
+/// 1:1 projection — the descriptor is the contract's display view).
+pub fn descriptor_from_contract(c: &qx_contract::Collection) -> CollectionDescriptor {
+    CollectionDescriptor {
+        name: c.name.clone(),
+        id: IdScheme {
+            scheme: c.id.scheme.clone(),
+            default: c.id.default,
+            mintable: c.id.mintable,
+            prefix_length: c.id.prefix_length,
+        },
+        lifecycle: c.lifecycle.as_ref().map(|lc| Lifecycle {
+            statuses: lc.statuses.clone(),
+            transitions: lc.transitions.clone(),
+            initial: lc.initial.clone(),
+        }),
+        fields: c
+            .fields
+            .iter()
+            .map(|f| FieldDescriptor {
+                key: f.key.clone(),
+                type_: field_type_str(&f.type_).to_string(),
+                label: f.label.clone(),
+                editable: f.editable,
+                meaningful_from: f.meaningful_from.clone(),
+            })
+            .collect(),
+        render: RenderBlock {
+            label_fields: c
+                .render
+                .as_ref()
+                .map(|r| r.label_fields.clone())
+                .unwrap_or_else(|| vec!["id".into()]),
+        },
+    }
+}
+
+/// The contract's `FieldType` enum as its canonical scalar-set string.
+fn field_type_str(t: &qx_contract::FieldType) -> &'static str {
+    use qx_contract::FieldType::*;
+    match t {
+        String => "string",
+        Enum => "enum",
+        Integer => "integer",
+        Number => "number",
+        Decimal => "decimal",
+        Date => "date",
+        Timestamp => "timestamp",
+        Bool => "bool",
+        Reference => "reference",
+        Attachment => "attachment",
+        Object => "object",
+    }
+}
+
 #[cfg(test)]
 mod floor_tests {
-    use super::assert_parts_floor;
+    use super::{assert_parts_floor, descriptor_from_contract, parts_descriptor};
     use qx_contract::Contract;
+
+    #[test]
+    fn contract_maps_to_descriptor_matching_the_parts_preset() {
+        // A contract whose `parts` mirrors the preset maps 1:1 to it.
+        let c = Contract::from_bytes(FLOOR_OK).unwrap();
+        let d = descriptor_from_contract(c.collection("parts").unwrap());
+        let preset = parts_descriptor();
+        assert_eq!(d.name, preset.name);
+        assert_eq!(d.lifecycle, preset.lifecycle);
+        assert_eq!(
+            d.fields.iter().map(|f| &f.key).collect::<Vec<_>>(),
+            preset.fields.iter().map(|f| &f.key).collect::<Vec<_>>()
+        );
+    }
 
     const FLOOR_OK: &[u8] = br#"{"format_version":1,"collections":[
         {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},

@@ -268,6 +268,8 @@ fn open_impl(format: &str, text: &str, registry_name: &str) -> Result<usize, Str
         identity: Box::new(SharedIdentity(identity.clone())),
         sink: Box::new(BrowserSink),
         registry_name: registry_name.to_owned(),
+        // The FE doesn't fetch the contract yet (M-D); engine uses presets.
+        contract: None,
     };
     CTX.with(|c| *c.borrow_mut() = Some(ctx));
     IDENTITY.with(|i| *i.borrow_mut() = Some(identity));

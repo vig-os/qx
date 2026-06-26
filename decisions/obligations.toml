@@ -401,7 +401,7 @@ adr = "ADR-035"
 statement = "One generic collection engine (descriptor: id-scheme/fields/lifecycle/relations); code-owned presets non-weakenable; ops parameterized by collection"
 kind = "crate"
 status = "pending"
-tracking = "ADR-035 §0; generic engine + parts/vocab presets not yet built"
+tracking = "ADR-035 §0; the descriptor metamodel (id-scheme/fields/lifecycle/relations) is the ADR-039 contract engine (DONE). FOUNDATION started (M-B): AppContext now loads the registry's contract (.qx/contract.json) and Describe self-describes from its declared collections — descriptor_from_contract mechanical projection + contract-driven roster/narrowing (crates/app; proven by describe_uses_the_loaded_contract_roster + contract_maps_to_descriptor). Presets stay the non-weakenable floor (assert_parts_floor). REMAINING: generic serving of list/resolve/create/known_collection from the contract (currently parts-only) so non-parts collections are servable, not just describable"
 
 [[obligation]]
 id = "batch-deprecated"
