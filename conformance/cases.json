@@ -2,132 +2,140 @@
   "description": "Conformance corpus for ADR-039 schema-driven record validation. Each case is validated against conformance/contract.json by every runner (native Rust, wasm, FE). `expect` is the COMPLETE set of issues the validator must produce — extra or missing issues fail the case. This is the parity contract: all runners must agree, byte for byte, on this corpus.",
   "cases": [
     { "name": "clean-bound-part", "collection": "parts", "status": "bound",
-      "record": { "id": "PART0001", "status": "bound", "type": "bolt" },
+      "record": { "id": "PART2223AAAAAA", "status": "bound", "type": "bolt" },
       "expect": [] },
 
     { "name": "clean-part-with-open-property", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0002", "status": "unbound", "scratchpad": "anything goes here" },
+      "record": { "id": "PART2224AAAAAA", "status": "unbound", "scratchpad": "anything goes here" },
       "expect": [] },
 
     { "name": "missing-required-to-enter", "collection": "parts", "status": "bound",
-      "record": { "id": "PART0003", "status": "bound" },
+      "record": { "id": "PART2225AAAAAA", "status": "bound" },
       "expect": [ { "path": "type", "severity": "error", "contains": "enter status" } ] },
 
     { "name": "integer-fractional", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0004", "status": "unbound", "count": 1.5 },
+      "record": { "id": "PART2226AAAAAA", "status": "unbound", "count": 1.5 },
       "expect": [ { "path": "count", "severity": "error", "contains": "fractional" } ] },
 
     { "name": "integer-above-max", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0005", "status": "unbound", "count": 2000 },
+      "record": { "id": "PART2227AAAAAA", "status": "unbound", "count": 2000 },
       "expect": [ { "path": "count", "severity": "error", "contains": "above max" } ] },
 
     { "name": "decimal-scale-violation", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0006", "status": "unbound", "torque": "1.234" },
+      "record": { "id": "PART2228AAAAAA", "status": "unbound", "torque": "1.234" },
       "expect": [ { "path": "torque", "severity": "error", "contains": "scale" } ] },
 
     { "name": "decimal-precision-violation", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0007", "status": "unbound", "torque": "123.45" },
+      "record": { "id": "PART2229AAAAAA", "status": "unbound", "torque": "123.45" },
       "expect": [ { "path": "torque", "severity": "error", "contains": "precision" } ] },
 
     { "name": "number-above-max", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0008", "status": "unbound", "ratio": 1.5 },
+      "record": { "id": "PART222AAAAAAA", "status": "unbound", "ratio": 1.5 },
       "expect": [ { "path": "ratio", "severity": "error", "contains": "above max" } ] },
 
     { "name": "bool-wrong-type", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0009", "status": "unbound", "active": "yes" },
+      "record": { "id": "PART222BAAAAAA", "status": "unbound", "active": "yes" },
       "expect": [ { "path": "active", "severity": "error", "contains": "boolean" } ] },
 
     { "name": "date-malformed", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0010", "status": "unbound", "made_on": "2026/01/01" },
+      "record": { "id": "PART2232AAAAAA", "status": "unbound", "made_on": "2026/01/01" },
       "expect": [ { "path": "made_on", "severity": "error", "contains": "malformed date" } ] },
 
     { "name": "enum-closed-rejects-unknown", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0011", "status": "unbound", "grade": "z" },
+      "record": { "id": "PART2233AAAAAA", "status": "unbound", "grade": "z" },
       "expect": [ { "path": "grade", "severity": "error", "contains": "declared value set" } ] },
 
     { "name": "enum-warn-mode", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0012", "status": "unbound", "tag": "z" },
+      "record": { "id": "PART2234AAAAAA", "status": "unbound", "tag": "z" },
       "expect": [ { "path": "tag", "severity": "warn", "contains": "declared value set" } ] },
 
     { "name": "maxlength-violation", "collection": "parts", "status": "bound",
-      "record": { "id": "PART0013", "status": "bound", "type": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      "record": { "id": "PART2235AAAAAA", "status": "bound", "type": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
       "expect": [ { "path": "type", "severity": "error", "contains": "maxLength" } ] },
 
     { "name": "reference-reject-on-missing-fk", "collection": "parts", "status": "unbound",
-      "known_ids": { "companies": ["COMP0001"] },
-      "record": { "id": "PART0014", "status": "unbound", "manufacturer": "GHOST" },
+      "known_ids": { "companies": ["CMPY2223AAAAAA"] },
+      "record": { "id": "PART2236AAAAAA", "status": "unbound", "manufacturer": "GHOST" },
       "expect": [ { "path": "manufacturer", "severity": "error", "contains": "not found" } ] },
 
     { "name": "reference-warn-on-missing-fk", "collection": "parts", "status": "unbound",
       "known_ids": { "contacts": [] },
-      "record": { "id": "PART0015", "status": "unbound", "maybe_contact": "NOBODY" },
+      "record": { "id": "PART2237AAAAAA", "status": "unbound", "maybe_contact": "NOBODY" },
       "expect": [ { "path": "maybe_contact", "severity": "warn", "contains": "not found" } ] },
 
     { "name": "reference-skipped-when-universe-absent", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0016", "status": "unbound", "manufacturer": "GHOST" },
+      "record": { "id": "PART2238AAAAAA", "status": "unbound", "manufacturer": "GHOST" },
       "expect": [] },
 
     { "name": "reference-valid-fk", "collection": "parts", "status": "unbound",
-      "known_ids": { "companies": ["COMP0001"] },
-      "record": { "id": "PART0017", "status": "unbound", "manufacturer": "COMP0001" },
+      "known_ids": { "companies": ["CMPY2223AAAAAA"] },
+      "record": { "id": "PART2239AAAAAA", "status": "unbound", "manufacturer": "CMPY2223AAAAAA" },
       "expect": [] },
 
     { "name": "attachment-extension-rejected", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0018", "status": "unbound", "datasheet": { "ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "name": "spec.docx" } },
+      "record": { "id": "PART223AAAAAAA", "status": "unbound", "datasheet": { "ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "name": "spec.docx" } },
       "expect": [ { "path": "datasheet.name", "severity": "error", "contains": "not in allowed set" } ] },
 
     { "name": "attachment-not-object-rejected", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0021", "status": "unbound", "datasheet": "spec.pdf" },
+      "record": { "id": "PART2243AAAAAA", "status": "unbound", "datasheet": "spec.pdf" },
       "expect": [ { "path": "datasheet", "severity": "error", "contains": "expected an attachment object" } ] },
 
     { "name": "attachment-bad-ref-rejected", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0022", "status": "unbound", "datasheet": { "ref": "notahash", "name": "spec.pdf" } },
+      "record": { "id": "PART2244AAAAAA", "status": "unbound", "datasheet": { "ref": "notahash", "name": "spec.pdf" } },
       "expect": [ { "path": "datasheet.ref", "severity": "error", "contains": "sha256" } ] },
 
     { "name": "attachment-valid-object", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0023", "status": "unbound", "datasheet": { "ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "name": "spec.pdf", "desc": "Rev 3 datasheet" } },
+      "record": { "id": "PART2245AAAAAA", "status": "unbound", "datasheet": { "ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "name": "spec.pdf", "desc": "Rev 3 datasheet" } },
       "expect": [] },
 
+    { "name": "id-bad-nano14-length", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART22", "status": "unbound" },
+      "expect": [ { "path": "id", "severity": "error", "contains": "not nano14" } ] },
+
+    { "name": "id-bad-nano14-alphabet", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART2200AAAAAA", "status": "unbound" },
+      "expect": [ { "path": "id", "severity": "error", "contains": "outside the nano14 alphabet" } ] },
+
     { "name": "nested-object-type-error", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0019", "status": "unbound", "measurement": { "passed": "yes" } },
+      "record": { "id": "PART223BAAAAAA", "status": "unbound", "measurement": { "passed": "yes" } },
       "expect": [ { "path": "measurement.passed", "severity": "error", "contains": "boolean" } ] },
 
     { "name": "nested-unknown-key", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0020", "status": "unbound", "measurement": { "rogue": 1 } },
+      "record": { "id": "PART2242AAAAAA", "status": "unbound", "measurement": { "rogue": 1 } },
       "expect": [ { "path": "measurement.rogue", "severity": "error", "contains": "unknown nested field" } ] },
 
     { "name": "company-pattern-mismatch", "collection": "companies", "status": "active",
-      "record": { "id": "COMP0001", "status": "active", "label": "Acme", "website": "ftp://x" },
+      "record": { "id": "CMPY2223AAAAAA", "status": "active", "label": "Acme", "website": "ftp://x" },
       "expect": [ { "path": "website", "severity": "error", "contains": "does not match pattern" } ] },
 
     { "name": "company-pattern-match-clean", "collection": "companies", "status": "active",
-      "record": { "id": "COMP0002", "status": "active", "label": "Acme", "website": "https://acme.example" },
+      "record": { "id": "CMPY2224AAAAAA", "status": "active", "label": "Acme", "website": "https://acme.example" },
       "expect": [] },
 
     { "name": "company-missing-required", "collection": "companies", "status": "active",
-      "record": { "id": "COMP0003", "status": "active" },
+      "record": { "id": "CMPY2225AAAAAA", "status": "active" },
       "expect": [ { "path": "label", "severity": "error", "contains": "required" } ] },
 
     { "name": "contact-unknown-key-rejected-no-open-properties", "collection": "contacts",
-      "record": { "id": "CONT0001", "name": "Jo", "rogue": 1 },
+      "record": { "id": "CNTC2223AAAAAA", "name": "Jo", "rogue": 1 },
       "expect": [ { "path": "rogue", "severity": "error", "contains": "unknown field" } ] },
 
     { "name": "contact-email-pattern-mismatch", "collection": "contacts",
-      "record": { "id": "CONT0002", "name": "Jo", "email": "not-an-email" },
+      "record": { "id": "CNTC2224AAAAAA", "name": "Jo", "email": "not-an-email" },
       "expect": [ { "path": "email", "severity": "error", "contains": "does not match pattern" } ] },
 
     { "name": "clean-all-types-valid", "collection": "parts", "status": "bound",
-      "known_ids": { "companies": ["COMP0001"] },
-      "record": { "id": "PART0099", "status": "bound", "type": "bolt", "count": 5,
+      "known_ids": { "companies": ["CMPY2223AAAAAA"] },
+      "record": { "id": "PART22BBAAAAAA", "status": "bound", "type": "bolt", "count": 5,
         "torque": "12.34", "ratio": 0.5, "active": true, "made_on": "2026-01-15",
         "checked_at": "2026-01-15T10:00:00Z", "grade": "a", "tag": "x",
-        "manufacturer": "COMP0001",
+        "manufacturer": "CMPY2223AAAAAA",
         "datasheet": { "ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "name": "spec.pdf" },
         "measurement": { "value": "1.234", "unit": "Nm", "passed": true } },
       "expect": [] },
 
     { "name": "warn-and-error-in-one-record", "collection": "parts", "status": "unbound",
-      "record": { "id": "PART0098", "status": "unbound", "grade": "z", "tag": "z" },
+      "record": { "id": "PART22BAAAAAAA", "status": "unbound", "grade": "z", "tag": "z" },
       "expect": [ { "path": "grade", "severity": "error", "contains": "declared value set" },
         { "path": "tag", "severity": "warn", "contains": "declared value set" } ] }
   ]

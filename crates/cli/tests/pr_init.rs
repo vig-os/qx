@@ -55,12 +55,12 @@ fn init_then_add_records_still_passes() {
     // Add a qualified company and a part bound to it.
     fs::write(
         dir.join("collections/companies.jsonl"),
-        "{\"id\":\"COMP0001\",\"status\":\"active\",\"label\":\"Acme\",\"role\":\"manufacturer\",\"qualification\":\"qualified\"}\n",
+        "{\"id\":\"CMPY2223AAAAAA\",\"status\":\"active\",\"label\":\"Acme\",\"role\":\"manufacturer\",\"qualification\":\"qualified\"}\n",
     )
     .unwrap();
     fs::write(
         dir.join("collections/parts.jsonl"),
-        "{\"id\":\"PART0001\",\"status\":\"bound\",\"type\":\"M3 bolt\",\"manufacturer\":\"COMP0001\"}\n",
+        "{\"id\":\"PART2223AAAAAA\",\"status\":\"bound\",\"type\":\"M3 bolt\",\"manufacturer\":\"CMPY2223AAAAAA\"}\n",
     )
     .unwrap();
 
@@ -81,7 +81,7 @@ fn init_then_add_invalid_record_fails() {
     // A part bound to a company that does not exist → FK violation.
     fs::write(
         dir.join("collections/parts.jsonl"),
-        "{\"id\":\"PART0001\",\"status\":\"bound\",\"type\":\"bolt\",\"manufacturer\":\"GHOST\"}\n",
+        "{\"id\":\"PART2223AAAAAA\",\"status\":\"bound\",\"type\":\"bolt\",\"manufacturer\":\"GHOST\"}\n",
     )
     .unwrap();
 
