@@ -577,6 +577,12 @@ fn generic_edit_and_transition_via_record_writes() {
             rw[0].record.get("status").and_then(|v| v.as_str()),
             Some("done")
         );
+        // The transition is engine-materialized: transitioned_at[to] stamped.
+        assert!(
+            rw[0].record["transitioned_at"]["done"].is_string(),
+            "transition stamps transitioned_at[done]: {:?}",
+            rw[0].record
+        );
     }
 
     // A disallowed transition (done -> open) is rejected.
@@ -624,6 +630,16 @@ fn generic_create_sets_the_lifecycle_initial_status() {
         rw[0].record.get("status").and_then(|v| v.as_str()),
         Some("open"),
         "a lifecycle collection's new record starts at the initial status"
+    );
+    // created_at is engine-materialized on create (ADR-035 §1b micro-core).
+    assert!(
+        rw[0]
+            .record
+            .get("created_at")
+            .and_then(|v| v.as_str())
+            .is_some(),
+        "create stamps created_at: {:?}",
+        rw[0].record
     );
 }
 
