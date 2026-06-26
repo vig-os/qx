@@ -441,8 +441,12 @@
           #
           # `no-conflict-markers` ships as of guardrails c96c0a2
           # (2026-06-26) and is wired as a pre-commit hook in
-          # `.pre-commit-config.yaml`. New gates available but not yet
-          # adopted: adr-matrix, derived-docs, no-hardcoded,
+          # `.pre-commit-config.yaml`. `adr-matrix` is SUPERSEDED here by
+          # our richer `adr-obligations` gate (coverage + status +
+          # satisfaction) — to be folded upstream as tiered
+          # `guardrails-adr-obligations`; see
+          # decisions/NOTE-obligations-as-anti-drift-ratchet.md. Other
+          # new gates, not yet evaluated: derived-docs, no-hardcoded,
           # no-raw-trace-fields, perf-budget, ci-shim.
           guardrails-gates = pkgs.runCommand "guardrails-gates" {
             nativeBuildInputs = [ guardrails.packages.${system}.gates ];
