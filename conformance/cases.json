@@ -102,6 +102,20 @@
 
     { "name": "contact-email-pattern-mismatch", "collection": "contacts",
       "record": { "id": "CONT0002", "name": "Jo", "email": "not-an-email" },
-      "expect": [ { "path": "email", "severity": "error", "contains": "does not match pattern" } ] }
+      "expect": [ { "path": "email", "severity": "error", "contains": "does not match pattern" } ] },
+
+    { "name": "clean-all-types-valid", "collection": "parts", "status": "bound",
+      "known_ids": { "companies": ["COMP0001"] },
+      "record": { "id": "PART0099", "status": "bound", "type": "bolt", "count": 5,
+        "torque": "12.34", "ratio": 0.5, "active": true, "made_on": "2026-01-15",
+        "checked_at": "2026-01-15T10:00:00Z", "grade": "a", "tag": "x",
+        "manufacturer": "COMP0001", "datasheet": "spec.pdf",
+        "measurement": { "value": "1.234", "unit": "Nm", "passed": true } },
+      "expect": [] },
+
+    { "name": "warn-and-error-in-one-record", "collection": "parts", "status": "unbound",
+      "record": { "id": "PART0098", "status": "unbound", "grade": "z", "tag": "z" },
+      "expect": [ { "path": "grade", "severity": "error", "contains": "declared value set" },
+        { "path": "tag", "severity": "warn", "contains": "declared value set" } ] }
   ]
 }
