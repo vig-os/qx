@@ -517,6 +517,12 @@ fn generic_create(
     };
     let mut record = serde_json::Map::new();
     record.insert("id".to_string(), serde_json::Value::String(id.clone()));
+    // created_at is the engine-materialized creation stamp (ADR-035 §1b
+    // micro-core: created_at replaces the legacy minted_at).
+    record.insert(
+        "created_at".to_string(),
+        serde_json::Value::String(rfc3339(&OffsetDateTime::now_utc())),
+    );
     // A lifecycle collection's new record starts at the declared initial
     // status (ADR-035 — e.g. a JSONL-native part mints at `unbound`).
     if let Some(initial) = ctx
@@ -704,6 +710,18 @@ fn generic_transition(
         "status".to_string(),
         serde_json::Value::String(to.to_string()),
     );
+    // Engine-materialized transition stamp (ADR-035 §1b: transitioned_at
+    // [status] replaces the legacy bound_at).
+    let now = serde_json::Value::String(rfc3339(&OffsetDateTime::now_utc()));
+    match record
+        .entry("transitioned_at".to_string())
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()))
+    {
+        serde_json::Value::Object(m) => {
+            m.insert(to.to_string(), now);
+        }
+        other => *other = serde_json::json!({ to: now }),
+    }
     for (k, v) in fields {
         record.insert(k.clone(), serde_json::Value::String(v.clone()));
     }

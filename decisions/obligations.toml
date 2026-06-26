@@ -438,7 +438,7 @@ adr = "ADR-035"
 statement = "created_at replaces minted_at (micro-core); transitioned_at[status] replaces bound_at — engine-materialized, validator-checked caches of the audit spine (the materialization rule)"
 kind = "test"
 status = "pending"
-tracking = "ADR-035 §1b materialization rule; stamp==AuditEntry.ts cross-check validator not yet built"
+tracking = "ADR-035 §1b; the micro-core stamps are now ENGINE-MATERIALIZED (M-B): created_at (replaces minted_at) stamped on generic_create; transitioned_at[status] (replaces bound_at) stamped on generic_transition (crates/app/engine.rs) — proven by generic_create_sets_the_lifecycle_initial_status + generic_edit_and_transition_via_record_writes. REMAINING: the stamp==AuditEntry.ts cross-check validator (rides the audit-spine refactor)"
 
 [[obligation]]
 id = "unified-change-vocabulary"
