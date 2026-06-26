@@ -425,7 +425,7 @@ adr = "ADR-035"
 statement = "Git-native NDJSON entity store: global id space + Resolve{id}; entity micro-core; kind tree w/ inheritance in types; generic List{collection,filter}; no join DSL"
 kind = "crate"
 status = "pending"
-tracking = "ADR-035 §0 entity store; generic READ query LANDED (M-B): Repository::list_collection (default empty; JSONL adapter reads collections/<name>.jsonl) + entity_from_record + List{collection}/Count served generically for any contract-declared collection (crates/app+storage; proven by list_serves_a_generic_contract_collection). REMAINING: generic Resolve{id} across the global id space + the kind tree w/ inheritance (still parts-only)"
+tracking = "ADR-035 §0 entity store; generic READ query LANDED (M-B): Repository::list_collection (default empty; JSONL adapter reads collections/<name>.jsonl) + entity_from_record + List{collection}/Count served generically for any contract-declared collection (crates/app+storage; proven by list_serves_a_generic_contract_collection). generic Resolve{id} across the global id space LANDED (M-B): the parts path stays first; contract-loaded falls through to a cross-collection exact-id search → entity_from_record (proven by the Resolve assertions in list_serves_a_generic_contract_collection). So entity micro-core + generic List/Count + global-id Resolve are DONE. REMAINING: the kind tree w/ inheritance in `types` (deferred to M-B.2 per the sequencing doc — enum+reference already cover non-schema-bearing kinds)"
 
 [[obligation]]
 id = "lifecycle-timestamps"

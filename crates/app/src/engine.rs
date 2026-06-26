@@ -137,10 +137,35 @@ fn normalize_id(q: &str) -> String {
 // -------------------------------------------------------------------
 
 fn resolve(ctx: &AppContext, query: &str) -> Response {
+    // Default `parts` path first: rich Part projection + human-prefix
+    // resolution.
     match resolve_part(ctx, query) {
-        Ok(p) => Response::ok(part_to_entity(&p)),
-        Err(r) => r,
+        Ok(p) => return Response::ok(part_to_entity(&p)),
+        // No contract → preserve the parts-specific error (unchanged).
+        Err(e) if ctx.contract.is_none() => return e,
+        Err(_) => {}
     }
+    // Global id space (ADR-035 §0): search the declared non-parts
+    // collections for an exact id match.
+    if let Some(contract) = &ctx.contract {
+        for coll in &contract.collections {
+            if coll.name == "parts" {
+                continue;
+            }
+            if let Ok(records) = ctx.repo.list_collection(&coll.name) {
+                if let Some(rec) = records
+                    .iter()
+                    .find(|r| r.get("id").and_then(|v| v.as_str()) == Some(query))
+                {
+                    return Response::ok(entity_from_record(&coll.name, rec));
+                }
+            }
+        }
+    }
+    Response::error(
+        ErrorKind::NotFound,
+        format!("id {query:?} not found in any declared collection"),
+    )
 }
 
 fn resolve_part(ctx: &AppContext, query: &str) -> Result<Part, Response> {
