@@ -393,8 +393,9 @@ id = "idd-controlled-vocab"
 adr = "ADR-035"
 statement = "types/products/vendors/locations are id'd entities (stable id + mutable label); parts reference by id; FK integrity is core (rename-safe)"
 kind = "crate"
-status = "pending"
-tracking = "ADR-035 §5; collections/*.jsonl entity tables + FK validators not yet built"
+status = "satisfied"
+satisfied_by = ["crates/validators/src/record.rs", "conformance/cases.json", "crates/contract/src/lib.rs"]
+tracking = "SATISFIED (M-B): controlled-vocab collections are id'd entity tables (stable id envelope + mutable label field) served as collections/*.jsonl (Repository::list_collection + generic List/Resolve); parts reference them by id via the `reference` field type; FK integrity is rename-safe because references key on the STABLE id, not the label, and check_reference enforces existence with the on_unknown policy — proven by conformance cases reference-valid-fk / reference-reject-on-missing-fk / reference-warn-on-missing-fk / reference-skipped-when-universe-absent. The kind tree (types w/ inheritance) is the separate entity-store M-B.2 item"
 
 [[obligation]]
 id = "collections-metamodel"
