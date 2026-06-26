@@ -28,6 +28,7 @@ struct MemRepo {
     audit: Mutex<Vec<AuditEntry>>,
     prints: Mutex<Vec<PrintEvent>>,
     collections: BTreeMap<String, Vec<serde_json::Map<String, serde_json::Value>>>,
+    jsonl: bool,
 }
 
 impl MemRepo {
@@ -37,6 +38,7 @@ impl MemRepo {
             audit: Mutex::new(Vec::new()),
             prints: Mutex::new(Vec::new()),
             collections: BTreeMap::new(),
+            jsonl: false,
         }
     }
 
@@ -50,9 +52,18 @@ impl MemRepo {
         self.collections.insert(name.to_string(), records);
         self
     }
+
+    /// Mark this store JSONL-native (parts flow through the generic path).
+    fn jsonl_native(mut self) -> Self {
+        self.jsonl = true;
+        self
+    }
 }
 
 impl Repository for MemRepo {
+    fn is_jsonl_native(&self) -> bool {
+        self.jsonl
+    }
     fn get_part(&self, id: &PartId) -> Result<Option<Part>, RepoError> {
         Ok(self
             .parts
@@ -613,6 +624,56 @@ fn generic_create_sets_the_lifecycle_initial_status() {
         rw[0].record.get("status").and_then(|v| v.as_str()),
         Some("open"),
         "a lifecycle collection's new record starts at the initial status"
+    );
+}
+
+#[test]
+fn jsonl_native_serves_parts_through_the_generic_path() {
+    use std::sync::Arc;
+    // On a JSONL-native store, `parts` flow through the generic entity
+    // path (list_collection + record_writes), not the legacy Part/CSV path.
+    let contract = qx_contract::Contract::from_bytes(
+        br#"{"format_version":1,"collections":[
+        {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+         "lifecycle":{"statuses":["unbound","bound","void"],"initial":"unbound",
+           "transitions":{"unbound":["bound","void"],"bound":["void"],"void":[]}},
+         "fields":[{"key":"type","type":"string","label":"Type"}]}]}"#,
+    )
+    .unwrap();
+    let parts_records: Vec<serde_json::Map<String, serde_json::Value>> = vec![
+        serde_json::from_str(r#"{"id":"PART2223AAAAAA","status":"bound","type":"bolt"}"#).unwrap(),
+    ];
+    let submitted = Arc::new(Mutex::new(Vec::new()));
+    let ctx = AppContext {
+        repo: Arc::new(
+            MemRepo::new(Vec::new())
+                .jsonl_native()
+                .with_collection("parts", parts_records),
+        ),
+        identity: Box::new(FixedIdentity),
+        sink: Box::new(MemSink {
+            submitted: submitted.clone(),
+        }),
+        registry_name: "test-registry".into(),
+        contract: Some(Arc::new(contract)),
+    };
+
+    // List{parts} serves the JSONL records generically (not list_parts).
+    let l = dispatch_json(&ctx, json!({"op":"List","collection":"parts"}));
+    assert_eq!(l.data().expect("ok")["total"], json!(1));
+
+    // Create{parts} mints via record_writes at the initial status.
+    let c = dispatch_json(
+        &ctx,
+        json!({"op":"Create","collection":"parts","fields":{}}),
+    );
+    assert!(c.data().is_some(), "jsonl-native create ok: {c:?}");
+    let props = submitted.lock().unwrap();
+    let rw = &props.last().unwrap().diff.record_writes;
+    assert_eq!(rw[0].collection, "parts");
+    assert_eq!(
+        rw[0].record.get("status").and_then(|v| v.as_str()),
+        Some("unbound")
     );
 }
 

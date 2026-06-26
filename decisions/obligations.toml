@@ -379,7 +379,7 @@ adr = "ADR-035"
 statement = "JSONL (storage_jsonl_git) is the primary on-disk format behind the ADR-018 port; CSV demotes to export"
 kind = "crate"
 status = "pending"
-tracking = "adapter built (crates/storage_jsonl_git, 23 tests); wiring-as-primary + data migration pending"
+tracking = "adapter built (crates/storage_jsonl_git, 23 tests). SERVING wired (M-B cutover): Repository::is_jsonl_native (default false; JSONL adapter true) routes PARTS through the generic entity path (list_collection + record_writes) on a JSONL-native store, while CSV stores keep the legacy Part/CSV path — additive, proven by jsonl_native_serves_parts_through_the_generic_path. REMAINING: qx init defaulting new registries to JSONL + the registry.csv->collections/parts.jsonl migration command + retiring the CSV-era validators"
 
 [[obligation]]
 id = "properties-promotion"

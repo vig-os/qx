@@ -192,6 +192,10 @@ impl Repository for JsonlGitRepository {
         Ok(all.into_iter().find(|p| &p.id == id))
     }
 
+    fn is_jsonl_native(&self) -> bool {
+        true
+    }
+
     fn list_collection(
         &self,
         collection: &str,
