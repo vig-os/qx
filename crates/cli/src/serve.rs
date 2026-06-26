@@ -194,6 +194,7 @@ mod tests {
             identity: Box::new(TestIdentity),
             sink: Box::new(NullSink),
             registry_name: "test/serve".into(),
+            contract: None,
         })
     }
 

@@ -29,7 +29,9 @@ use qx_storage::{PartFilter, Repository};
 use qx_transport::ProposalSink;
 
 use crate::entity::{field_value, part_to_entity, Entity};
-use crate::preset::{parts_descriptor, registry_descriptor};
+use crate::preset::{
+    descriptor_from_contract, parts_descriptor, registry_descriptor, RegistryDescriptor,
+};
 use crate::protocol::{
     ErrorKind, Filter, PaddingSpec, Page, PrintOptions, Request, Response, Selection, Sort, SortDir,
 };
@@ -46,6 +48,10 @@ pub struct AppContext {
     /// Display name served by `Describe` (registry identity until the
     /// manifest lands, ADR-034).
     pub registry_name: String,
+    /// The registry's parsed contract (`.qx/contract.json`), when loaded.
+    /// `None` = the FE snapshot path / tests with no contract → the engine
+    /// falls back to the code-owned presets (ADR-035 §0 / ADR-040).
+    pub contract: Option<Arc<qx_contract::Contract>>,
 }
 
 /// Dispatch one protocol request. Never panics on caller input; every
@@ -317,6 +323,35 @@ fn count(ctx: &AppContext, collection: &str, filter: &Filter, by: &str) -> Respo
 fn describe(ctx: &AppContext, collection: Option<&str>) -> Response {
     // Always the same `{name, collections}` envelope; `collection`
     // narrows the roster (uniform client handling — one shape).
+
+    // Contract-driven roster when a contract is loaded (ADR-035
+    // collections-metamodel): the registry self-describes from its
+    // declared collections, not the hard-coded preset.
+    if let Some(contract) = &ctx.contract {
+        let all: Vec<_> = contract
+            .collections
+            .iter()
+            .map(descriptor_from_contract)
+            .collect();
+        return match collection {
+            None => Response::ok(RegistryDescriptor {
+                name: ctx.registry_name.clone(),
+                collections: all,
+            }),
+            Some(name) => match all.into_iter().find(|d| d.name == name) {
+                Some(d) => Response::ok(RegistryDescriptor {
+                    name: ctx.registry_name.clone(),
+                    collections: vec![d],
+                }),
+                None => Response::error(
+                    ErrorKind::NotFound,
+                    format!("collection {name:?} is not declared in this registry's contract"),
+                ),
+            },
+        };
+    }
+
+    // No contract loaded (FE snapshot / tests): the code-owned preset roster.
     match collection {
         None => Response::ok(registry_descriptor(&ctx.registry_name)),
         Some("parts") => {

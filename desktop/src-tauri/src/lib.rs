@@ -94,6 +94,9 @@ fn build_context() -> Result<AppContext, String> {
         identity: wiring.identity,
         sink: wiring.sink,
         registry_name,
+        // Contract-driven describe is wired through the CLI first; the
+        // desktop shell keeps preset behavior until it loads it too.
+        contract: None,
     })
 }
 

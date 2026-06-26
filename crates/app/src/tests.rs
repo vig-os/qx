@@ -152,6 +152,7 @@ fn ctx_with(parts: Vec<Part>) -> (AppContext, Arc<Mutex<Vec<Proposal>>>) {
             submitted: submitted.clone(),
         }),
         registry_name: "test-registry".into(),
+        contract: None,
     };
     (ctx, submitted)
 }
@@ -320,6 +321,48 @@ fn describe_serves_descriptors_with_labels() {
     assert_eq!(
         d["collections"][0]["lifecycle"]["statuses"],
         json!(["unbound", "bound", "void"])
+    );
+}
+
+#[test]
+fn describe_uses_the_loaded_contract_roster_when_present() {
+    use std::sync::Arc;
+    // A two-collection contract: the engine self-describes from it
+    // (ADR-035 collections-metamodel), not from the single-collection preset.
+    let contract = qx_contract::Contract::from_bytes(
+        br#"{"format_version":1,"collections":[
+        {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+         "lifecycle":{"statuses":["unbound","bound","void"],"initial":"unbound",
+           "transitions":{"unbound":["bound","void"],"bound":["void"],"void":[]}},
+         "fields":[{"key":"type","type":"string","label":"Type"}]},
+        {"name":"companies","id":{"scheme":"nano14","default":false,"mintable":true},
+         "fields":[{"key":"label","type":"string","label":"Label"}]}]}"#,
+    )
+    .unwrap();
+    let (mut ctx, _) = ctx_with(Vec::new());
+    ctx.contract = Some(Arc::new(contract));
+
+    // Full roster: both declared collections (the preset would show only `parts`).
+    let r = dispatch_json(&ctx, json!({"op":"Describe"}));
+    let d = r.data().expect("ok");
+    let names: Vec<_> = d["collections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(names, vec!["parts", "companies"]);
+
+    // Narrowed: a declared collection resolves; an undeclared one is an error.
+    let one = dispatch_json(&ctx, json!({"op":"Describe","collection":"companies"}));
+    assert_eq!(
+        one.data().expect("ok")["collections"][0]["name"],
+        json!("companies")
+    );
+    let missing = dispatch_json(&ctx, json!({"op":"Describe","collection":"ghosts"}));
+    assert!(
+        missing.data().is_none(),
+        "an undeclared collection must be an error"
     );
 }
 

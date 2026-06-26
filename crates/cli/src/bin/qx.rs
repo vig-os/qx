@@ -555,11 +555,23 @@ fn app_context(cfg: &Config, wiring: Wiring) -> AppContext {
     let registry_name = qx_config::parse_owner_repo(&cfg.repo.data_repo_url)
         .map(|(o, r)| format!("{o}/{r}"))
         .unwrap_or_else(|_| cfg.repo.data_repo_url.clone());
+    // Load the registry's contract (`.qx/contract.json`) so the engine can
+    // self-describe from its declared collections (ADR-035). Absent or
+    // unparseable → None, and the engine falls back to the code presets.
+    let contract = cfg
+        .resolve_data_path()
+        .ok()
+        .map(|p| p.join(".qx/contract.json"))
+        .filter(|p| p.exists())
+        .and_then(|p| std::fs::read(p).ok())
+        .and_then(|b| qx_contract::Contract::from_bytes(&b).ok())
+        .map(std::sync::Arc::new);
     AppContext {
         repo: wiring.repo,
         identity: wiring.identity,
         sink: wiring.sink,
         registry_name,
+        contract,
     }
 }
 
