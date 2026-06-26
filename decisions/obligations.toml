@@ -465,7 +465,7 @@ adr = "ADR-035"
 statement = "attachment field = {ref: sha256, name, desc?}; path derived (never stored); validators enforce ref-exists + hash-matches (tamper-evident); prose = md attachment"
 kind = "test"
 status = "pending"
-tracking = "ADR-035 §4 attachments; field type + integrity validator not yet built"
+tracking = "ADR-035 §4; attachment value now enforced as the object {ref: sha256:<64hex>, name, desc?} — ref-format + extension(name) constraint + no-stray-keys (so no path/who/when is stored) — in crates/validators check_attachment (M-B; corpus + unit tests; flows native+wasm). REMAINING: ref-exists + hash-matches verification (needs the attachments/<hex> blob store, storage layer)"
 
 [[obligation]]
 id = "capability-grain"
