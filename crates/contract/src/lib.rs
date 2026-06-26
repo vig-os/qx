@@ -86,11 +86,11 @@ pub struct Collection {
     pub lifecycle: Option<Lifecycle>,
     #[serde(default)]
     pub fields: Vec<Field>,
-    /// Typed relations + graph rules (ADR-035 §1a). Opaque to the
-    /// parser until the vocab collections land — kept as raw JSON so a
-    /// forward-declared relations block round-trips losslessly.
+    /// Typed relations to other collections + graph rules (ADR-035 §1a).
+    /// Each [`Relation::target`] must be a declared collection (checked
+    /// in [`validate`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub relations: Vec<serde_json::Value>,
+    pub relations: Vec<Relation>,
     /// Tier-3 escape bag on/off (ADR-035 §1). Shape-checked only;
     /// regulated core fields are forbidden here (the §5 demotion guard
     /// lives in the validators crate, which has the record in hand).
@@ -124,6 +124,61 @@ pub struct Lifecycle {
     /// from-status → allowed to-statuses.
     pub transitions: BTreeMap<String, Vec<String>>,
     pub initial: String,
+}
+
+/// A typed relation from this collection to another (ADR-035 §1a): a
+/// named edge to a `target` collection, with optional graph rules
+/// (`acyclic` for self-referential graphs like `parts.components →
+/// parts`), a `void_policy` for what happens to the edge when an
+/// endpoint is voided, and a derived `backlink` name surfaced on the
+/// target. Record-level graph integrity (acyclicity over actual edges)
+/// is enforced by the validators crate (obligation `component-graph-
+/// integrity`); this declares the edge.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Relation {
+    /// The relation name (the edge key, e.g. `components`).
+    pub name: String,
+    /// The collection this edge points at; must be declared in the
+    /// same contract (checked in [`validate`]).
+    pub target: String,
+    #[serde(default)]
+    pub kind: RelationKind,
+    /// Forbid cycles over this edge (meaningful for self-referential
+    /// relations, e.g. an assembly graph). Record-level enforcement
+    /// lives in the validators crate.
+    #[serde(default)]
+    pub acyclic: bool,
+    #[serde(default)]
+    pub void_policy: VoidPolicy,
+    /// Optional derived backlink name surfaced on the `target`
+    /// collection (e.g. `part_of` for `components`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backlink: Option<String>,
+}
+
+/// Cardinality of a [`Relation`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum RelationKind {
+    /// Each source row points at one target (e.g. `manufacturer`).
+    #[default]
+    ManyOne,
+    /// Each source row points at many targets (e.g. `components`).
+    ManyMany,
+}
+
+/// What happens to an edge when an endpoint is voided.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum VoidPolicy {
+    /// Refuse to void an endpoint while the edge exists.
+    #[default]
+    Block,
+    /// Allow, but surface a warning.
+    Warn,
+    /// Void the dependent edges too.
+    Cascade,
 }
 
 /// The ADR-039 §2 scalar set. The TYPE (data shape) — the widget is
@@ -460,6 +515,27 @@ impl Collection {
 
         for f in &self.fields {
             f.validate_into(where_, declared, &statuses, self.lifecycle.is_some(), errs);
+        }
+
+        // Relations (ADR-035 §1a): unique names; every target is a
+        // declared collection (record-level graph integrity is the
+        // validators crate's job — this is the structural declaration).
+        let mut seen_rel: BTreeSet<&str> = BTreeSet::new();
+        for r in &self.relations {
+            if r.name.is_empty() {
+                errs.push(format!("{where_}.relations[]: empty relation name"));
+            } else if !seen_rel.insert(r.name.as_str()) {
+                errs.push(format!(
+                    "{where_}.relations: duplicate relation name `{}`",
+                    r.name
+                ));
+            }
+            if !declared.contains(r.target.as_str()) {
+                errs.push(format!(
+                    "{where_}.relations.{}: targets undeclared collection `{}`",
+                    r.name, r.target
+                ));
+            }
         }
     }
 }
@@ -950,6 +1026,44 @@ mod tests {
         assert!(reshaped_collections(&one, &two).is_empty());
         // removed (two → one): `companies` has no new descriptor to validate against.
         assert!(reshaped_collections(&two, &one).is_empty());
+    }
+
+    #[test]
+    fn relation_targets_must_be_declared() {
+        // Valid: relations to a declared collection + a self-referential
+        // acyclic graph (assembly) with all facets.
+        let ok = Contract::from_bytes(
+            br#"{"format_version":1,"collections":[
+            {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+             "fields":[{"key":"g","type":"string","label":"G"}],
+             "relations":[{"name":"maker","target":"companies","kind":"many-one"},
+                          {"name":"components","target":"parts","kind":"many-many","acyclic":true,"void_policy":"block","backlink":"part_of"}]},
+            {"name":"companies","id":{"scheme":"nano14","default":false,"mintable":true},
+             "fields":[{"key":"g","type":"string","label":"G"}]}]}"#,
+        );
+        assert!(ok.is_ok(), "valid relations must parse: {ok:?}");
+
+        // Invalid: relation targets an undeclared collection.
+        let bad = Contract::from_bytes(
+            br#"{"format_version":1,"collections":[
+            {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+             "relations":[{"name":"maker","target":"ghosts"}]}]}"#,
+        );
+        assert!(
+            matches!(bad, Err(ContractError::Invalid(ref v)) if v.iter().any(|m| m.contains("targets undeclared collection `ghosts`"))),
+            "expected undeclared-target rejection, got {bad:?}"
+        );
+    }
+
+    #[test]
+    fn relation_unknown_facet_is_a_parse_error() {
+        // deny_unknown_fields on Relation — a typo'd facet never slips through.
+        let bad = Contract::from_bytes(
+            br#"{"format_version":1,"collections":[
+            {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+             "relations":[{"name":"x","target":"parts","bogus":1}]}]}"#,
+        );
+        assert!(matches!(bad, Err(ContractError::Parse(_))), "got {bad:?}");
     }
 
     #[test]

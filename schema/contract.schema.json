@@ -34,8 +34,20 @@
         },
         "relations": {
           "type": "array",
-          "items": { "type": "object" },
-          "description": "Typed relations to other collections + graph rules (ADR-035 §1a). Beyond `components`, lands with the vocab collections."
+          "description": "Typed relations to other collections + graph rules (ADR-035 §1a). Mirrors the Rust `Relation` type.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "target"],
+            "properties": {
+              "name": { "type": "string" },
+              "target": { "type": "string" },
+              "kind": { "enum": ["many-one", "many-many"] },
+              "acyclic": { "type": "boolean" },
+              "void_policy": { "enum": ["block", "warn", "cascade"] },
+              "backlink": { "type": "string" }
+            }
+          }
         },
         "open_properties": {
           "type": "boolean",

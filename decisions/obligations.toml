@@ -489,7 +489,7 @@ adr = "ADR-035"
 statement = "Relations declared per descriptor (components = parts preset instance); store one direction, derive backlinks; naming/labels in descriptor — no hardcoded display strings in shells"
 kind = "crate"
 status = "pending"
-tracking = "ADR-035 §1a relations-generalize; relations[]/backlinks/labels in contract not yet built"
+tracking = "ADR-035 §1a; relations[] now TYPED + structurally validated in the contract (M-B — crates/contract Relation{name,target,kind,acyclic,void_policy,backlink}; target must be a declared collection; meta-schema aligned, SSOT parity held). REMAINING: runtime backlink derivation + shell consumption (no hardcoded display strings) — ride the entity-store/query layer + FE"
 
 # ---- Audit evidence set (ADR-036/037/038) --------------------------------
 
