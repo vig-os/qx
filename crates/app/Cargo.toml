@@ -9,6 +9,7 @@ description = "Application layer per ADR-030/035 — collection engine + command
 
 [dependencies]
 qx-domain = { path = "../domain" }
+qx-contract = { path = "../contract" }
 qx-storage = { path = "../storage" }
 qx-transport = { path = "../transport" }
 qx-identity = { path = "../identity" }

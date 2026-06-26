@@ -128,3 +128,129 @@ pub fn registry_descriptor(name: &str) -> RegistryDescriptor {
         collections: vec![parts_descriptor()],
     }
 }
+
+/// Enforce the non-weakenable `parts` **lifecycle** floor (ADR-035 §1): a
+/// registry's contract may *extend* the regulated preset but never weaken
+/// the binding state machine. If the contract declares a `parts`
+/// collection it must keep the regulated lifecycle statuses
+/// (`unbound`/`bound`/`void`) and the `unbound` initial. Returns the list
+/// of violations (empty == satisfied).
+///
+/// Scope (honest): the regulated floor enforced here is the lifecycle —
+/// the part of the preset ADR-035 §1 settles as load-bearing. Which
+/// *fields* count as floor, and the rename-around / non-instantiation
+/// bypass (dodging by not naming the collection `parts`), are the open
+/// design questions of ADR-040 spike #216 and are deliberately NOT decided
+/// here — a parts-less contract passes.
+pub fn assert_parts_floor(contract: &qx_contract::Contract) -> Result<(), Vec<String>> {
+    let Some(parts) = contract.collection("parts") else {
+        return Ok(()); // no regulated `parts` declared → nothing to floor
+    };
+    let floor = parts_descriptor();
+    let floor_lc = floor
+        .lifecycle
+        .as_ref()
+        .expect("parts floor always declares a lifecycle");
+    let mut errs = Vec::new();
+
+    match &parts.lifecycle {
+        None => errs.push("drops the regulated unbound→bound→void lifecycle".to_string()),
+        Some(lc) => {
+            for s in &floor_lc.statuses {
+                if !lc.statuses.iter().any(|x| x == s) {
+                    errs.push(format!("lifecycle drops the floor status `{s}`"));
+                }
+            }
+            if lc.initial != floor_lc.initial {
+                errs.push(format!(
+                    "lifecycle initial must remain `{}` (floor)",
+                    floor_lc.initial
+                ));
+            }
+        }
+    }
+
+    if errs.is_empty() {
+        Ok(())
+    } else {
+        Err(errs)
+    }
+}
+
+#[cfg(test)]
+mod floor_tests {
+    use super::assert_parts_floor;
+    use qx_contract::Contract;
+
+    const FLOOR_OK: &[u8] = br#"{"format_version":1,"collections":[
+        {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+         "lifecycle":{"statuses":["unbound","bound","void"],"initial":"unbound",
+           "transitions":{"unbound":["bound","void"],"bound":["void"],"void":[]}},
+         "fields":[
+           {"key":"type","type":"string","label":"Type","required_to_enter":"bound"},
+           {"key":"description","type":"string","label":"Description","required_to_enter":"bound"},
+           {"key":"vendor","type":"string","label":"Vendor","required_to_enter":"bound"},
+           {"key":"part_number","type":"string","label":"Part number","required_to_enter":"bound"},
+           {"key":"location","type":"string","label":"Location","required_to_enter":"bound"},
+           {"key":"notes","type":"string","label":"Notes"}]}]}"#;
+
+    #[test]
+    fn floor_is_satisfied_by_the_preset_shape() {
+        let c = Contract::from_bytes(FLOOR_OK).unwrap();
+        assert!(
+            assert_parts_floor(&c).is_ok(),
+            "{:?}",
+            assert_parts_floor(&c)
+        );
+    }
+
+    #[test]
+    fn dropping_the_void_status_is_rejected() {
+        // A parts lifecycle without the regulated `void` terminal status.
+        let c = Contract::from_bytes(
+            br#"{"format_version":1,"collections":[
+            {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+             "lifecycle":{"statuses":["unbound","bound"],"initial":"unbound",
+               "transitions":{"unbound":["bound"],"bound":[]}},
+             "fields":[{"key":"type","type":"string","label":"Type"}]}]}"#,
+        )
+        .unwrap();
+        let errs = assert_parts_floor(&c).unwrap_err();
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("drops the floor status `void`")),
+            "{errs:?}"
+        );
+    }
+
+    #[test]
+    fn changing_the_initial_status_is_rejected() {
+        let c = Contract::from_bytes(
+            br#"{"format_version":1,"collections":[
+            {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+             "lifecycle":{"statuses":["unbound","bound","void"],"initial":"bound",
+               "transitions":{"unbound":["bound"],"bound":["void"],"void":[]}},
+             "fields":[{"key":"type","type":"string","label":"Type"}]}]}"#,
+        )
+        .unwrap();
+        let errs = assert_parts_floor(&c).unwrap_err();
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("initial must remain `unbound`")),
+            "{errs:?}"
+        );
+    }
+
+    #[test]
+    fn parts_less_registry_passes() {
+        // No `parts` collection → nothing to floor (rename-around bypass is
+        // spike #216's concern, documented on the function).
+        let c = Contract::from_bytes(
+            br#"{"format_version":1,"collections":[
+            {"name":"companies","id":{"scheme":"nano14","default":true,"mintable":true},
+             "fields":[{"key":"label","type":"string","label":"Label"}]}]}"#,
+        )
+        .unwrap();
+        assert!(assert_parts_floor(&c).is_ok());
+    }
+}
