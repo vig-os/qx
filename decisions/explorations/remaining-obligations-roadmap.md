@@ -1,22 +1,32 @@
 # Roadmap to 71/71 — the remaining obligations, categorized
 
-Status: execution map (exploration, not an ADR). As of 2026-06-26,
-**29/71 obligations satisfied**. This session drove +9 flips and the full
-generic contract-driven entity engine (read+write). This maps every one
-of the remaining 42 to what it actually needs, so the rest is drivable —
-and flags which **cannot** reach `satisfied` from this repo alone.
+Status: execution map (exploration, not an ADR). As of 2026-06-27,
+**31/71 obligations satisfied**. The generic contract-driven entity engine
+(read+write) is complete and the **parts→JSONL cutover (A1 below) is
+DONE** — `jsonl-storage` + `export-never-committed` flipped (JSONL primary
+via `is_jsonl_native`/adapter-detection; the generic Export op + a
+committed-`*.csv` gate). `lifecycle-timestamps` (engine-materialized
+`created_at`/`transitioned_at`) and `unified-change-vocabulary`
+(`Action::RecordWrite` classification — generic writes no longer bypass
+policy) are ADVANCED; their flips ride the audit-spine refactor below.
+This maps every remaining obligation to what it actually needs, and flags
+which **cannot** reach `satisfied` from this repo alone.
 
 Sibling sequencing docs: `m-b-data-model-sequencing.md` (the M-B data
 model) and `write-refactor-sequencing.md` (the CSV→JSONL cutover).
 
 ## A. Coordinated code refactors (multi-PR, single-session-infeasible)
-1. **Parts→JSONL cutover** (`write-refactor-sequencing.md`) — route parts
-   through the same `record_writes` channel the generic engine already
-   uses; rename `Part` fields → `created_at`/`transitioned_at`; drop
-   `registry.csv` + `REGISTRY_HEADER`. UNBLOCKS: `jsonl-storage`,
-   `lifecycle-timestamps`, `unified-change-vocabulary`,
-   `export-never-committed` (CSV becomes export-only + a gate rejects
-   committed `*.csv`).
+1. **Parts→JSONL cutover** — ✅ **DONE** (2026-06-27). Delivered via the
+   additive `record_writes` + `is_jsonl_native` path (NOT the 34-site
+   `PartId` migration): qx init seeds `collections/*.jsonl`; the CLI
+   detects+selects the JSONL adapter (legacy `registry.csv` → CSV); parts
+   route through the generic path on a JSONL-native store; the generic
+   Export op emits CSV on demand + `qx check` rejects committed
+   `collections/*.csv`. FLIPPED `jsonl-storage` + `export-never-committed`.
+   STILL OPEN (ride the audit-spine, A3/§unified-vocab): the parts `Row*`
+   actions → `{collection,op-kind}` generalization + the PR-template
+   round-trip (W5/W6) flips `unified-change-vocabulary` +
+   `lifecycle-timestamps` (the cross-check) + `print-fold-audit-spine`.
 2. **Kind tree + `$ref`/`$defs` resolver** — add a `defs` map to
    `Contract`, resolve `ObjectSchema::Ref` in `check_object`
    (`record.rs:576` is a stub today); per-kind field schemas with
