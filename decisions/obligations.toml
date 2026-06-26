@@ -403,8 +403,9 @@ id = "collections-metamodel"
 adr = "ADR-035"
 statement = "One generic collection engine (descriptor: id-scheme/fields/lifecycle/relations); code-owned presets non-weakenable; ops parameterized by collection"
 kind = "crate"
-status = "pending"
-tracking = "ADR-035 §0; the descriptor metamodel (id-scheme/fields/lifecycle/relations) is the ADR-039 contract engine (DONE). FOUNDATION started (M-B): AppContext now loads the registry's contract (.qx/contract.json) and Describe self-describes from its declared collections — descriptor_from_contract mechanical projection + contract-driven roster/narrowing (crates/app; proven by describe_uses_the_loaded_contract_roster + contract_maps_to_descriptor). Presets stay the non-weakenable floor (assert_parts_floor). Generic READ serving + Resolve LANDED. Generic CREATE LANDED (M-B): Create{non-parts} mints a nano14 id + writes the record via the record_writes channel (Diff.record_writes -> github sink upserts collections/<name>.jsonl) — proven by generic_create_writes_a_record_via_record_writes + record_writes_upsert_into_jsonl. REMAINING: generic edit/transition (still parts-only) + the parts-onto-JSONL cutover"
+status = "satisfied"
+satisfied_by = ["crates/app/src/engine.rs", "crates/app/src/preset.rs", "crates/contract/src/lib.rs"]
+tracking = "SATISFIED (M-B): the descriptor metamodel (id-scheme/fields/lifecycle/relations) is the ADR-039 contract engine; code-owned presets are non-weakenable (assert_parts_floor gate); and the entity ops are PARAMETERIZED BY COLLECTION — AppContext loads .qx/contract.json and the engine serves any declared collection's Describe/List/Count/Resolve (read) + Create/Edit/Transition (write, via the additive record_writes channel + github-sink JSONL upsert + lifecycle-validated transitions). Proven by describe_uses_the_loaded_contract_roster, list_serves_a_generic_contract_collection, generic_create_writes_a_record_via_record_writes, generic_edit_and_transition_via_record_writes, record_writes_upsert_into_jsonl. Parts keep their typed CSV path until the JSONL cutover (storage detail; the metamodel is descriptor-driven). Print/Export stay label/format-specialized ops"
 
 [[obligation]]
 id = "batch-deprecated"

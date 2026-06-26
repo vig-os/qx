@@ -547,6 +547,164 @@ fn generic_create(
     }
 }
 
+/// Find a record by id in a declared collection's JSONL store, or a
+/// NotFound response.
+fn fetch_collection_record(
+    ctx: &AppContext,
+    collection: &str,
+    id: &str,
+) -> Result<serde_json::Map<String, serde_json::Value>, Response> {
+    let records = ctx
+        .repo
+        .list_collection(collection)
+        .map_err(|e| Response::error(ErrorKind::Backend, e.to_string()))?;
+    records
+        .into_iter()
+        .find(|r| r.get("id").and_then(|v| v.as_str()) == Some(id))
+        .ok_or_else(|| {
+            Response::error(
+                ErrorKind::NotFound,
+                format!("{collection} record {id:?} not found"),
+            )
+        })
+}
+
+/// Submit a single generic record upsert (ADR-035 `record_writes` channel).
+fn submit_record_write(
+    ctx: &AppContext,
+    op: Operator,
+    collection: &str,
+    id: &str,
+    record: serde_json::Map<String, serde_json::Value>,
+    message: String,
+) -> Response {
+    let diff = Diff {
+        record_writes: vec![RecordWrite {
+            collection: collection.to_string(),
+            id: id.to_string(),
+            record,
+        }],
+        ..Diff::default()
+    };
+    let request_id = RequestId::new();
+    let proposal = Proposal {
+        diff: diff.clone(),
+        batch_label: None,
+        author: op,
+        signatures: Vec::new(),
+        change_classification: diff.classify(),
+        message,
+        request_id,
+    };
+    match ctx.sink.submit(proposal) {
+        Ok(proposal_ref) => Response::ok(json!({
+            "id": id,
+            "collection": collection,
+            "proposal": proposal_ref.url,
+        })),
+        Err(e) => Response::error(ErrorKind::Backend, e.to_string()),
+    }
+}
+
+/// Generic entity-store edit (ADR-035): merge `fields` into an existing
+/// record and re-write its JSONL line.
+fn generic_edit(
+    ctx: &AppContext,
+    collection: &str,
+    id: &str,
+    fields: &BTreeMap<String, String>,
+) -> Response {
+    if let Err(r) = served_collection(ctx, collection) {
+        return r;
+    }
+    if fields.is_empty() {
+        return Response::error(ErrorKind::BadRequest, "Edit requires at least one field");
+    }
+    let op = match operator(ctx) {
+        Ok(o) => o,
+        Err(r) => return r,
+    };
+    let mut record = match fetch_collection_record(ctx, collection, id) {
+        Ok(r) => r,
+        Err(resp) => return resp,
+    };
+    for (k, v) in fields {
+        record.insert(k.clone(), serde_json::Value::String(v.clone()));
+    }
+    submit_record_write(
+        ctx,
+        op,
+        collection,
+        id,
+        record,
+        format!("edit {collection}: {id}"),
+    )
+}
+
+/// Generic entity-store transition (ADR-035): move a record to status
+/// `to` if the collection's lifecycle allows it from the current status.
+fn generic_transition(
+    ctx: &AppContext,
+    collection: &str,
+    id: &str,
+    to: &str,
+    fields: &BTreeMap<String, String>,
+) -> Response {
+    if let Err(r) = served_collection(ctx, collection) {
+        return r;
+    }
+    let op = match operator(ctx) {
+        Ok(o) => o,
+        Err(r) => return r,
+    };
+    let Some(lc) = ctx
+        .contract
+        .as_ref()
+        .and_then(|c| c.collection(collection))
+        .and_then(|c| c.lifecycle.clone())
+    else {
+        return Response::error(
+            ErrorKind::BadRequest,
+            format!("collection {collection:?} has no lifecycle to transition"),
+        );
+    };
+    let mut record = match fetch_collection_record(ctx, collection, id) {
+        Ok(r) => r,
+        Err(resp) => return resp,
+    };
+    let current = record
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&lc.initial)
+        .to_string();
+    let allowed = lc
+        .transitions
+        .get(&current)
+        .map(|tos| tos.iter().any(|t| t == to))
+        .unwrap_or(false);
+    if !allowed {
+        return Response::error(
+            ErrorKind::Validation,
+            format!("transition {current:?} -> {to:?} not allowed for {collection}"),
+        );
+    }
+    record.insert(
+        "status".to_string(),
+        serde_json::Value::String(to.to_string()),
+    );
+    for (k, v) in fields {
+        record.insert(k.clone(), serde_json::Value::String(v.clone()));
+    }
+    submit_record_write(
+        ctx,
+        op,
+        collection,
+        id,
+        record,
+        format!("transition {collection}: {id} -> {to}"),
+    )
+}
+
 fn create(
     ctx: &AppContext,
     collection: &str,
@@ -750,6 +908,9 @@ fn transition(
     to: &str,
     fields: &BTreeMap<String, String>,
 ) -> Response {
+    if collection != "parts" {
+        return generic_transition(ctx, collection, id, to, fields);
+    }
     if let Err(r) = known_collection(ctx, collection) {
         return r;
     }
@@ -865,6 +1026,9 @@ fn edit(
     id: &str,
     fields: &BTreeMap<String, String>,
 ) -> Response {
+    if collection != "parts" {
+        return generic_edit(ctx, collection, id, fields);
+    }
     if let Err(r) = known_collection(ctx, collection) {
         return r;
     }
