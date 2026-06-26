@@ -16,9 +16,9 @@
 //! Pure: no I/O, no clock. Compiles native + wasm32 like the rest of the
 //! validator surface.
 //!
-//! Deferred (tracked for the conformance task): `pattern` regex
-//! enforcement and `$ref` object-schema resolution — every other facet
-//! in the §2 scalar set is enforced here.
+//! Every §2 scalar facet is enforced here, including `pattern` regex.
+//! The one remaining gap is `$ref` object-schema resolution (M-A.2,
+//! paired with the `$defs` block — see ADR-039 open questions).
 
 use std::collections::{BTreeMap, BTreeSet};
 

@@ -517,6 +517,16 @@ impl Field {
                         "{at}: enum field requires a non-empty `values` set"
                     ));
                 }
+                // `closed` is `true | "warn" | false`. The untagged
+                // `Mode(String)` would otherwise silently accept any
+                // string and treat it as "warn" — an SSOT split from the
+                // meta-schema's `enum: [true, "warn", false]`. Reject
+                // here so `from_bytes` stays authoritative (ADR-039 §2).
+                if let Some(Closed::Mode(m)) = &self.closed {
+                    if m != "warn" {
+                        errs.push(format!("{at}: closed mode `{m}` is invalid (only `warn`)"));
+                    }
+                }
             }
             FieldType::Decimal => match (self.precision, self.scale) {
                 (Some(p), Some(s)) if s > p => errs.push(format!(
@@ -816,6 +826,27 @@ mod tests {
         assert!(Closed::Flag(true).rejects_unknown());
         assert!(!Closed::Flag(false).rejects_unknown());
         assert!(!Closed::Mode("warn".into()).rejects_unknown());
+    }
+
+    #[test]
+    fn closed_facet_rejects_arbitrary_string() {
+        // `"closed": "soft"` must be rejected — only `true | "warn" |
+        // false` are legal (ADR-039 §2; meta-schema parity). Otherwise
+        // the untagged `Mode(String)` silently degrades it to a warning.
+        let json = one_collection(
+            r#"{ "key": "e", "type": "enum", "label": "E", "values": ["a", "b"], "closed": "soft" }"#,
+        );
+        let err = parse(&json).unwrap_err();
+        assert!(
+            matches!(err, ContractError::Invalid(ref v) if v.iter().any(|m| m.contains("closed mode `soft` is invalid"))),
+            "expected closed-mode rejection, got {err:?}"
+        );
+
+        // The legal `"warn"` mode still parses cleanly.
+        let ok = one_collection(
+            r#"{ "key": "e", "type": "enum", "label": "E", "values": ["a", "b"], "closed": "warn" }"#,
+        );
+        assert!(parse(&ok).is_ok(), "`closed: warn` must remain valid");
     }
 
     #[test]
