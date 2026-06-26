@@ -438,6 +438,15 @@ fn list_serves_a_generic_contract_collection() {
         .unwrap();
     assert_eq!(acme["label"], json!("Acme"));
     assert_eq!(acme["collection"], json!("companies"));
+
+    // Resolve over the global id space finds the company by id too.
+    let one = dispatch_json(&ctx, json!({"op":"Resolve","id":"CMPY2224AAAAAA"}));
+    let od = one.data().expect("ok");
+    assert_eq!(od["collection"], json!("companies"));
+    assert_eq!(od["label"], json!("Globex"));
+    // An id in no declared collection is a not-found error.
+    let none = dispatch_json(&ctx, json!({"op":"Resolve","id":"CMPY9999AAAAAA"}));
+    assert!(none.data().is_none());
 }
 
 // -------------------------------------------------------------------
