@@ -313,6 +313,78 @@ pub fn validate_diff(input_json: &str) -> Result<JsValue, JsError> {
 }
 
 // -------------------------------------------------------------------
+// validate_record (ADR-039) — the SSOT record validator, wasm arm
+// -------------------------------------------------------------------
+
+/// Validate one record against its collection descriptor through the
+/// SAME engine the native `qx check` gate runs (ADR-039 §3-4). The wasm
+/// arm of the conformance triplet: the FE calls it for form preflight and
+/// gets byte-identical verdicts to CI.
+///
+/// JSON in / JSON out (UTF-8 bytes). `contract` is a canonical
+/// `contract.json`; `record` is the entity object; `known_ids` is
+/// `{ "<collection>": ["id", ...] }` for reference FK checks (empty = no
+/// universe). Returns `[{ "path", "severity": "error"|"warn", "message" },
+/// ...]` — an empty array means valid.
+#[wasm_bindgen]
+pub fn validate_record_json(
+    contract: &[u8],
+    record: &[u8],
+    collection: &str,
+    status: Option<String>,
+    known_ids: &[u8],
+) -> Result<String, JsError> {
+    validate_record_json_impl(contract, record, collection, status.as_deref(), known_ids)
+        .map_err(|e| JsError::new(&e))
+}
+
+/// Pure core of [`validate_record_json`] — native-testable; the wasm
+/// wrapper is a thin marshalling shim. `Err` is a wiring failure (bad
+/// JSON, unknown collection), distinct from validation issues (which are
+/// the JSON payload).
+fn validate_record_json_impl(
+    contract: &[u8],
+    record: &[u8],
+    collection: &str,
+    status: Option<&str>,
+    known_ids: &[u8],
+) -> Result<String, String> {
+    use qx_contract::Contract;
+    use qx_validators::record::{validate_record, RecordContext, Severity};
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let contract = Contract::from_bytes(contract).map_err(|e| format!("contract: {e}"))?;
+    let coll = contract
+        .collection(collection)
+        .ok_or_else(|| format!("unknown collection `{collection}`"))?;
+    let record: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_slice(record).map_err(|e| format!("record: {e}"))?;
+
+    let universe: BTreeMap<String, BTreeSet<String>> = if known_ids.is_empty() {
+        BTreeMap::new()
+    } else {
+        let raw: BTreeMap<String, Vec<String>> =
+            serde_json::from_slice(known_ids).map_err(|e| format!("known_ids: {e}"))?;
+        raw.into_iter()
+            .map(|(k, v)| (k, v.into_iter().collect()))
+            .collect()
+    };
+    let ctx = RecordContext::new(universe);
+
+    let issues: Vec<serde_json::Value> = validate_record(coll, &record, status, &ctx)
+        .iter()
+        .map(|i| {
+            serde_json::json!({
+                "path": i.path,
+                "severity": match i.severity { Severity::Error => "error", Severity::Warn => "warn" },
+                "message": i.message,
+            })
+        })
+        .collect();
+    serde_json::to_string(&issues).map_err(|e| e.to_string())
+}
+
+// -------------------------------------------------------------------
 // classify_diff
 // -------------------------------------------------------------------
 
@@ -401,6 +473,63 @@ mod tests {
     //! in CI; these tests only exercise the parser + JSON shape on
     //! native so `cargo test --workspace` covers the surface without
     //! a wasm runtime.
+
+    use super::validate_record_json_impl;
+
+    const RJ_CONTRACT: &[u8] = br#"{"format_version":1,"collections":[
+        {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+         "fields":[{"key":"grade","type":"enum","label":"Grade","values":["a","b"],"closed":true},
+                   {"key":"maker","type":"reference","label":"Maker","collection":"companies","on_unknown":"reject"}]},
+        {"name":"companies","id":{"scheme":"nano14","default":false,"mintable":true},
+         "fields":[{"key":"label","type":"string","label":"Name"}]}]}"#;
+
+    #[test]
+    fn validate_record_json_valid_is_empty() {
+        let out = validate_record_json_impl(
+            RJ_CONTRACT,
+            br#"{"id":"PART0001","grade":"a"}"#,
+            "parts",
+            None,
+            b"",
+        )
+        .unwrap();
+        assert_eq!(out, "[]");
+    }
+
+    #[test]
+    fn validate_record_json_flags_invalid_enum() {
+        let out = validate_record_json_impl(
+            RJ_CONTRACT,
+            br#"{"id":"PART0002","grade":"z"}"#,
+            "parts",
+            None,
+            b"",
+        )
+        .unwrap();
+        assert!(out.contains(r#""severity":"error""#), "got {out}");
+        assert!(out.contains(r#""path":"grade""#), "got {out}");
+    }
+
+    #[test]
+    fn validate_record_json_marshals_known_ids() {
+        // `maker` references companies with on_unknown:reject; with the
+        // referenced id in the universe the record is clean.
+        let out = validate_record_json_impl(
+            RJ_CONTRACT,
+            br#"{"id":"PART0003","grade":"a","maker":"COMP0001"}"#,
+            "parts",
+            None,
+            br#"{"companies":["COMP0001"]}"#,
+        )
+        .unwrap();
+        assert_eq!(out, "[]", "valid FK should produce no issues; got {out}");
+    }
+
+    #[test]
+    fn validate_record_json_unknown_collection_is_wiring_error() {
+        let err = validate_record_json_impl(RJ_CONTRACT, b"{}", "ghosts", None, b"").unwrap_err();
+        assert!(err.contains("unknown collection"), "got {err}");
+    }
 
     use super::*;
 

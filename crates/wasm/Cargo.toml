@@ -23,6 +23,7 @@ qx-domain = { path = "../domain" }
 # not from this façade. Foundation issue #33 §"Bundle size".
 qx-codec = { path = "../codec", default-features = false }
 qx-validators = { path = "../validators" }
+qx-contract = { path = "../contract" }
 qx-observability = { path = "../observability" }
 wasm-bindgen = { workspace = true }
 serde-wasm-bindgen = { workspace = true }
