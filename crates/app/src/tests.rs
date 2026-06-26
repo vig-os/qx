@@ -27,6 +27,7 @@ struct MemRepo {
     parts: Mutex<Vec<Part>>,
     audit: Mutex<Vec<AuditEntry>>,
     prints: Mutex<Vec<PrintEvent>>,
+    collections: BTreeMap<String, Vec<serde_json::Map<String, serde_json::Value>>>,
 }
 
 impl MemRepo {
@@ -35,7 +36,19 @@ impl MemRepo {
             parts: Mutex::new(parts),
             audit: Mutex::new(Vec::new()),
             prints: Mutex::new(Vec::new()),
+            collections: BTreeMap::new(),
         }
+    }
+
+    /// Seed a generic (non-parts) collection's records for the entity-store
+    /// serving path.
+    fn with_collection(
+        mut self,
+        name: &str,
+        records: Vec<serde_json::Map<String, serde_json::Value>>,
+    ) -> Self {
+        self.collections.insert(name.to_string(), records);
+        self
     }
 }
 
@@ -51,6 +64,16 @@ impl Repository for MemRepo {
     }
     fn list_parts(&self, _filter: &PartFilter) -> Result<Vec<Part>, RepoError> {
         Ok(self.parts.lock().expect("lock").clone())
+    }
+    fn list_collection(
+        &self,
+        collection: &str,
+    ) -> Result<Vec<serde_json::Map<String, serde_json::Value>>, RepoError> {
+        Ok(self
+            .collections
+            .get(collection)
+            .cloned()
+            .unwrap_or_default())
     }
     fn list_audit_events(&self, _filter: &AuditFilter) -> Result<Vec<AuditEntry>, RepoError> {
         Ok(self.audit.lock().expect("lock").clone())
@@ -364,6 +387,57 @@ fn describe_uses_the_loaded_contract_roster_when_present() {
         missing.data().is_none(),
         "an undeclared collection must be an error"
     );
+}
+
+#[test]
+fn list_serves_a_generic_contract_collection() {
+    use std::sync::Arc;
+    // Two-collection registry; `companies` records live in the generic
+    // entity store (ADR-035), served via list_collection -> entity_from_record.
+    let contract = qx_contract::Contract::from_bytes(
+        br#"{"format_version":1,"collections":[
+        {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+         "lifecycle":{"statuses":["unbound","bound","void"],"initial":"unbound",
+           "transitions":{"unbound":["bound","void"],"bound":["void"],"void":[]}},
+         "fields":[{"key":"type","type":"string","label":"Type"}]},
+        {"name":"companies","id":{"scheme":"nano14","default":false,"mintable":true},
+         "fields":[{"key":"label","type":"string","label":"Label"}]}]}"#,
+    )
+    .unwrap();
+    let companies: Vec<serde_json::Map<String, serde_json::Value>> = vec![
+        serde_json::from_str(r#"{"id":"CMPY2223AAAAAA","label":"Acme"}"#).unwrap(),
+        serde_json::from_str(r#"{"id":"CMPY2224AAAAAA","label":"Globex"}"#).unwrap(),
+    ];
+    let ctx = AppContext {
+        repo: Arc::new(MemRepo::new(Vec::new()).with_collection("companies", companies)),
+        identity: Box::new(FixedIdentity),
+        sink: Box::new(MemSink {
+            submitted: Arc::new(Mutex::new(Vec::new())),
+        }),
+        registry_name: "test-registry".into(),
+        contract: Some(Arc::new(contract)),
+    };
+
+    let r = dispatch_json(&ctx, json!({"op":"List","collection":"companies"}));
+    let d = r.data().expect("ok");
+    assert_eq!(d["total"], json!(2));
+    let ids: Vec<_> = d["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["id"].as_str().unwrap().to_string())
+        .collect();
+    assert!(ids.contains(&"CMPY2223AAAAAA".to_string()), "{ids:?}");
+
+    // Envelope `label` is lifted; the generic projection round-trips.
+    let acme = d["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"] == json!("CMPY2223AAAAAA"))
+        .unwrap();
+    assert_eq!(acme["label"], json!("Acme"));
+    assert_eq!(acme["collection"], json!("companies"));
 }
 
 // -------------------------------------------------------------------

@@ -401,7 +401,7 @@ adr = "ADR-035"
 statement = "One generic collection engine (descriptor: id-scheme/fields/lifecycle/relations); code-owned presets non-weakenable; ops parameterized by collection"
 kind = "crate"
 status = "pending"
-tracking = "ADR-035 §0; the descriptor metamodel (id-scheme/fields/lifecycle/relations) is the ADR-039 contract engine (DONE). FOUNDATION started (M-B): AppContext now loads the registry's contract (.qx/contract.json) and Describe self-describes from its declared collections — descriptor_from_contract mechanical projection + contract-driven roster/narrowing (crates/app; proven by describe_uses_the_loaded_contract_roster + contract_maps_to_descriptor). Presets stay the non-weakenable floor (assert_parts_floor). REMAINING: generic serving of list/resolve/create/known_collection from the contract (currently parts-only) so non-parts collections are servable, not just describable"
+tracking = "ADR-035 §0; the descriptor metamodel (id-scheme/fields/lifecycle/relations) is the ADR-039 contract engine (DONE). FOUNDATION started (M-B): AppContext now loads the registry's contract (.qx/contract.json) and Describe self-describes from its declared collections — descriptor_from_contract mechanical projection + contract-driven roster/narrowing (crates/app; proven by describe_uses_the_loaded_contract_roster + contract_maps_to_descriptor). Presets stay the non-weakenable floor (assert_parts_floor). Generic READ serving LANDED: List/Count serve any contract-declared collection (served_collection guard + list_collection + entity_from_record). REMAINING: generic WRITE (create/edit/transition still parts-guarded via known_collection) + generic Resolve"
 
 [[obligation]]
 id = "batch-deprecated"
@@ -425,7 +425,7 @@ adr = "ADR-035"
 statement = "Git-native NDJSON entity store: global id space + Resolve{id}; entity micro-core; kind tree w/ inheritance in types; generic List{collection,filter}; no join DSL"
 kind = "crate"
 status = "pending"
-tracking = "ADR-035 §0 entity store; global-id resolve + kind tree + generic query not yet built"
+tracking = "ADR-035 §0 entity store; generic READ query LANDED (M-B): Repository::list_collection (default empty; JSONL adapter reads collections/<name>.jsonl) + entity_from_record + List{collection}/Count served generically for any contract-declared collection (crates/app+storage; proven by list_serves_a_generic_contract_collection). REMAINING: generic Resolve{id} across the global id space + the kind tree w/ inheritance (still parts-only)"
 
 [[obligation]]
 id = "lifecycle-timestamps"

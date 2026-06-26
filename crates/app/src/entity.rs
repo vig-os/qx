@@ -82,6 +82,35 @@ pub fn part_to_entity(p: &Part) -> Entity {
     }
 }
 
+/// Render a raw collection record (a JSONL line as a JSON object) into
+/// the protocol [`Entity`] — the generic path for declared collections
+/// beyond `parts` (ADR-035 entity store). Envelope keys are lifted;
+/// every other key becomes an open `property`.
+pub fn entity_from_record(collection: &str, rec: &serde_json::Map<String, Json>) -> Entity {
+    let s = |k: &str| rec.get(k).and_then(Json::as_str).map(str::to_string);
+    let properties: serde_json::Map<String, Json> = rec
+        .iter()
+        .filter(|(k, _)| {
+            !matches!(
+                k.as_str(),
+                "id" | "status" | "created_at" | "label" | "kind"
+            )
+        })
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    Entity {
+        id: s("id").unwrap_or_default(),
+        collection: collection.to_string(),
+        label: s("label"),
+        created_at: s("created_at").unwrap_or_default(),
+        status: s("status"),
+        kind: s("kind"),
+        transitioned_at: BTreeMap::new(),
+        fields: BTreeMap::new(),
+        properties,
+    }
+}
+
 /// One field value as seen by filters/sort: core fields by name, then
 /// declared fields, then properties (stringified).
 pub fn field_value(e: &Entity, key: &str) -> Option<String> {
