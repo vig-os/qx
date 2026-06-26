@@ -22,7 +22,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qx_contract::{Closed, Collection, Field, FieldType, ObjectSchema, OnUnknown};
+use qx_contract::{Closed, Collection, Field, FieldType, IdScheme, ObjectSchema, OnUnknown};
 use serde_json::{Map, Value};
 
 /// Severity of a single record issue. `Warn` never blocks a merge; it is
@@ -110,6 +110,12 @@ pub fn validate_record(
         }
     }
 
+    // Envelope `id` must conform to the collection's declared id scheme
+    // (ADR-035 §0 typed ids). Absent here = a pre-mint draft (FE), skipped.
+    if let Some(id) = record.get("id").and_then(Value::as_str) {
+        check_id_format(&collection.id, id, &mut issues);
+    }
+
     for field in &collection.fields {
         validate_field_value(
             field,
@@ -122,6 +128,49 @@ pub fn validate_record(
     }
 
     issues
+}
+
+/// Check the envelope `id` against the collection's declared id scheme
+/// (ADR-035 §0). Minted schemes (`nano14`) and content-addresses
+/// (`sha256`) are format-checked; imported/asserted schemes (`udi`,
+/// `gs1`, …) are owned by an external authority, so any non-empty value
+/// is accepted.
+fn check_id_format(scheme: &IdScheme, id: &str, issues: &mut Vec<RecordIssue>) {
+    match scheme.scheme.as_str() {
+        "nano14" => {
+            if id.chars().count() != qx_domain::PART_ID_LEN {
+                issues.push(RecordIssue::error(
+                    "id",
+                    format!(
+                        "id `{id}` is not nano14 ({} chars, expected {})",
+                        id.chars().count(),
+                        qx_domain::PART_ID_LEN
+                    ),
+                ));
+            } else if let Some(bad) = id
+                .chars()
+                .find(|c| !qx_domain::PART_ID_ALPHABET.contains(*c))
+            {
+                issues.push(RecordIssue::error(
+                    "id",
+                    format!("id `{id}` has char `{bad}` outside the nano14 alphabet"),
+                ));
+            }
+        }
+        "sha256" => {
+            if !is_sha256_ref(id) {
+                issues.push(RecordIssue::error(
+                    "id",
+                    format!("id `{id}` is not a `sha256:<64 hex>` content-address"),
+                ));
+            }
+        }
+        _ => {
+            if id.is_empty() {
+                issues.push(RecordIssue::error("id", "id must not be empty"));
+            }
+        }
+    }
 }
 
 /// Validate one field's value (which may be absent). `path` is the dotted
@@ -649,7 +698,7 @@ mod tests {
         let c = contract();
         let parts = c.collection("parts").unwrap();
         let record = obj(
-            r#"{ "id": "ABCDEFGH", "type": "M3 bolt", "description": "hex",
+            r#"{ "id": "ABCDEFGHJKMNPQ", "type": "M3 bolt", "description": "hex",
                  "manufacturer": "VENDOR01", "part_number": "PN-1",
                  "torque_spec": "1.50", "calibration_due": "2026-01-01T00:00:00Z" }"#,
         );
@@ -663,7 +712,7 @@ mod tests {
         let c = contract();
         let parts = c.collection("parts").unwrap();
         // `type` is required_to_enter "bound"; omit it at status bound.
-        let record = obj(r#"{ "id": "ABCDEFGH", "manufacturer": "VENDOR01" }"#);
+        let record = obj(r#"{ "id": "ABCDEFGHJKMNPQ", "manufacturer": "VENDOR01" }"#);
         let ctx = ctx_with("companies", &["VENDOR01"]);
         let issues = validate_record(parts, &record, Some("bound"), &ctx);
         assert!(issues.iter().any(|i| i.path == "type"
@@ -675,7 +724,7 @@ mod tests {
     fn missing_required_to_enter_field_ok_before_target_status() {
         let c = contract();
         let parts = c.collection("parts").unwrap();
-        let record = obj(r#"{ "id": "ABCDEFGH" }"#);
+        let record = obj(r#"{ "id": "ABCDEFGHJKMNPQ" }"#);
         let ctx = RecordContext::default();
         // At "unbound", `type` (required_to_enter bound) need not exist.
         let issues = validate_record(parts, &record, Some("unbound"), &ctx);
@@ -924,5 +973,38 @@ mod tests {
         let issues = validate_collection_graph(coll, &cyclic);
         assert_eq!(issues.len(), 1, "expected one cycle issue, got {issues:?}");
         assert!(issues[0].message.contains("cycle"));
+    }
+
+    #[test]
+    fn id_format_dispatches_on_declared_scheme() {
+        // sha256-scheme collection: the id must be a content-address.
+        let blobs_c = Contract::from_bytes(
+            br#"{"format_version":1,"collections":[
+            {"name":"blobs","id":{"scheme":"sha256","default":true,"mintable":false},
+             "open_properties":true}]}"#,
+        )
+        .unwrap();
+        let blobs = blobs_c.collection("blobs").unwrap();
+        let good = obj(
+            r#"{"id":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
+        );
+        assert!(validate_record(blobs, &good, None, &RecordContext::default()).is_empty());
+        let bad = obj(r#"{"id":"not-a-hash"}"#);
+        assert!(
+            validate_record(blobs, &bad, None, &RecordContext::default())
+                .iter()
+                .any(|i| i.path == "id" && i.message.contains("sha256"))
+        );
+
+        // Imported/asserted scheme (udi): any non-empty value accepted.
+        let dev_c = Contract::from_bytes(
+            br#"{"format_version":1,"collections":[
+            {"name":"devices","id":{"scheme":"udi","default":true,"mintable":false},
+             "open_properties":true}]}"#,
+        )
+        .unwrap();
+        let dev = dev_c.collection("devices").unwrap();
+        let imported = obj(r#"{"id":"(01)00844588003288"}"#);
+        assert!(validate_record(dev, &imported, None, &RecordContext::default()).is_empty());
     }
 }

@@ -481,7 +481,7 @@ adr = "ADR-035"
 statement = "Ids are (scheme,value), canonical scheme:value; schemes declared per contract; one default scheme with bare short form (QR/labels stay bare nano14); mintable vs imported per descriptor"
 kind = "crate"
 status = "pending"
-tracking = "ADR-035 §0 typed ids; domain Id type + scheme-dispatched validators not yet built"
+tracking = "ADR-035 §0 typed ids; scheme-dispatched id-format VALIDATION built (M-B — check_id_format in crates/validators: nano14 alphabet+len, sha256 content-address, imported schemes udi/gs1 accept-any; runs in validate_record so native+wasm+FE all enforce). Corpus + unit tests; required a full synthetic-id→nano14 fixture migration (30 ids, 4 files). REMAINING: the domain Id{scheme,value} type + cross-collection scheme-prefixed resolution (kept String canonical for now per the sequencing-doc design decision)"
 
 [[obligation]]
 id = "declared-relations"

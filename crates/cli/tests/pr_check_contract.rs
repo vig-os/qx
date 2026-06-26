@@ -80,8 +80,8 @@ fn structural_mode_accepts_a_clean_repo() {
     write_repo(
         dir,
         TWO_COLLECTION_CONTRACT,
-        "{\"id\":\"PART0001\",\"status\":\"bound\",\"type\":\"bolt\",\"torque\":\"1.50\",\"manufacturer\":\"COMP0001\"}\n",
-        "{\"id\":\"COMP0001\",\"label\":\"Acme\"}\n",
+        "{\"id\":\"PART2223AAAAAA\",\"status\":\"bound\",\"type\":\"bolt\",\"torque\":\"1.50\",\"manufacturer\":\"CMPY2223AAAAAA\"}\n",
+        "{\"id\":\"CMPY2223AAAAAA\",\"label\":\"Acme\"}\n",
     );
     let out = pr_check(dir, None);
     assert!(
@@ -100,8 +100,8 @@ fn structural_mode_rejects_malformed_record() {
     write_repo(
         dir,
         TWO_COLLECTION_CONTRACT,
-        "{\"id\":\"PART0002\",\"status\":\"bound\",\"torque\":\"9.999\",\"manufacturer\":\"COMP0001\"}\n",
-        "{\"id\":\"COMP0001\",\"label\":\"Acme\"}\n",
+        "{\"id\":\"PART2224AAAAAA\",\"status\":\"bound\",\"torque\":\"9.999\",\"manufacturer\":\"CMPY2223AAAAAA\"}\n",
+        "{\"id\":\"CMPY2223AAAAAA\",\"label\":\"Acme\"}\n",
     );
     let out = pr_check(dir, None);
     assert!(!out.status.success(), "expected failure");
@@ -118,8 +118,8 @@ fn reference_fk_violation_fails() {
     write_repo(
         dir,
         TWO_COLLECTION_CONTRACT,
-        "{\"id\":\"PART0003\",\"status\":\"bound\",\"type\":\"nut\",\"torque\":\"2.00\",\"manufacturer\":\"GHOST999\"}\n",
-        "{\"id\":\"COMP0001\",\"label\":\"Acme\"}\n",
+        "{\"id\":\"PART2225AAAAAA\",\"status\":\"bound\",\"type\":\"nut\",\"torque\":\"2.00\",\"manufacturer\":\"GHOST999\"}\n",
+        "{\"id\":\"CMPY2223AAAAAA\",\"label\":\"Acme\"}\n",
     );
     let out = pr_check(dir, None);
     assert!(!out.status.success(), "expected FK failure");
@@ -151,10 +151,10 @@ fn effective_dating_skips_untouched_invalid_record() {
     // BASE commit: one clean record + one ALREADY-INVALID record (missing
     // `type` at bound). In reality this is history that was qualified
     // under an earlier contract; the point is we must not re-litigate it.
-    let companies = "{\"id\":\"COMP0001\",\"label\":\"Acme\"}\n";
+    let companies = "{\"id\":\"CMPY2223AAAAAA\",\"label\":\"Acme\"}\n";
     let base_parts = concat!(
-        "{\"id\":\"PART0001\",\"status\":\"bound\",\"type\":\"bolt\",\"torque\":\"1.50\",\"manufacturer\":\"COMP0001\"}\n",
-        "{\"id\":\"PARTBAD0\",\"status\":\"bound\",\"torque\":\"1.00\",\"manufacturer\":\"COMP0001\"}\n",
+        "{\"id\":\"PART2223AAAAAA\",\"status\":\"bound\",\"type\":\"bolt\",\"torque\":\"1.50\",\"manufacturer\":\"CMPY2223AAAAAA\"}\n",
+        "{\"id\":\"PARTBAD0\",\"status\":\"bound\",\"torque\":\"1.00\",\"manufacturer\":\"CMPY2223AAAAAA\"}\n",
     );
     write_repo(dir, TWO_COLLECTION_CONTRACT, base_parts, companies);
     git(&["add", "-A"], dir);
@@ -170,13 +170,13 @@ fn effective_dating_skips_untouched_invalid_record() {
 
     // HEAD: leave PARTBAD0 untouched, ADD a new clean record.
     let head_parts = concat!(
-        "{\"id\":\"PART0001\",\"status\":\"bound\",\"type\":\"bolt\",\"torque\":\"1.50\",\"manufacturer\":\"COMP0001\"}\n",
-        "{\"id\":\"PARTBAD0\",\"status\":\"bound\",\"torque\":\"1.00\",\"manufacturer\":\"COMP0001\"}\n",
-        "{\"id\":\"PART0002\",\"status\":\"bound\",\"type\":\"nut\",\"torque\":\"2.00\",\"manufacturer\":\"COMP0001\"}\n",
+        "{\"id\":\"PART2223AAAAAA\",\"status\":\"bound\",\"type\":\"bolt\",\"torque\":\"1.50\",\"manufacturer\":\"CMPY2223AAAAAA\"}\n",
+        "{\"id\":\"PARTBAD0\",\"status\":\"bound\",\"torque\":\"1.00\",\"manufacturer\":\"CMPY2223AAAAAA\"}\n",
+        "{\"id\":\"PART2224AAAAAA\",\"status\":\"bound\",\"type\":\"nut\",\"torque\":\"2.00\",\"manufacturer\":\"CMPY2223AAAAAA\"}\n",
     );
     fs::write(dir.join("collections/parts.jsonl"), head_parts).unwrap();
 
-    // With --base: only PART0002 (new) is in scope → PARTBAD0 is skipped
+    // With --base: only PART2224AAAAAA (new) is in scope → PARTBAD0 is skipped
     // → the gate PASSES (effective-dating, ADR-039 §6).
     let out = pr_check(dir, Some(&base_sha));
     assert!(
@@ -206,9 +206,9 @@ fn contract_tightening_revalidates_untouched_records() {
     let dir = tmp.path();
     git_init(dir);
 
-    let companies = "{\"id\":\"COMP0001\",\"label\":\"Acme\"}\n";
+    let companies = "{\"id\":\"CMPY2223AAAAAA\",\"label\":\"Acme\"}\n";
     let parts =
-        "{\"id\":\"PART0001\",\"status\":\"bound\",\"type\":\"bolt\",\"torque\":\"1.50\",\"manufacturer\":\"COMP0001\"}\n";
+        "{\"id\":\"PART2223AAAAAA\",\"status\":\"bound\",\"type\":\"bolt\",\"torque\":\"1.50\",\"manufacturer\":\"CMPY2223AAAAAA\"}\n";
     write_repo(dir, TWO_COLLECTION_CONTRACT, parts, companies);
     git(&["add", "-A"], dir);
     git(&["commit", "-m", "base"], dir);
@@ -222,7 +222,7 @@ fn contract_tightening_revalidates_untouched_records() {
     };
 
     // HEAD: tighten the `parts` descriptor (add a required `grade`) but
-    // leave PART0001 UNTOUCHED — it now violates the new requirement.
+    // leave PART2223AAAAAA UNTOUCHED — it now violates the new requirement.
     let tightened = TWO_COLLECTION_CONTRACT.replace(
         r#"{ "key": "type", "type": "string", "label": "Type", "required_to_enter": "bound" },"#,
         concat!(
@@ -237,7 +237,7 @@ fn contract_tightening_revalidates_untouched_records() {
     );
     fs::write(dir.join(".qx/contract.json"), &tightened).unwrap();
 
-    // Pre-S5 this skipped PART0001 (untouched) and PASSED — the leak. Now
+    // Pre-S5 this skipped PART2223AAAAAA (untouched) and PASSED — the leak. Now
     // the reshaped `parts` collection forces re-validation → FAIL.
     let out = pr_check(dir, Some(&base_sha));
     assert!(
@@ -246,8 +246,8 @@ fn contract_tightening_revalidates_untouched_records() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(
-        String::from_utf8_lossy(&out.stderr).contains("PART0001"),
-        "expected PART0001 to be flagged by the tightened contract"
+        String::from_utf8_lossy(&out.stderr).contains("PART2223AAAAAA"),
+        "expected PART2223AAAAAA to be flagged by the tightened contract"
     );
 }
 
@@ -257,9 +257,9 @@ fn effective_dating_catches_a_changed_record() {
     let dir = tmp.path();
     git_init(dir);
 
-    let companies = "{\"id\":\"COMP0001\",\"label\":\"Acme\"}\n";
+    let companies = "{\"id\":\"CMPY2223AAAAAA\",\"label\":\"Acme\"}\n";
     let base_parts =
-        "{\"id\":\"PART0001\",\"status\":\"bound\",\"type\":\"bolt\",\"torque\":\"1.50\",\"manufacturer\":\"COMP0001\"}\n";
+        "{\"id\":\"PART2223AAAAAA\",\"status\":\"bound\",\"type\":\"bolt\",\"torque\":\"1.50\",\"manufacturer\":\"CMPY2223AAAAAA\"}\n";
     write_repo(dir, TWO_COLLECTION_CONTRACT, base_parts, companies);
     git(&["add", "-A"], dir);
     git(&["commit", "-m", "base"], dir);
@@ -272,9 +272,9 @@ fn effective_dating_catches_a_changed_record() {
         String::from_utf8_lossy(&out.stdout).trim().to_string()
     };
 
-    // HEAD: EDIT PART0001 into an invalid state (torque scale 3 > 2).
+    // HEAD: EDIT PART2223AAAAAA into an invalid state (torque scale 3 > 2).
     let head_parts =
-        "{\"id\":\"PART0001\",\"status\":\"bound\",\"type\":\"bolt\",\"torque\":\"1.555\",\"manufacturer\":\"COMP0001\"}\n";
+        "{\"id\":\"PART2223AAAAAA\",\"status\":\"bound\",\"type\":\"bolt\",\"torque\":\"1.555\",\"manufacturer\":\"CMPY2223AAAAAA\"}\n";
     fs::write(dir.join("collections/parts.jsonl"), head_parts).unwrap();
 
     // The changed record IS in scope → the gate catches it even with --base.
@@ -283,7 +283,7 @@ fn effective_dating_catches_a_changed_record() {
         !out.status.success(),
         "a changed record must be re-validated"
     );
-    assert!(String::from_utf8_lossy(&out.stderr).contains("PART0001"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("PART2223AAAAAA"));
 }
 
 #[test]

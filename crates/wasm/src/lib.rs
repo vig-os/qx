@@ -487,7 +487,7 @@ mod tests {
     fn validate_record_json_valid_is_empty() {
         let out = validate_record_json_impl(
             RJ_CONTRACT,
-            br#"{"id":"PART0001","grade":"a"}"#,
+            br#"{"id":"PART2223AAAAAA","grade":"a"}"#,
             "parts",
             None,
             b"",
@@ -500,7 +500,7 @@ mod tests {
     fn validate_record_json_flags_invalid_enum() {
         let out = validate_record_json_impl(
             RJ_CONTRACT,
-            br#"{"id":"PART0002","grade":"z"}"#,
+            br#"{"id":"PART2224AAAAAA","grade":"z"}"#,
             "parts",
             None,
             b"",
@@ -516,10 +516,10 @@ mod tests {
         // referenced id in the universe the record is clean.
         let out = validate_record_json_impl(
             RJ_CONTRACT,
-            br#"{"id":"PART0003","grade":"a","maker":"COMP0001"}"#,
+            br#"{"id":"PART2225AAAAAA","grade":"a","maker":"CMPY2223AAAAAA"}"#,
             "parts",
             None,
-            br#"{"companies":["COMP0001"]}"#,
+            br#"{"companies":["CMPY2223AAAAAA"]}"#,
         )
         .unwrap();
         assert_eq!(out, "[]", "valid FK should produce no issues; got {out}");
