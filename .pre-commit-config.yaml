@@ -20,6 +20,11 @@ repos:
         entry: guardrails-no-commented-code
         language: system
         pass_filenames: true
+      - id: no-conflict-markers
+        name: no merge-conflict markers
+        entry: guardrails-no-conflict-markers
+        language: system
+        pass_filenames: true
       - id: adr-obligations
         name: ADR obligations benched (nothing falls out of the ADRs)
         entry: cargo run -q -p qx-devtools --bin obligations-check

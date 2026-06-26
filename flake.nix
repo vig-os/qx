@@ -439,9 +439,11 @@
           #     no-fake-impl         — matches well-defined sentinels
           #                            (todo!() / unimplemented!() / etc.)
           #
-          # `no-conflict-markers` would also belong in the tree-wide
-          # set, but the pinned guardrails rev does not ship it yet —
-          # add it here on the next `nix flake update` of guardrails.
+          # `no-conflict-markers` ships as of guardrails c96c0a2
+          # (2026-06-26) and is wired as a pre-commit hook in
+          # `.pre-commit-config.yaml`. New gates available but not yet
+          # adopted: adr-matrix, derived-docs, no-hardcoded,
+          # no-raw-trace-fields, perf-budget, ci-shim.
           guardrails-gates = pkgs.runCommand "guardrails-gates" {
             nativeBuildInputs = [ guardrails.packages.${system}.gates ];
           } ''
