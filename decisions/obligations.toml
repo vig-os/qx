@@ -605,7 +605,7 @@ adr = "ADR-039"
 statement = "One canonical contract form: collection-generic descriptors, the scalar set string|enum|integer|number|decimal|date|timestamp|bool|reference|attachment|object (no freeform json field), type != widget (a render block declares the widget); the meta-schema validates the shipped contract + a fixture instance in CI"
 kind = "artifact"
 status = "pending"
-tracking = "ADR-039 §1-2; schema/contract.schema.json rewritten to the canonical form + schema/contract.example.json added (ajv-verified, constraints bite); CI meta-schema gate (task #19) + live registry-contract.json migration (FE rewrite) not yet wired"
+tracking = "ADR-039 §1-2; canonical form + scalar set shipped (crates/contract); schema/contract.schema.json + contract.example.json present. CI meta-schema gate WIRED (M-A.1 S2 — crates/contract/tests/meta_schema.rs validates the example against the schema AND the Rust SSOT) + closed-facet SSOT parity (S1, crates/contract/src/lib.rs). REMAINING: live registry-contract.json migration (FE rewrite, M-D)"
 
 [[obligation]]
 id = "contract-ssot-validation"
@@ -613,7 +613,7 @@ adr = "ADR-039"
 statement = "One Rust validation engine (pure crates/contract + crates/validators, wasm-clean: no fs/git2) is the SSOT; the FE calls it via wasm; parity is enforced by a (contract,record,verdict) conformance corpus run by three runners (native, wasm, FE Vitest on the shipped artifact)"
 kind = "crate"
 status = "pending"
-tracking = "ADR-039 §3-4; crates/contract + crates/validators rewrite + conformance harness + wasm-clean build CI job not yet built (tasks #17-19)"
+tracking = "ADR-039 §3-4; one pure engine (crates/contract + crates/validators, wasm-clean) is the SSOT. Conformance corpus (conformance/, 27 cases) run by the NATIVE runner (crates/port_tests/tests/conformance.rs) + the wasm-clean build check + the wasm arm façade validate_record_json with native-logic tests (M-A.1 S3, crates/wasm). REMAINING: the FE Vitest runner executing the corpus through the shipped wasm (S4) to close native⇄wasm⇄FE parity"
 
 [[obligation]]
 id = "effective-dated-versioning"
@@ -621,7 +621,7 @@ adr = "ADR-039"
 statement = "Effective-dating is commit-resolved (a record is governed by the contract content at its commit; merged records are never re-checked, so a tightening change cannot retroactively invalidate history); contract identity is its content hash (derived); governance — who/when/why/approved — is PROJECTED from the host review (PR reviews + merge commit), never stored in-file; the only in-file version is format_version (engine↔contract parse capability); required_to_enter (transition gate) is distinct from meaningful_from"
 kind = "crate"
 status = "pending"
-tracking = "ADR-039 §6 (revised git-native after review, #204); the gate's commit-resolution + host-governance projection + format_version compat range + the content-hash export stamp not yet built (task #20). Meta-schema now carries only format_version (in-file governance fields removed)"
+tracking = "ADR-039 §6 (revised git-native after review, #204); commit-resolved effective-dating in the qx check gate (crates/cli) — only changed records re-validated, and UNTOUCHED records re-validated on a contract-shape change (M-A.1 S5 — reshaped_collections + e2e contract_tightening_revalidates_untouched_records); format_version compat range done (is_compatible). REMAINING: the content-hash export stamp (task #20)"
 
 [[obligation]]
 id = "preset-library-gate-floors"
