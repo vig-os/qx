@@ -47,6 +47,18 @@ pub trait Repository: Send + Sync {
     fn get_part(&self, id: &PartId) -> Result<Option<Part>, RepoError>;
     fn list_parts(&self, filter: &PartFilter) -> Result<Vec<Part>, RepoError>;
 
+    /// Read: a generic collection's records as JSON objects (ADR-035
+    /// entity store). The default serves nothing — only stores that hold
+    /// collections beyond `parts` (the JSONL adapter) override it; the
+    /// parts-only CSV adapter leaves non-parts collections empty.
+    fn list_collection(
+        &self,
+        collection: &str,
+    ) -> Result<Vec<serde_json::Map<String, serde_json::Value>>, RepoError> {
+        let _ = collection;
+        Ok(Vec::new())
+    }
+
     // Read: audit log (per ADR-022)
     fn list_audit_events(&self, filter: &AuditFilter) -> Result<Vec<AuditEntry>, RepoError>;
 

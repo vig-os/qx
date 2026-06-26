@@ -28,7 +28,7 @@ use qx_observability::{bind_audit_entry, emit_audit, mint_audit_entry, void_audi
 use qx_storage::{PartFilter, Repository};
 use qx_transport::ProposalSink;
 
-use crate::entity::{field_value, part_to_entity, Entity};
+use crate::entity::{entity_from_record, field_value, part_to_entity, Entity};
 use crate::preset::{
     descriptor_from_contract, parts_descriptor, registry_descriptor, RegistryDescriptor,
 };
@@ -206,12 +206,51 @@ fn resolve_part(ctx: &AppContext, query: &str) -> Result<Part, Response> {
 // List / Count — the one generic query (ADR-035 §0)
 // -------------------------------------------------------------------
 
-fn load_entities(ctx: &AppContext) -> Result<Vec<Entity>, Response> {
-    let parts = ctx
-        .repo
-        .list_parts(&PartFilter::default())
-        .map_err(|e| Response::error(ErrorKind::Backend, e.to_string()))?;
-    Ok(parts.iter().map(part_to_entity).collect())
+fn load_entities(ctx: &AppContext, collection: &str) -> Result<Vec<Entity>, Response> {
+    // The default `parts` collection keeps its rich Part projection
+    // (minted/bound timestamps). Other declared collections are served
+    // generically from their JSONL records (ADR-035 entity store).
+    if collection == "parts" {
+        let parts = ctx
+            .repo
+            .list_parts(&PartFilter::default())
+            .map_err(|e| Response::error(ErrorKind::Backend, e.to_string()))?;
+        Ok(parts.iter().map(part_to_entity).collect())
+    } else {
+        let records = ctx
+            .repo
+            .list_collection(collection)
+            .map_err(|e| Response::error(ErrorKind::Backend, e.to_string()))?;
+        Ok(records
+            .iter()
+            .map(|r| entity_from_record(collection, r))
+            .collect())
+    }
+}
+
+/// Collections the read path (`list`/`count`) can serve: any the contract
+/// declares (ADR-035 collections-metamodel), or just `parts` when no
+/// contract is loaded. Distinct from [`known_collection`] — the mutation
+/// guard stays parts-only until generic write lands.
+fn served_collection(ctx: &AppContext, collection: &str) -> Result<(), Response> {
+    if let Some(contract) = &ctx.contract {
+        return if contract.collection(collection).is_some() {
+            Ok(())
+        } else {
+            Err(Response::error(
+                ErrorKind::Unsupported,
+                format!("collection {collection:?} is not declared in this registry's contract"),
+            ))
+        };
+    }
+    if collection == "parts" {
+        Ok(())
+    } else {
+        Err(Response::error(
+            ErrorKind::Unsupported,
+            format!("collection {collection:?} is not declared (preset roster: parts)"),
+        ))
+    }
 }
 
 fn apply_filter(entities: Vec<Entity>, filter: &Filter) -> Vec<Entity> {
@@ -271,10 +310,10 @@ fn list(
     sort: &[Sort],
     page: &Page,
 ) -> Response {
-    if let Err(r) = known_collection(ctx, collection) {
+    if let Err(r) = served_collection(ctx, collection) {
         return r;
     }
-    let entities = match load_entities(ctx) {
+    let entities = match load_entities(ctx, collection) {
         Ok(e) => e,
         Err(r) => return r,
     };
@@ -300,10 +339,10 @@ fn list(
 }
 
 fn count(ctx: &AppContext, collection: &str, filter: &Filter, by: &str) -> Response {
-    if let Err(r) = known_collection(ctx, collection) {
+    if let Err(r) = served_collection(ctx, collection) {
         return r;
     }
-    let entities = match load_entities(ctx) {
+    let entities = match load_entities(ctx, collection) {
         Ok(e) => e,
         Err(r) => return r,
     };
@@ -887,7 +926,7 @@ fn select_targets(ctx: &AppContext, selection: &Selection) -> Result<Vec<Part>, 
             out
         }
         Selection::Filter(filter) => {
-            let entities = load_entities(ctx)?;
+            let entities = load_entities(ctx, "parts")?;
             let selected = apply_filter(entities, filter);
             let mut out = Vec::with_capacity(selected.len());
             for e in &selected {
@@ -1736,7 +1775,7 @@ fn export(ctx: &AppContext, collection: &str, format: &str) -> Response {
             format!("export format {format:?} not supported (formats: csv)"),
         );
     }
-    let entities = match load_entities(ctx) {
+    let entities = match load_entities(ctx, "parts") {
         Ok(e) => e,
         Err(r) => return r,
     };

@@ -192,6 +192,19 @@ impl Repository for JsonlGitRepository {
         Ok(all.into_iter().find(|p| &p.id == id))
     }
 
+    fn list_collection(
+        &self,
+        collection: &str,
+    ) -> Result<Vec<serde_json::Map<String, serde_json::Value>>, RepoError> {
+        // Generic read of `collections/<name>.jsonl` (ADR-035 entity
+        // store). A missing file is an empty collection, not an error.
+        let path = self
+            .cfg
+            .repo_path
+            .join(format!("collections/{collection}.jsonl"));
+        read_jsonl::<serde_json::Map<String, serde_json::Value>>(&path, collection)
+    }
+
     fn list_parts(&self, filter: &PartFilter) -> Result<Vec<Part>, RepoError> {
         let mut all = self.read_parts()?;
 
