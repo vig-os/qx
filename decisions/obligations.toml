@@ -512,8 +512,9 @@ id = "pr-is-truth-write-path"
 adr = "ADR-036"
 statement = "Writes reconcile with origin/main and emit a proposal, else error; file:// direct-write is a flagged future feature (Corrections on ADR-030/033/034)"
 kind = "crate"
-status = "pending"
-tracking = "ADR-036 §5; enforce in app-layer write path when proposal sink wiring lands (ADR-030 build order)"
+status = "satisfied"
+satisfied_by = ["crates/app/src/engine.rs", "crates/transport_github_pr/src/lib.rs", "crates/cli/src/lib.rs"]
+tracking = "SATISFIED (M-B): every mutation (parts + generic create/edit/transition) builds a Proposal and submits it to the sink, which branches off the base (origin/main), writes the change, and opens a PR — reconcile-with-main + emit-a-proposal; a sink failure returns Response::error (crates/app/engine.rs + crates/transport_github_pr). file:// direct-write is the flagged dev-only path (LocalRegistrySink behind the non-default `dev-local` cargo feature, crates/cli). The engine has NO un-proposed write path."
 
 [[obligation]]
 id = "esign-escalation-rungs"
