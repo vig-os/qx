@@ -387,6 +387,22 @@ pub struct Diff {
     pub deletes: Vec<DiffRow>,
     pub edits: Vec<DiffEdit>,
     pub header_changes: Vec<HeaderChange>,
+    /// Generic entity-store writes (ADR-035): a record upsert in a
+    /// declared collection beyond `parts`, rendered to
+    /// `collections/<collection>.jsonl`. Parts changes keep the typed
+    /// adds/edits above (registry.csv) until the JSONL cutover.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub record_writes: Vec<RecordWrite>,
+}
+
+/// A generic record upsert in a non-parts collection (ADR-035 entity
+/// store): replace the line with the matching `id` in
+/// `collections/<collection>.jsonl`, or append it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecordWrite {
+    pub collection: String,
+    pub id: String,
+    pub record: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Row added to or deleted from the registry. `id` is optional only
@@ -558,8 +574,8 @@ pub enum AuthDecision {
 //
 // Note on type ownership: `Signature` lives here in `crates/domain/`,
 // not in `crates/signing/`. `crates/signing/` defines the `SigningProvider`
-// and `VerificationProvider` traits which operate on `Signature` values;
-// those traits already depend on domain types (`Operator`, `KeyId`,
+// and `VerificationProvider` traits which operate on `Signature` values.
+// Those traits already depend on domain types (`Operator`, `KeyId`,
 // `Timestamp`), so signing depends on domain — not the other way round.
 // Storage and transport adapters consume `Signature` via the audit-log
 // and proposal-payload columns (ADR-023 forward-compat) without
