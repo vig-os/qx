@@ -197,6 +197,61 @@ fn effective_dating_skips_untouched_invalid_record() {
 }
 
 #[test]
+fn contract_tightening_revalidates_untouched_records() {
+    // The effective-dating leak (ADR-039 §6, M-A.1 S5): a CONTRACT
+    // tightening can invalidate an UNTOUCHED record without that record
+    // appearing in the diff. The gate must re-validate every record of a
+    // collection whose descriptor changed, even untouched ones.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    git_init(dir);
+
+    let companies = "{\"id\":\"COMP0001\",\"label\":\"Acme\"}\n";
+    let parts =
+        "{\"id\":\"PART0001\",\"status\":\"bound\",\"type\":\"bolt\",\"torque\":\"1.50\",\"manufacturer\":\"COMP0001\"}\n";
+    write_repo(dir, TWO_COLLECTION_CONTRACT, parts, companies);
+    git(&["add", "-A"], dir);
+    git(&["commit", "-m", "base"], dir);
+    let base_sha = {
+        let out = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+
+    // HEAD: tighten the `parts` descriptor (add a required `grade`) but
+    // leave PART0001 UNTOUCHED — it now violates the new requirement.
+    let tightened = TWO_COLLECTION_CONTRACT.replace(
+        r#"{ "key": "type", "type": "string", "label": "Type", "required_to_enter": "bound" },"#,
+        concat!(
+            r#"{ "key": "type", "type": "string", "label": "Type", "required_to_enter": "bound" },"#,
+            "\n        ",
+            r#"{ "key": "grade", "type": "string", "label": "Grade", "required": true },"#,
+        ),
+    );
+    assert_ne!(
+        tightened, TWO_COLLECTION_CONTRACT,
+        "replace must alter the contract"
+    );
+    fs::write(dir.join(".qx/contract.json"), &tightened).unwrap();
+
+    // Pre-S5 this skipped PART0001 (untouched) and PASSED — the leak. Now
+    // the reshaped `parts` collection forces re-validation → FAIL.
+    let out = pr_check(dir, Some(&base_sha));
+    assert!(
+        !out.status.success(),
+        "a contract tightening must re-validate untouched records; gate wrongly passed.\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("PART0001"),
+        "expected PART0001 to be flagged by the tightened contract"
+    );
+}
+
+#[test]
 fn effective_dating_catches_a_changed_record() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path();

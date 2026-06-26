@@ -560,6 +560,58 @@ impl Field {
 }
 
 // -------------------------------------------------------------------
+// Contract-shape diff (ADR-039 §6 — commit-resolved effective-dating)
+// -------------------------------------------------------------------
+
+/// Collections whose descriptor changed between two contracts.
+///
+/// `qx check --base` skips records that were untouched since the base —
+/// commit-resolved effective-dating. But a *contract* change (an enum
+/// tightened, a field made required, a reference re-targeted) can make
+/// an untouched record invalid without that record appearing in the
+/// diff, so the gate would miss it. The fix: when the contract itself
+/// changes, re-validate **every** record of any collection whose
+/// descriptor changed — not just the touched ones.
+///
+/// M-A.1 rule is deliberately blunt: *any* descriptor difference flags
+/// the collection. That never misses a tightening; on a pure widening
+/// it merely re-validates records that still pass (extra work, never a
+/// false verdict). Distinguishing tightening from widening is M-A.2.
+/// Collections that are new (absent in `old`) or removed (absent in
+/// `new`) are not returned — a new collection has no prior records to
+/// re-litigate, and a removed one has no descriptor to validate against.
+///
+/// ```
+/// # use qx_contract::{Contract, reshaped_collections};
+/// let v1 = Contract::from_bytes(br#"{"format_version":1,"collections":[
+///   {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+///    "fields":[{"key":"grade","type":"enum","label":"Grade",
+///               "values":["a","b"],"closed":true}]}]}"#).unwrap();
+/// // Tighten the enum: drop "b".
+/// let v2 = Contract::from_bytes(br#"{"format_version":1,"collections":[
+///   {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+///    "fields":[{"key":"grade","type":"enum","label":"Grade",
+///               "values":["a"],"closed":true}]}]}"#).unwrap();
+/// assert!(reshaped_collections(&v1, &v2).contains("parts"));
+/// assert!(reshaped_collections(&v1, &v1).is_empty());
+/// ```
+pub fn reshaped_collections(old: &Contract, new: &Contract) -> BTreeSet<String> {
+    let old_by_name: BTreeMap<&str, &Collection> = old
+        .collections
+        .iter()
+        .map(|c| (c.name.as_str(), c))
+        .collect();
+    new.collections
+        .iter()
+        .filter(|nc| match old_by_name.get(nc.name.as_str()) {
+            Some(oc) => **oc != **nc, // present in both, descriptor changed
+            None => false,            // new collection — no prior records
+        })
+        .map(|nc| nc.name.clone())
+        .collect()
+}
+
+// -------------------------------------------------------------------
 // Tests
 // -------------------------------------------------------------------
 
@@ -847,6 +899,57 @@ mod tests {
             r#"{ "key": "e", "type": "enum", "label": "E", "values": ["a", "b"], "closed": "warn" }"#,
         );
         assert!(parse(&ok).is_ok(), "`closed: warn` must remain valid");
+    }
+
+    #[test]
+    fn reshaped_collections_flags_changed_descriptors() {
+        let base = Contract::from_bytes(
+            br#"{"format_version":1,"collections":[
+            {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+             "fields":[{"key":"g","type":"enum","label":"G","values":["a","b"],"closed":true}]}]}"#,
+        )
+        .unwrap();
+        // identical → nothing to re-litigate
+        assert!(reshaped_collections(&base, &base).is_empty());
+        // tightened (drop enum value "b") → flagged
+        let tightened = Contract::from_bytes(
+            br#"{"format_version":1,"collections":[
+            {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+             "fields":[{"key":"g","type":"enum","label":"G","values":["a"],"closed":true}]}]}"#,
+        )
+        .unwrap();
+        assert!(reshaped_collections(&base, &tightened).contains("parts"));
+        // pure widening (add a field) → still flagged (blunt M-A.1 rule, safe)
+        let widened = Contract::from_bytes(
+            br#"{"format_version":1,"collections":[
+            {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+             "fields":[{"key":"g","type":"enum","label":"G","values":["a","b"],"closed":true},
+                       {"key":"n","type":"string","label":"N"}]}]}"#,
+        )
+        .unwrap();
+        assert!(reshaped_collections(&base, &widened).contains("parts"));
+    }
+
+    #[test]
+    fn reshaped_collections_ignores_added_and_removed() {
+        let one = Contract::from_bytes(
+            br#"{"format_version":1,"collections":[
+            {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+             "fields":[{"key":"g","type":"string","label":"G"}]}]}"#,
+        )
+        .unwrap();
+        let two = Contract::from_bytes(
+            br#"{"format_version":1,"collections":[
+            {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+             "fields":[{"key":"g","type":"string","label":"G"}]},
+            {"name":"companies","id":{"scheme":"nano14","default":false,"mintable":true},
+             "fields":[{"key":"g","type":"string","label":"G"}]}]}"#,
+        )
+        .unwrap();
+        // `companies` is new in `two` (no prior records) and parts is unchanged.
+        assert!(reshaped_collections(&one, &two).is_empty());
+        // removed (two → one): `companies` has no new descriptor to validate against.
+        assert!(reshaped_collections(&two, &one).is_empty());
     }
 
     #[test]

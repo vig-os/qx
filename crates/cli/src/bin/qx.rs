@@ -29,7 +29,7 @@ use qx_cli::{
     BindArgs, DryRunTarget, LabelArgs, MintArgs, Wiring,
 };
 use qx_config::Config;
-use qx_contract::{is_compatible, Contract};
+use qx_contract::{is_compatible, reshaped_collections, Contract};
 use qx_domain::{
     Diff, DiffEdit, DiffRow, HeaderChange, IdentitySource, Operator, OperatorId, PartId,
     PartStatus, RequestId,
@@ -1126,6 +1126,22 @@ fn check_contract(
     let changed: Option<BTreeMap<String, BTreeSet<String>>> =
         base.map(|b| changed_record_ids(path, b, &contract));
 
+    // 3b. Contract-shape change (ADR-039 §6): a contract tightening can
+    //     invalidate an UNTOUCHED record without that record appearing in
+    //     the diff. So when the contract itself changed, re-validate every
+    //     record of any collection whose descriptor changed — the
+    //     effective-dating skip must not hide it. Blunt M-A.1 rule: any
+    //     descriptor change re-validates that collection (never misses a
+    //     tightening; on a pure widening, records simply still pass).
+    let reshaped: BTreeSet<String> = match base {
+        Some(b) => git_show(path, b, ".qx/contract.json")
+            .ok()
+            .and_then(|t| Contract::from_bytes(t.as_bytes()).ok())
+            .map(|base_contract| reshaped_collections(&base_contract, &contract))
+            .unwrap_or_default(),
+        None => BTreeSet::new(),
+    };
+
     // 4. Validate the in-scope records against their collection descriptor.
     let mut validated = 0usize;
     for coll in &contract.collections {
@@ -1133,12 +1149,13 @@ fn check_contract(
             continue;
         };
         let changed_in = changed.as_ref().map(|m| m.get(&coll.name));
+        let coll_reshaped = reshaped.contains(&coll.name);
         for rec in recs {
             let id = rec.get("id").and_then(Value::as_str).unwrap_or("<no-id>");
             if let Some(set_opt) = changed_in {
                 let touched = set_opt.map(|s| s.contains(id)).unwrap_or(false);
-                if !touched {
-                    continue; // unchanged since base — already qualified
+                if !touched && !coll_reshaped {
+                    continue; // unchanged record AND unchanged descriptor — already qualified
                 }
             }
             let status = rec.get("status").and_then(Value::as_str);
