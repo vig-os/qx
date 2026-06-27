@@ -845,6 +845,21 @@ pub enum AuditSource {
     Ci { workflow_run_id: String },
 }
 
+/// Provenance of an audit entry's timestamp (ADR-035 §1b timestamp-trust):
+/// `server` when the stamp was fetched from a trusted online time source;
+/// `system` when stamped from the local clock — the offline fallback,
+/// where provenance is *recorded* rather than blocking. The audit-spine
+/// merge commit is the server-witnessed anchor either way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TimeSource {
+    /// Stamp obtained from a trusted online time source.
+    Server,
+    /// Stamp obtained from the local system clock (offline fallback).
+    #[default]
+    System,
+}
+
 /// One row of `audit_log.csv` per ADR-022 §"AuditEntry shape."
 ///
 /// `signatures` and `chain_hash` are ADR-023 §"Schema forward-
@@ -854,6 +869,12 @@ pub enum AuditSource {
 pub struct AuditEntry {
     pub request_id: RequestId,
     pub timestamp: Timestamp,
+    /// Provenance of `timestamp` (ADR-035 §1b timestamp-trust). Recorded
+    /// so an auditor can tell a server-anchored stamp from a local-clock
+    /// one. Defaults to [`TimeSource::System`] for backward-compatible
+    /// deserialization of pre-provenance entries.
+    #[serde(default)]
+    pub time_source: TimeSource,
     pub actor: Operator,
     /// Carries the full payload-bearing action, not just a kind. Use
     /// `action.kind()` for the audit-log discriminator column.
@@ -1359,6 +1380,7 @@ mod tests {
         AuditEntry {
             request_id: RequestId(uuid::Uuid::nil()),
             timestamp: now(),
+            time_source: TimeSource::System,
             actor: sample_operator(),
             action: Action::RowAdd {
                 row: Json::Object(serde_json::Map::new()),
