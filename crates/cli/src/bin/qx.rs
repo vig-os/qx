@@ -312,6 +312,27 @@ enum Cmd {
         #[arg(long)]
         force: bool,
     },
+    /// Promote a hot open-properties key into a declared, typed tier-2
+    /// field (ADR-035 §3): edits `.qx/contract.json` so the key is no
+    /// longer tier-3 open data but a validated field. Commit the change
+    /// to land it (the gate validates the result).
+    Promote {
+        /// Collection whose contract to edit.
+        collection: String,
+        /// The open-property key to promote.
+        key: String,
+        /// Field type: string | integer | number | decimal | date |
+        /// timestamp | bool (reference/enum/attachment/object need their
+        /// target/values declared by hand).
+        #[arg(long, default_value = "string")]
+        field_type: String,
+        /// Display label (defaults to the key).
+        #[arg(long)]
+        label: Option<String>,
+        /// Path to the data-repo working tree.
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+    },
 }
 
 fn parse_key_val(s: &str) -> Result<(String, String), String> {
@@ -409,6 +430,13 @@ fn main() -> ExitCode {
         Cmd::Bind(args) => parity_bind(args),
         Cmd::Check { path, base } => check(&path, base.as_deref()),
         Cmd::Init { path, force } => init_repo(&path, force),
+        Cmd::Promote {
+            collection,
+            key,
+            field_type,
+            label,
+            path,
+        } => promote_cmd(&path, &collection, &key, &field_type, label.as_deref()),
         #[cfg(feature = "serve")]
         Cmd::Serve { addr, static_dir } => serve_cmd(addr, static_dir),
         #[cfg(feature = "mcp")]
@@ -1416,6 +1444,132 @@ jobs:
         run: qx check --path . --base "origin/${{ github.base_ref || 'main' }}"
 "#;
 
+/// The scalar field types a `promote` may introduce without further
+/// configuration. Reference/enum/attachment/object fields carry extra
+/// required keys (target/values/constraint/schema), so they must be
+/// authored by hand.
+const PROMOTABLE_TYPES: [&str; 7] = [
+    "string",
+    "integer",
+    "number",
+    "decimal",
+    "date",
+    "timestamp",
+    "bool",
+];
+
+/// Pure contract edit: add `{key, type, label}` to `collection`'s
+/// `fields`, moving the key from the tier-3 open bag into a declared
+/// tier-2 field (ADR-035 §3). Errors instead of producing a contract the
+/// parser would reject.
+fn promote_field(
+    contract: &mut serde_json::Value,
+    collection: &str,
+    key: &str,
+    field_type: &str,
+    label: Option<&str>,
+) -> Result<(), String> {
+    if !PROMOTABLE_TYPES.contains(&field_type) {
+        return Err(format!(
+            "unsupported field type `{field_type}` for promote (scalar types: {}); \
+             reference/enum/attachment/object fields must be authored by hand",
+            PROMOTABLE_TYPES.join(", ")
+        ));
+    }
+    if key == "id" || key == "status" {
+        return Err(format!("`{key}` is an engine envelope key, not promotable"));
+    }
+    let colls = contract
+        .get_mut("collections")
+        .and_then(|c| c.as_array_mut())
+        .ok_or("contract has no `collections` array")?;
+    let coll = colls
+        .iter_mut()
+        .find(|c| c.get("name").and_then(|n| n.as_str()) == Some(collection))
+        .ok_or_else(|| format!("no collection `{collection}` in the contract"))?;
+    let fields = coll
+        .get_mut("fields")
+        .and_then(|f| f.as_array_mut())
+        .ok_or_else(|| format!("collection `{collection}` has no `fields` array"))?;
+    if fields
+        .iter()
+        .any(|f| f.get("key").and_then(|k| k.as_str()) == Some(key))
+    {
+        return Err(format!(
+            "`{key}` is already a declared field on `{collection}`"
+        ));
+    }
+    let mut field = serde_json::Map::new();
+    field.insert(
+        "key".to_string(),
+        serde_json::Value::String(key.to_string()),
+    );
+    field.insert(
+        "type".to_string(),
+        serde_json::Value::String(field_type.to_string()),
+    );
+    field.insert(
+        "label".to_string(),
+        serde_json::Value::String(label.unwrap_or(key).to_string()),
+    );
+    fields.push(serde_json::Value::Object(field));
+    Ok(())
+}
+
+fn promote_cmd(
+    path: &Path,
+    collection: &str,
+    key: &str,
+    field_type: &str,
+    label: Option<&str>,
+) -> ExitCode {
+    let contract_path = path.join(".qx/contract.json");
+    let text = match std::fs::read_to_string(&contract_path) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("qx promote: cannot read {}: {e}", contract_path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut json: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!(
+                "qx promote: {} is not valid JSON: {e}",
+                contract_path.display()
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Err(e) = promote_field(&mut json, collection, key, field_type, label) {
+        eprintln!("qx promote: {e}");
+        return ExitCode::FAILURE;
+    }
+    let out = match serde_json::to_string_pretty(&json) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("qx promote: cannot serialize the edited contract: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    // The edit must still parse as a valid contract — never write one the
+    // gate would reject.
+    if let Err(e) = Contract::from_bytes(out.as_bytes()) {
+        eprintln!("qx promote: the edit would produce an invalid contract: {e}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(e) = std::fs::write(&contract_path, format!("{out}\n")) {
+        eprintln!("qx promote: cannot write {}: {e}", contract_path.display());
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "promoted `{key}` to a `{field_type}` field on `{collection}` — \
+         commit {} to land it",
+        contract_path.display()
+    );
+    ExitCode::SUCCESS
+}
+
 fn init_repo(path: &Path, force: bool) -> ExitCode {
     // The contract is the SSOT — validate the embedded preset BEFORE
     // writing it, so `qx init` can never lay down an invalid repo.
@@ -1785,6 +1939,40 @@ fn advise_policy(diff: &Diff, failures: &mut Vec<String>, notices: &mut Vec<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const PROMOTE_CONTRACT: &str = r#"{"format_version":1,"collections":[
+        {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+         "open_properties":true,
+         "lifecycle":{"statuses":["unbound","bound","void"],"initial":"unbound",
+           "transitions":{"unbound":["bound","void"],"bound":["void"],"void":[]}},
+         "fields":[{"key":"type","type":"string","label":"Type"}]}]}"#;
+
+    #[test]
+    fn promote_field_adds_a_declared_field_and_stays_valid() {
+        let mut c: serde_json::Value = serde_json::from_str(PROMOTE_CONTRACT).unwrap();
+        promote_field(&mut c, "parts", "manufacturer", "string", None).expect("promote ok");
+        let fields = c["collections"][0]["fields"].as_array().unwrap();
+        assert!(
+            fields.iter().any(|f| f["key"] == "manufacturer"),
+            "the promoted key is now a declared field"
+        );
+        // The edited contract must still parse as a valid contract.
+        let bytes = serde_json::to_vec(&c).unwrap();
+        qx_contract::Contract::from_bytes(&bytes).expect("the edited contract parses");
+    }
+
+    #[test]
+    fn promote_field_rejects_invalid_promotions() {
+        let mut c: serde_json::Value = serde_json::from_str(PROMOTE_CONTRACT).unwrap();
+        // already a declared field
+        assert!(promote_field(&mut c, "parts", "type", "string", None).is_err());
+        // unknown collection
+        assert!(promote_field(&mut c, "widgets", "x", "string", None).is_err());
+        // a non-promotable (structured) type
+        assert!(promote_field(&mut c, "parts", "x", "reference", None).is_err());
+        // an engine envelope key
+        assert!(promote_field(&mut c, "parts", "status", "string", None).is_err());
+    }
 
     #[test]
     fn contract_identity_is_content_addressed() {
