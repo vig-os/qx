@@ -425,7 +425,7 @@ adr = "ADR-035"
 statement = "Audit-spine timestamps: one stamp per mint event; prefer server time online; skew sanity-check; time_source provenance; CI plausibility backstop"
 kind = "test"
 status = "pending"
-tracking = "ADR-035 §1b; pre-flight skew check + time_source + CI check not yet built"
+tracking = "ADR-035 §1b; the SKEW SANITY-CHECK + CI PLAUSIBILITY BACKSTOP are BUILT (M-B): qx check (which runs in CI) rejects any record whose created_at or transitioned_at[status] stamp is implausibly future-dated (> now + 48h skew tolerance) or malformed — timestamp_skew_issues in crates/cli/bin/qx.rs, proven by timestamp_skew_flags_future_and_malformed_stamps. The one-stamp-per-mint half is the engine-materialized created_at (see lifecycle-timestamps). REMAINING: time_source provenance (a recorded source field) + prefer-server-time-online (the engine stamps local time; server-time anchoring rides the audit-spine = the commit/merge ts)"
 
 [[obligation]]
 id = "entity-store"
