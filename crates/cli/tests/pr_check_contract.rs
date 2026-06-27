@@ -74,6 +74,43 @@ fn git_init(dir: &Path) {
 }
 
 #[test]
+fn preflight_surfaces_per_op_floors_and_posture_knob() {
+    // ADR-038 §3: per-op floors are derived from consumed surfaces and
+    // surfaced as preflight UX; the manifest min_producer_version posture
+    // knob is reported too (a claim, not the enforced boundary).
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    write_repo(dir, TWO_COLLECTION_CONTRACT, "", "");
+    fs::write(
+        dir.join(".qx/manifest.toml"),
+        "[registry]\nid = \"acme\"\nname = \"Acme\"\nmin_producer_version = \"2.3.0\"\n",
+    )
+    .unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_qx"))
+        .args(["preflight", "--path"])
+        .arg(dir)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "preflight must pass: {stderr}");
+    // The floors follow what each op consumes.
+    assert!(
+        stderr.contains("op-floor — mint `parts` requires id-scheme `nano14`"),
+        "got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("transition `parts` requires"),
+        "got:\n{stderr}"
+    );
+    // The posture knob is reported, framed as a claim.
+    assert!(
+        stderr.contains("min_producer_version = 2.3.0")
+            && stderr.contains("not the enforced boundary"),
+        "got:\n{stderr}"
+    );
+}
+
+#[test]
 fn preflight_validates_main_and_reports_mint_readiness() {
     // ADR-031 §6: pre-flight fetches contract+registry from main (a base
     // ref), validates locally, and confirms mint-readiness before the

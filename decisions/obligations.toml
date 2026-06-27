@@ -604,8 +604,9 @@ id = "per-op-floors"
 adr = "ADR-038"
 statement = "Compat = metamodel parse floor (hard) + per-op floors derived from consumed surfaces; enforcement is content-vs-contract; floors are preflight UX + posture knob"
 kind = "crate"
-status = "pending"
-tracking = "ADR-038 §3; floor derivation in Describe/preflight not yet built"
+status = "satisfied"
+satisfied_by = ["crates/cli/src/bin/qx.rs", "crates/cli/src/manifest.rs", "crates/contract/src/lib.rs"]
+tracking = "SATISFIED (ADR-038 §3). Compatibility is FEDERATED: (1) METAMODEL PARSE FLOOR (HARD) — is_compatible (crates/contract) refuses a contract format outside the tool's supported range entirely (the refuse/migrate rule). (2) PER-OP FLOORS DERIVED FROM CONSUMED SURFACES — op_floors(contract) (crates/cli/bin/qx.rs) derives each write op's floor from what it CONSUMES per collection: mint -> id-scheme + lifecycle initial; transition -> lifecycle edges; print -> render print contracts; edit -> the field set. An aging tool sheds capabilities op-by-op. (3) ENFORCEMENT IS CONTENT-VS-CONTRACT — the enforced boundary is check_contract (content validated against the current contract at the gate), NOT the producer version. (4) FLOORS ARE PREFLIGHT UX + POSTURE KNOB — qx preflight surfaces the derived op-floors as advisory notices, and the optional manifest RegistryMeta.min_producer_version posture knob is reported framed as a CLAIM, never the enforced boundary (ADR-037). Proven by preflight_surfaces_per_op_floors_and_posture_knob; cli suite + wasm32 green, clippy clean."
 
 [[obligation]]
 id = "ci-as-derivations"

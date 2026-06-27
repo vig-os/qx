@@ -1958,6 +1958,53 @@ fn promote_field(
 /// A clean pre-flight is what makes minting+printing optimistically safe:
 /// the client validated against current `main` before allocating IDs, so
 /// an abandoned proposal leaves only harmless voidable `unbound` IDs.
+/// Derive each write op's floor (ADR-038 §3): the contract surface the op
+/// CONSUMES, per collection — so an aging tool sheds capabilities op-by-op
+/// rather than hitting a single read-only cliff. The floor *follows what it
+/// consumes*: mint → id scheme + lifecycle initial; transition → lifecycle
+/// edges; print → render preset; edit → the field set. Advisory preflight
+/// UX — the enforced boundary stays content-vs-contract at the gate.
+fn op_floors(contract: &qx_contract::Contract) -> Vec<String> {
+    let mut floors = Vec::new();
+    for c in &contract.collections {
+        if c.id.mintable {
+            let init = c
+                .lifecycle
+                .as_ref()
+                .map(|l| format!(", lifecycle initial=`{}`", l.initial))
+                .unwrap_or_default();
+            floors.push(format!(
+                "mint `{}` requires id-scheme `{}`{init}",
+                c.name, c.id.scheme
+            ));
+        }
+        if let Some(lc) = &c.lifecycle {
+            let edges: usize = lc.transitions.values().map(Vec::len).sum();
+            floors.push(format!(
+                "transition `{}` requires {} lifecycle edge(s)",
+                c.name, edges
+            ));
+        }
+        if let Some(render) = &c.render {
+            if !render.print_contracts.is_empty() {
+                floors.push(format!(
+                    "print `{}` requires print contract(s): {}",
+                    c.name,
+                    render.print_contracts.join(", ")
+                ));
+            }
+        }
+        if !c.fields.is_empty() {
+            floors.push(format!(
+                "edit `{}` requires {} declared field(s)",
+                c.name,
+                c.fields.len()
+            ));
+        }
+    }
+    floors
+}
+
 fn preflight_cmd(path: &Path, base: Option<&str>) -> ExitCode {
     // Resolve the tree to validate: the working copy, or a materialization
     // of the base ref (the "fetch contract+registry from main" read path).
@@ -1993,6 +2040,28 @@ fn preflight_cmd(path: &Path, base: Option<&str>) -> ExitCode {
         .unwrap_or(0);
     if mintable == 0 {
         failures.push("no mintable collection declared — nothing to optimistically mint".into());
+    }
+
+    // Per-op floors (ADR-038 §3): derive each write op's floor — the
+    // contract surface it consumes — and surface it as preflight UX
+    // (advisory; the enforced boundary is content-vs-contract above). The
+    // optional manifest `min_producer_version` posture knob is reported too.
+    if let Some(contract) = std::fs::read(tree.join(".qx/contract.json"))
+        .ok()
+        .and_then(|b| qx_contract::Contract::from_bytes(&b).ok())
+    {
+        for floor in op_floors(&contract) {
+            notices.push(format!("op-floor — {floor}"));
+        }
+    }
+    if let Some(min_ver) = std::fs::read_to_string(tree.join(".qx/manifest.toml"))
+        .ok()
+        .and_then(|t| qx_cli::manifest::Manifest::parse(&t).ok())
+        .and_then(|m| m.registry.min_producer_version)
+    {
+        notices.push(format!(
+            "posture: min_producer_version = {min_ver} (a claim, not the enforced boundary)"
+        ));
     }
 
     for n in &notices {
