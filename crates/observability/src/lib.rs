@@ -638,6 +638,7 @@ where
         extra,
         signatures: Vec::new(),
         chain_hash: None,
+        content_hash: None,
     })
 }
 
@@ -720,6 +721,115 @@ pub fn set_test_clock(t: Option<Timestamp>) {
 }
 
 // -------------------------------------------------------------------
+// Content hash (ADR-037 §1): each entry self-describes via a hash of
+// its own body. The chain link is retired — content_hash references no
+// predecessor, so concurrent PRs never serialize on it.
+// -------------------------------------------------------------------
+
+/// The `sha256:<hex>` content hash of an entry's canonical body — the
+/// entry serialized with `content_hash` itself cleared (so the hash is a
+/// stable function of the payload, never of itself).
+pub fn content_hash_of(entry: &AuditEntry) -> Hash {
+    use sha2::{Digest, Sha256};
+    let mut body = entry.clone();
+    body.content_hash = None;
+    let bytes = serde_json::to_vec(&body).expect("audit entry serializes");
+    Hash(format!("sha256:{:x}", Sha256::digest(&bytes)))
+}
+
+/// Stamp an entry with its content hash (ADR-037 §1). Idempotent: a
+/// re-stamp recomputes over the cleared body, so it round-trips.
+pub fn with_content_hash(mut entry: AuditEntry) -> AuditEntry {
+    entry.content_hash = Some(content_hash_of(&entry));
+    entry
+}
+
+/// Whether an entry's recorded `content_hash` matches a fresh recompute.
+/// `None` (pre-content-hash entry) is treated as valid — it predates the
+/// scheme. A *present* hash that disagrees is tamper evidence.
+pub fn content_hash_valid(entry: &AuditEntry) -> bool {
+    match &entry.content_hash {
+        None => true,
+        Some(h) => *h == content_hash_of(entry),
+    }
+}
+
+/// A stream checkpoint (ADR-037 §1): a self-contained pin of the audit
+/// stream's state up to `line_count`, so a clone can verify integrity
+/// standalone (without diffing against a base). The chain link is retired;
+/// continuity *of* checkpoints is the anchor ledger's job, recorded here
+/// as the optional `anchor_ref` (reserved until the release ledger lands).
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Checkpoint {
+    /// Monotonic checkpoint sequence number (0-based).
+    pub seq: u64,
+    /// Number of audit-log lines this checkpoint pins.
+    pub line_count: u64,
+    /// `sha256:<hex>` cumulative digest of the stream up to `line_count`.
+    pub stream_digest: Hash,
+    /// The repo HEAD commit at checkpoint time (git continuity *between*
+    /// checkpoints). Empty when stamped outside a git work tree.
+    #[serde(default)]
+    pub head_sha: String,
+    /// Anchor-ledger reference (ADR-037 release anchors). Reserved — `None`
+    /// until the immutable-release ledger exists.
+    #[serde(default)]
+    pub anchor_ref: Option<String>,
+}
+
+/// The cumulative `sha256:<hex>` digest of the first `line_count` non-empty
+/// lines of an `audit_log.jsonl` body. Order-sensitive (the stream is
+/// append-only), so it pins the exact prefix a checkpoint covers.
+pub fn stream_digest(audit_log: &str, line_count: usize) -> Hash {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    for line in audit_log
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .take(line_count)
+    {
+        hasher.update(line.as_bytes());
+        hasher.update(b"\n");
+    }
+    Hash(format!("sha256:{:x}", hasher.finalize()))
+}
+
+/// Build a checkpoint pinning the entire current `audit_log.jsonl` body.
+pub fn make_checkpoint(audit_log: &str, seq: u64, head_sha: String) -> Checkpoint {
+    let line_count = audit_log.lines().filter(|l| !l.trim().is_empty()).count();
+    Checkpoint {
+        seq,
+        line_count: line_count as u64,
+        stream_digest: stream_digest(audit_log, line_count),
+        head_sha,
+        anchor_ref: None,
+    }
+}
+
+/// Verify a checkpoint against the current audit-log body: the stream's
+/// prefix of `line_count` lines must still digest to `stream_digest`.
+/// Returns an error message on mismatch (historical tampering below the
+/// checkpoint), or that the stream is shorter than the checkpoint claims.
+pub fn verify_checkpoint(cp: &Checkpoint, audit_log: &str) -> Result<(), String> {
+    let have = audit_log.lines().filter(|l| !l.trim().is_empty()).count();
+    if (have as u64) < cp.line_count {
+        return Err(format!(
+            "checkpoint {} pins {} lines but the stream has only {have} (truncated?)",
+            cp.seq, cp.line_count
+        ));
+    }
+    let recomputed = stream_digest(audit_log, cp.line_count as usize);
+    if recomputed != cp.stream_digest {
+        return Err(format!(
+            "checkpoint {} digest mismatch — the stream prefix was tampered (expected {}, got {})",
+            cp.seq, cp.stream_digest, recomputed
+        ));
+    }
+    Ok(())
+}
+
+// -------------------------------------------------------------------
 // Convenience: build a synthetic AuditEntry for one of the common
 // mutations. Used by the CLI binaries' scaffolds and by tests.
 // -------------------------------------------------------------------
@@ -732,7 +842,7 @@ pub fn mint_audit_entry(
     extra: serde_json::Value,
 ) -> AuditEntry {
     let row = serde_json::json!({ "id": minted_id.as_str(), "status": "unbound" });
-    AuditEntry {
+    with_content_hash(AuditEntry {
         request_id,
         timestamp: time::OffsetDateTime::now_utc(),
         time_source: qx_domain::TimeSource::System,
@@ -744,7 +854,8 @@ pub fn mint_audit_entry(
         extra,
         signatures: Vec::new(),
         chain_hash: None,
-    }
+        content_hash: None,
+    })
 }
 
 /// Build an [`AuditEntry`] for a generic entity-store write (ADR-035):
@@ -758,7 +869,7 @@ pub fn record_write_audit_entry(
     extra: serde_json::Value,
     timestamp: time::OffsetDateTime,
 ) -> AuditEntry {
-    AuditEntry {
+    with_content_hash(AuditEntry {
         request_id,
         timestamp,
         time_source: qx_domain::TimeSource::System,
@@ -773,7 +884,8 @@ pub fn record_write_audit_entry(
         extra,
         signatures: Vec::new(),
         chain_hash: None,
-    }
+        content_hash: None,
+    })
 }
 
 /// Build an [`AuditEntry`] for a label print (ADR-022 print-fold): the
@@ -786,7 +898,7 @@ pub fn print_audit_entry(
     extra: serde_json::Value,
     timestamp: time::OffsetDateTime,
 ) -> AuditEntry {
-    AuditEntry {
+    with_content_hash(AuditEntry {
         request_id,
         timestamp,
         time_source: qx_domain::TimeSource::System,
@@ -801,7 +913,8 @@ pub fn print_audit_entry(
         extra,
         signatures: Vec::new(),
         chain_hash: None,
-    }
+        content_hash: None,
+    })
 }
 
 /// Build an [`AuditEntry`] for a `bind` (RowBind) action.
@@ -812,7 +925,7 @@ pub fn bind_audit_entry(
     fields: std::collections::BTreeMap<String, String>,
     extra: serde_json::Value,
 ) -> AuditEntry {
-    AuditEntry {
+    with_content_hash(AuditEntry {
         request_id,
         timestamp: time::OffsetDateTime::now_utc(),
         time_source: qx_domain::TimeSource::System,
@@ -827,7 +940,8 @@ pub fn bind_audit_entry(
         extra,
         signatures: Vec::new(),
         chain_hash: None,
-    }
+        content_hash: None,
+    })
 }
 
 /// Build an [`AuditEntry`] for an `edit` (RowEdit) action.
@@ -839,7 +953,7 @@ pub fn edit_audit_entry(
     after: std::collections::BTreeMap<String, String>,
     extra: serde_json::Value,
 ) -> AuditEntry {
-    AuditEntry {
+    with_content_hash(AuditEntry {
         request_id,
         timestamp: time::OffsetDateTime::now_utc(),
         time_source: qx_domain::TimeSource::System,
@@ -855,7 +969,8 @@ pub fn edit_audit_entry(
         extra,
         signatures: Vec::new(),
         chain_hash: None,
-    }
+        content_hash: None,
+    })
 }
 
 /// Build an [`AuditEntry`] for a `void` (RowVoid) action.
@@ -866,7 +981,7 @@ pub fn void_audit_entry(
     reason: String,
     extra: serde_json::Value,
 ) -> AuditEntry {
-    AuditEntry {
+    with_content_hash(AuditEntry {
         request_id,
         timestamp: time::OffsetDateTime::now_utc(),
         time_source: qx_domain::TimeSource::System,
@@ -881,7 +996,8 @@ pub fn void_audit_entry(
         extra,
         signatures: Vec::new(),
         chain_hash: None,
-    }
+        content_hash: None,
+    })
 }
 
 // -------------------------------------------------------------------

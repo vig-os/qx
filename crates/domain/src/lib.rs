@@ -889,6 +889,12 @@ pub struct AuditEntry {
     /// ADR-023 forward-compat. `None` at MVP.
     #[serde(default)]
     pub chain_hash: Option<Hash>,
+    /// `sha256:<hex>` of this entry's own body (ADR-037 §1 — the chain
+    /// link is retired; entries self-describe via a content hash that does
+    /// NOT reference predecessors). Stamped at emit time over the canonical
+    /// body with this field cleared. `None` for pre-content-hash entries.
+    #[serde(default)]
+    pub content_hash: Option<Hash>,
 }
 
 // -------------------------------------------------------------------
@@ -1393,6 +1399,7 @@ mod tests {
             extra: Json::Object(serde_json::Map::new()),
             signatures,
             chain_hash: None,
+            content_hash: None,
         }
     }
 

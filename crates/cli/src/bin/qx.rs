@@ -292,6 +292,14 @@ enum Cmd {
         #[arg(long)]
         path: Option<PathBuf>,
     },
+    /// Append a stream checkpoint (ADR-037 §1) pinning the current
+    /// `audit_log.jsonl` to `audit_checkpoints.jsonl`, restoring standalone
+    /// stream verifiability without a base diff.
+    Checkpoint {
+        /// Path to the data-repo working tree.
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+    },
     /// Stdio MCP server speaking the command protocol (for agents).
     #[cfg(feature = "mcp")]
     Mcp,
@@ -457,6 +465,7 @@ fn main() -> ExitCode {
         #[cfg(feature = "serve")]
         Cmd::Serve { addr, static_dir } => serve_cmd(addr, static_dir),
         Cmd::Registries { path } => registries_cmd(path),
+        Cmd::Checkpoint { path } => checkpoint_cmd(&path),
         #[cfg(feature = "mcp")]
         Cmd::Mcp => mcp_cmd(),
         #[cfg(feature = "tui")]
@@ -1102,6 +1111,13 @@ fn check(path: &Path, base: Option<&str>, approvers: &[String]) -> ExitCode {
         }
     }
 
+    // --- Audit integrity (ADR-037 §1): per-entry content_hash + stream
+    //     checkpoints. Each entry that carries a content_hash must still
+    //     verify (in-line tamper evidence), and every checkpoint must pin a
+    //     prefix that still digests correctly. Runs always (not just with a
+    //     base) — these are standalone, base-free integrity checks.
+    audit_integrity_check(path, &mut failures);
+
     // --- Personas accountability (ADR-036 §1/§2): when a registry declares
     //     a `personas` collection, the audit operator FK + CODEOWNERS
     //     principals must resolve to (active) personas. Skipped silently
@@ -1433,6 +1449,47 @@ fn resolve_kind_schemas(
         resolved.insert(kind.clone(), acc);
     }
     resolved
+}
+
+/// Audit-integrity check (ADR-037 §1): per-entry `content_hash` + stream
+/// `checkpoints`. Every entry that carries a content_hash must still verify
+/// (in-line tamper evidence — independent of the predecessor chain, which
+/// is retired), and every checkpoint in `audit_checkpoints.jsonl` must pin
+/// a stream prefix that still digests correctly. Base-free: standalone.
+fn audit_integrity_check(path: &Path, failures: &mut Vec<String>) {
+    let log = std::fs::read_to_string(path.join("audit_log.jsonl")).unwrap_or_default();
+    for (i, line) in log.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Ok(entry) = serde_json::from_str::<qx_domain::AuditEntry>(line) {
+            if !qx_observability::content_hash_valid(&entry) {
+                failures.push(format!(
+                    "audit_log.jsonl line {}: content_hash does not match the entry body (tampered)",
+                    i + 1
+                ));
+            }
+        }
+    }
+
+    let cps = std::fs::read_to_string(path.join("audit_checkpoints.jsonl")).unwrap_or_default();
+    for line in cps.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<qx_observability::Checkpoint>(line) {
+            Ok(cp) => {
+                if let Err(e) = qx_observability::verify_checkpoint(&cp, &log) {
+                    failures.push(format!("audit_checkpoints.jsonl: {e}"));
+                }
+            }
+            Err(e) => failures.push(format!(
+                "audit_checkpoints.jsonl: malformed checkpoint: {e}"
+            )),
+        }
+    }
 }
 
 /// Manifest↔contract FK cross-check (ADR-034 §3 / `capability-grain`).
@@ -1800,6 +1857,57 @@ fn promote_field(
     );
     fields.push(serde_json::Value::Object(field));
     Ok(())
+}
+
+/// `qx checkpoint` — append a stream checkpoint (ADR-037 §1). Reads the
+/// current `audit_log.jsonl`, computes the cumulative digest + line count,
+/// stamps the repo HEAD, and appends one checkpoint line to
+/// `audit_checkpoints.jsonl` (seq = number of existing checkpoints).
+fn checkpoint_cmd(path: &Path) -> ExitCode {
+    let log = std::fs::read_to_string(path.join("audit_log.jsonl")).unwrap_or_default();
+    let cp_path = path.join("audit_checkpoints.jsonl");
+    let existing = std::fs::read_to_string(&cp_path).unwrap_or_default();
+    let seq = existing.lines().filter(|l| !l.trim().is_empty()).count() as u64;
+    let head_sha = git_show(path, "HEAD", "")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+    let head_sha = if head_sha.is_empty() {
+        // `git rev-parse HEAD` rather than `git show` for the bare sha.
+        std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(path)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default()
+    } else {
+        head_sha
+    };
+    let cp = qx_observability::make_checkpoint(&log, seq, head_sha);
+    let line = match serde_json::to_string(&cp) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("checkpoint: serialize: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut body = existing;
+    if !body.is_empty() && !body.ends_with('\n') {
+        body.push('\n');
+    }
+    body.push_str(&line);
+    body.push('\n');
+    if let Err(e) = std::fs::write(&cp_path, body) {
+        eprintln!("checkpoint: write {}: {e}", cp_path.display());
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "checkpoint {} written: {} lines pinned, digest {}",
+        cp.seq, cp.line_count, cp.stream_digest
+    );
+    ExitCode::SUCCESS
 }
 
 /// `qx registries` — list the operator-workspace registries (ADR-033 §5).

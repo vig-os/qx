@@ -104,6 +104,7 @@ fn full_pipeline_writes_csv_with_sigstore_round_trip() {
         extra: serde_json::Value::Object(Default::default()),
         signatures: vec![sig.clone()],
         chain_hash: Some(Hash("abc123".into())),
+        content_hash: None,
     };
 
     let layer = qx_observability::__test_audit_csv_layer(handle);

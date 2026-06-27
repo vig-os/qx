@@ -167,6 +167,7 @@ fn sample_entry(request_id: RequestId, signatures: Vec<Signature>) -> AuditEntry
         extra: json!({"note": "ingest"}),
         signatures,
         chain_hash: None,
+        content_hash: None,
     }
 }
 

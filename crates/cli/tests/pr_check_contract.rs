@@ -74,6 +74,72 @@ fn git_init(dir: &Path) {
 }
 
 #[test]
+fn checkpoint_then_check_verifies_and_catches_tampering() {
+    // ADR-037 §1: `qx checkpoint` pins the stream; a later `qx check`
+    // verifies it, and tampering a pinned line is caught (base-free).
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    write_repo(dir, TWO_COLLECTION_CONTRACT, "", "");
+    let log = "{\"seq\":1,\"v\":\"a\"}\n{\"seq\":2,\"v\":\"b\"}\n";
+    fs::write(dir.join("audit_log.jsonl"), log).unwrap();
+
+    // Write a checkpoint.
+    let out = Command::new(env!("CARGO_BIN_EXE_qx"))
+        .args(["checkpoint", "--path"])
+        .arg(dir)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "checkpoint must succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(dir.join("audit_checkpoints.jsonl").exists());
+
+    // Clean check passes (the checkpoint verifies).
+    assert!(
+        pr_check(dir, None).status.success(),
+        "checkpointed clean repo must pass"
+    );
+
+    // Tamper a pinned line → check fails on the checkpoint digest.
+    fs::write(
+        dir.join("audit_log.jsonl"),
+        "{\"seq\":1,\"v\":\"TAMPERED\"}\n{\"seq\":2,\"v\":\"b\"}\n",
+    )
+    .unwrap();
+    let out = pr_check(dir, None);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "tampered stream must fail: {stderr}");
+    assert!(
+        stderr.contains("checkpoint") && stderr.contains("digest mismatch"),
+        "expected a checkpoint digest violation, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn content_hash_mismatch_fails_the_gate() {
+    // ADR-037 §1: an entry whose recorded content_hash does not match its
+    // body is in-line tamper evidence — caught with no base.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    write_repo(dir, TWO_COLLECTION_CONTRACT, "", "");
+    // A complete AuditEntry JSON line with a bogus content_hash.
+    let bad = "{\"request_id\":\"00000000-0000-0000-0000-000000000001\",\"timestamp\":[1970,1,0,0,0,0,0,0,0],\"actor\":{\"id\":\"github:x\",\"display_name\":\"X\",\"source\":{\"kind\":\"git_config\"},\"verified_at\":null,\"claims\":{},\"pubkey\":null},\"action\":{\"kind\":\"add\",\"row\":{}},\"target\":{\"kind\":\"part\",\"id\":\"PART2223AAAAAA\"},\"before\":null,\"after\":null,\"extra\":{},\"content_hash\":\"sha256:deadbeef\"}\n";
+    fs::write(dir.join("audit_log.jsonl"), bad).unwrap();
+    let out = pr_check(dir, None);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "bad content_hash must fail: {stderr}"
+    );
+    assert!(
+        stderr.contains("content_hash does not match"),
+        "expected a content_hash violation, got:\n{stderr}"
+    );
+}
+
+#[test]
 fn registries_command_lists_the_workspace() {
     // ADR-033 §5: `qx registries` lists the operator-workspace registries
     // and marks the default.
