@@ -551,14 +551,14 @@ impl PrMetadata {
 
 fn action_kind_str(k: ActionKind) -> &'static str {
     match k {
-        ActionKind::RowAdd => "row_add",
-        ActionKind::RowDelete => "row_delete",
-        ActionKind::RowVoid => "row_void",
-        ActionKind::RowBind => "row_bind",
-        ActionKind::RowEdit => "row_edit",
-        ActionKind::HeaderChange => "header_change",
-        ActionKind::BulkChange => "bulk_change",
-        ActionKind::RecordWrite => "record_write",
+        ActionKind::RowAdd => "add",
+        ActionKind::RowDelete => "delete",
+        ActionKind::RowVoid => "void",
+        ActionKind::RowBind => "bind",
+        ActionKind::RowEdit => "edit",
+        ActionKind::HeaderChange => "descriptor_change",
+        ActionKind::BulkChange => "bulk",
+        ActionKind::RecordWrite => "write",
         ActionKind::Print => "print",
     }
 }
@@ -1755,13 +1755,13 @@ mod tests {
         assert!(pr_body.contains(&proposal.request_id.to_string()));
         assert!(pr_body.contains("github:gerchowl"));
         assert!(pr_body.contains("B-2026-05-11-experiment"));
-        assert!(pr_body.contains("row_add"));
+        assert!(pr_body.contains("add"));
 
         // Parse the metadata block back out.
         let meta = parse_pr_metadata(pr_body).expect("metadata block present");
         assert_eq!(meta.request_id, proposal.request_id.to_string());
         assert_eq!(meta.author, "github:gerchowl");
-        assert_eq!(meta.classification, vec!["row_add"]);
+        assert_eq!(meta.classification, vec!["add"]);
 
         // PUT-contents body uses the operator's email as author and
         // the bot identity as committer; new content includes the new row.
@@ -2166,8 +2166,8 @@ mod tests {
             },
         ];
         let s = classification_summary(&acts);
-        assert!(s.contains("row_add × 2"));
-        assert!(s.contains("header_change × 1"));
+        assert!(s.contains("add × 2"));
+        assert!(s.contains("descriptor_change × 1"));
     }
 
     #[test]

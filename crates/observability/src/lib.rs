@@ -355,14 +355,14 @@ pub fn emit_audit(entry: &AuditEntry) {
 
 fn action_kind_str(action: &Action) -> &'static str {
     match action.kind() {
-        qx_domain::ActionKind::RowAdd => "row_add",
-        qx_domain::ActionKind::RowDelete => "row_delete",
-        qx_domain::ActionKind::RowVoid => "row_void",
-        qx_domain::ActionKind::RowBind => "row_bind",
-        qx_domain::ActionKind::RowEdit => "row_edit",
-        qx_domain::ActionKind::HeaderChange => "header_change",
-        qx_domain::ActionKind::BulkChange => "bulk_change",
-        qx_domain::ActionKind::RecordWrite => "record_write",
+        qx_domain::ActionKind::RowAdd => "add",
+        qx_domain::ActionKind::RowDelete => "delete",
+        qx_domain::ActionKind::RowVoid => "void",
+        qx_domain::ActionKind::RowBind => "bind",
+        qx_domain::ActionKind::RowEdit => "edit",
+        qx_domain::ActionKind::HeaderChange => "descriptor_change",
+        qx_domain::ActionKind::BulkChange => "bulk",
+        qx_domain::ActionKind::RecordWrite => "write",
         qx_domain::ActionKind::Print => "print",
     }
 }

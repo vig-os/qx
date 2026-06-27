@@ -451,8 +451,9 @@ id = "unified-change-vocabulary"
 adr = "ADR-035"
 statement = "Diff classes, audit ActionKind, authz Action all key on {collection, op-kind}; descriptor_change generalizes header_change; TargetRef = typed id; classification covers every collection"
 kind = "crate"
-status = "pending"
-tracking = "ADR-035 §0 one-change-vocabulary; ADR-016/020/022 enums still parts-specific in code"
+status = "satisfied"
+satisfied_by = ["crates/domain/src/lib.rs", "crates/observability/src/lib.rs", "crates/transport_github_pr/src/lib.rs"]
+tracking = "SATISFIED (ADR-016/030, M-B). All four terms: Diff classes / audit / authz Action ALL KEY ON {collection, op-kind} — Action::op_kind() projects every variant to a generic op-kind (add/delete/void/bind/edit/descriptor_change/bulk/write/print) and Action::collection() gives the other half; the PERSISTED audit uses the generic op-kind (serde rename per variant) while legacy tags still read (serde alias, no break); action_kind_str (audit display + PR template) emit the generic op-kind too. DESCRIPTOR_CHANGE GENERALIZES HEADER_CHANGE (HeaderChange.op_kind == descriptor_change, alias header_change). TargetRef = TYPED ID (TargetRef::Record{collection,id}). CLASSIFICATION COVERS EVERY COLLECTION (RecordWrite + Print). Proven by actions_key_on_collection_and_op_kind + the updated transport/classify tests; suites + wasm32 green."
 
 [[obligation]]
 id = "print-fold-audit-spine"
