@@ -1249,6 +1249,12 @@ fn check_contract(
                     Severity::Warn => notices.push(line),
                 }
             }
+            // Timestamp skew sanity-check (ADR-035 §1b timestamp-trust):
+            // a stamp implausibly far in the future is clock skew or
+            // tampering — the CI plausibility backstop.
+            for issue in timestamp_skew_issues(rec, time::OffsetDateTime::now_utc()) {
+                failures.push(format!("{}[{id}]: {issue}", coll.name));
+            }
             validated += 1;
         }
         // Cross-record graph integrity for `acyclic` relations (ADR-035
@@ -1337,6 +1343,41 @@ fn check_attachment_blobs(
         }
     }
     errs
+}
+
+/// The timestamps a record carries (`created_at`, each
+/// `transitioned_at[status]`) that fail the skew sanity-check (ADR-035
+/// §1b timestamp-trust): a stamp more than `SKEW_TOLERANCE_HOURS` ahead of
+/// `now` is clock skew or tampering; one that is not valid RFC3339 is
+/// malformed. Returns one message per offending stamp.
+fn timestamp_skew_issues(rec: &Map<String, Value>, now: time::OffsetDateTime) -> Vec<String> {
+    const SKEW_TOLERANCE_HOURS: i64 = 48;
+    let limit = now
+        .checked_add(time::Duration::hours(SKEW_TOLERANCE_HOURS))
+        .unwrap_or(now);
+    let mut stamps: Vec<(String, &str)> = Vec::new();
+    if let Some(s) = rec.get("created_at").and_then(Value::as_str) {
+        stamps.push(("created_at".to_string(), s));
+    }
+    if let Some(ta) = rec.get("transitioned_at").and_then(Value::as_object) {
+        for (status, v) in ta {
+            if let Some(s) = v.as_str() {
+                stamps.push((format!("transitioned_at.{status}"), s));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for (label, s) in stamps {
+        match time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339) {
+            Ok(t) if t > limit => out.push(format!(
+                "{label} `{s}` is implausibly future-dated \
+                 (> now + {SKEW_TOLERANCE_HOURS}h — clock skew or tampering)"
+            )),
+            Ok(_) => {}
+            Err(_) => out.push(format!("{label} `{s}` is not a valid RFC3339 timestamp")),
+        }
+    }
+    out
 }
 
 /// Read a `collections/*.jsonl` file into generic JSON objects. A missing
@@ -1972,6 +2013,37 @@ mod tests {
         assert!(promote_field(&mut c, "parts", "x", "reference", None).is_err());
         // an engine envelope key
         assert!(promote_field(&mut c, "parts", "status", "string", None).is_err());
+    }
+
+    #[test]
+    fn timestamp_skew_flags_future_and_malformed_stamps() {
+        let fmt = &time::format_description::well_known::Rfc3339;
+        let now = time::OffsetDateTime::parse("2026-06-27T00:00:00Z", fmt).unwrap();
+        let obj = |s: &str| serde_json::from_str::<Map<String, Value>>(s).unwrap();
+
+        // A past created_at is fine.
+        assert!(
+            timestamp_skew_issues(&obj(r#"{"created_at":"2026-05-01T00:00:00Z"}"#), now).is_empty()
+        );
+        // A far-future created_at is clock skew / tampering.
+        assert!(
+            timestamp_skew_issues(&obj(r#"{"created_at":"2027-01-01T00:00:00Z"}"#), now)
+                .iter()
+                .any(|m| m.contains("future-dated"))
+        );
+        // A malformed stamp is flagged.
+        assert!(
+            timestamp_skew_issues(&obj(r#"{"created_at":"not-a-date"}"#), now)
+                .iter()
+                .any(|m| m.contains("not a valid"))
+        );
+        // transitioned_at[status] stamps are checked too.
+        assert!(timestamp_skew_issues(
+            &obj(r#"{"transitioned_at":{"bound":"2030-01-01T00:00:00Z"}}"#),
+            now
+        )
+        .iter()
+        .any(|m| m.contains("transitioned_at.bound")));
     }
 
     #[test]
