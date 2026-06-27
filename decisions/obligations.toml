@@ -241,8 +241,9 @@ id = "structured-print-request"
 adr = "ADR-031"
 statement = "Print{collection, Selection, …} — Selection = Ids|Filter sharing THE List filter; mint_count out (CLI -n composes Create→Print); groupings from the id-scheme declaration"
 kind = "crate"
-status = "pending"
-tracking = "ADR-031 §1+§7; depends on app-layer-dispatch (ADR-030)"
+status = "satisfied"
+satisfied_by = ["crates/app/src/protocol.rs", "crates/codec/src/format.rs", "crates/app/src/engine.rs"]
+tracking = "SATISFIED (ADR-031 §1+§7). Print is a STRUCTURED REQUEST: Request::Print{collection, selection: Selection, options: PrintOptions} (crates/app/protocol.rs), every shell builds it; the CLI fast-path is sugar. SELECTION = Ids|Filter: Selection::Ids(Vec<String>) | Selection::Filter(Filter) — and the Filter is THE SAME protocol::Filter that Request::List carries (shared list filter); select_targets dispatches both (engine.rs). MINT_COUNT OUT: no mint_count anywhere — `-n` composes Create->Print (run_mint then run_label; see optimistic-mint-preflight). GROUPINGS FROM THE ID-SCHEME DECLARATION (data, not code): NEW qx_codec::scheme_groupings(scheme) DECLARES each scheme's groupings as DATA (SchemeGrouping{name, rows:&[usize]} — nano14 declares 44/444/554); parse_chars (engine.rs) now resolves the requested grouping against that declaration (scheme_grouping_rows), not a hardcoded match; ONE TEXT RENDERER, split_rows(canonical, rows), consumes the row VECTOR and TextFormat::split delegates to it (golden label.py parity preserved — 6/6 label_parity_golden green). Proven by groupings_come_from_the_id_scheme_declaration + one_renderer_splits_any_row_vector; codec/app/cli suites + wasm32 green, clippy clean."
 
 [[obligation]]
 id = "optimistic-mint-preflight"

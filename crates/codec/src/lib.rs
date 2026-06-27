@@ -53,7 +53,10 @@ pub mod symbology;
 
 pub use canvas::{resolve_canvas, CanvasResolved, ResolvedChild as CanvasResolvedChild};
 pub use color::{default_bg, default_fg, Color};
-pub use format::{check_format_warning, recommend_format, TextFormat};
+pub use format::{
+    check_format_warning, recommend_format, scheme_grouping_rows, scheme_groupings, split_rows,
+    SchemeGrouping, TextFormat,
+};
 pub use payload::{
     parse_tree as parse_payload_tree, CanvasChild, CanvasDim, Element as PayloadElement, GroupAxis,
     Leaf as PayloadLeaf, Node as PayloadNode, NodeSize, Payload,
