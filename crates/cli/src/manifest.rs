@@ -43,6 +43,13 @@ pub struct RegistryMeta {
     pub description: String,
     #[serde(default)]
     pub owner: String,
+    /// Optional `min_producer_version` POSTURE KNOB (ADR-038 §3): the
+    /// minimum producer (tool) version a write op should self-report. A
+    /// *claim*, never the security argument — the enforced boundary is
+    /// always content-validated-against-current-contract at the gate.
+    /// `None` = no floor advertised.
+    #[serde(default)]
+    pub min_producer_version: Option<String>,
 }
 
 /// Whether an `(op, collection)` is enabled in this registry.
