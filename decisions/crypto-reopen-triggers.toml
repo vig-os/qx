@@ -1,0 +1,44 @@
+# Crypto re-open trigger watchers — ADR-029 dimension 5 (trigger watchers),
+# surveying the ADR-023 "Re-open triggers" T1–T6.
+#
+# Each ADR-023 trigger is surveyed here with an EXPLICIT watch status so that
+# none is silently resolved: a trigger removed from ADR-023 (or added there)
+# without updating this registry fails `crypto-triggers-survey`, and a `fired`
+# trigger that is not yet activated is surfaced loudly. This registry is the
+# watcher; ADR-023 remains the SSOT for the trigger definitions.
+#
+# status:
+#   watching — deferred control still deferred; condition not observed.
+#   fired    — the condition occurred; the named control(s) must activate
+#              (recorded in LOG.md per ADR-023). A `fired` row is surfaced by
+#              the survey until its controls land.
+
+[[trigger]]
+id = "T1"
+summary = "Compromised operator device enters scope"
+status = "watching"
+
+[[trigger]]
+id = "T2"
+summary = "External auditor or regulator request for crypto proof"
+status = "watching"
+
+[[trigger]]
+id = "T3"
+summary = "Operator-key friction becomes load-bearing"
+status = "watching"
+
+[[trigger]]
+id = "T4"
+summary = "Per-row attribution required by a workflow"
+status = "watching"
+
+[[trigger]]
+id = "T5"
+summary = "Long-term verifiability gap is contested"
+status = "watching"
+
+[[trigger]]
+id = "T6"
+summary = "Consequence tier changes to loss-of-life / safety-critical"
+status = "watching"

@@ -11,10 +11,16 @@ publish.workspace = true
 name = "obligations-check"
 path = "src/main.rs"
 
+[[bin]]
+name = "crypto-triggers-survey"
+path = "src/crypto_triggers.rs"
+
 [dependencies]
 # Full-TOML parse of decisions/obligations.toml (mirrors tomllib in the
 # retired Python gate). Already in the workspace lock via figment.
 toml = "0.8"
+# Derive for the crypto-reopen-triggers.toml watcher registry.
+serde = { workspace = true }
 # `satisfied_by` accepts paths OR globs (mirrors Path.glob). Already in
 # the lock as a transitive dep.
 glob = "0.3"

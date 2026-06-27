@@ -3962,6 +3962,7 @@ name = "qx-devtools"
 version = "0.1.0"
 dependencies = [
  "glob",
+ "serde",
  "tempfile",
  "time",
  "toml 0.8.23",
