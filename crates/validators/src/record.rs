@@ -784,6 +784,64 @@ fn relation_edges<'a>(rec: &'a Map<String, Value>, field: &str) -> Vec<&'a str> 
     }
 }
 
+/// A backlink derived from a forward relation (ADR-035 §1a,
+/// `declared-relations`). The `name` is the descriptor-declared backlink
+/// name — never a hardcoded shell string.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Backlink {
+    /// The descriptor's declared backlink name (e.g. `part_of`).
+    pub name: String,
+    /// The collection the referencing record lives in.
+    pub from_collection: String,
+    /// The id of the referencing record.
+    pub from_id: String,
+}
+
+/// Derive the backlinks pointing at one target record
+/// (`declared-relations`). Relations store ONE direction — the forward
+/// edge on the source record — so a target's backlinks are *derived* by
+/// scanning every collection whose descriptor declares a relation
+/// targeting `target_collection` with a `backlink` name. Names come from
+/// the descriptor, so shells render relations with no hardcoded display
+/// strings. Output is ordered by (source collection, relation, source id)
+/// for deterministic rendering.
+pub fn derive_backlinks(
+    contract: &Contract,
+    target_collection: &str,
+    target_id: &str,
+    records: &BTreeMap<String, Vec<Map<String, Value>>>,
+) -> Vec<Backlink> {
+    let mut out = Vec::new();
+    for source in &contract.collections {
+        for rel in &source.relations {
+            if rel.target != target_collection {
+                continue;
+            }
+            let Some(backlink) = rel.backlink.as_ref() else {
+                continue;
+            };
+            let Some(recs) = records.get(&source.name) else {
+                continue;
+            };
+            for rec in recs {
+                if relation_edges(rec, &rel.name).contains(&target_id) {
+                    let from_id = rec
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string();
+                    out.push(Backlink {
+                        name: backlink.clone(),
+                        from_collection: source.name.clone(),
+                        from_id,
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -800,6 +858,60 @@ mod tests {
             Value::Object(m) => m,
             _ => panic!("not an object"),
         }
+    }
+
+    #[test]
+    fn derive_backlinks_from_declared_relation() {
+        // A self-referential `components` relation (= the parts preset
+        // assembly edge) with a descriptor-declared `part_of` backlink.
+        let contract = Contract::from_bytes(
+            br#"{
+              "format_version": 1,
+              "collections": [
+                {
+                  "name": "parts",
+                  "id": { "scheme": "nano14", "default": true, "mintable": true },
+                  "lifecycle": {
+                    "statuses": ["unbound", "bound", "void"],
+                    "transitions": { "unbound": ["bound", "void"], "bound": ["void"], "void": [] },
+                    "initial": "unbound"
+                  },
+                  "open_properties": true,
+                  "render": { "label_fields": ["id"] },
+                  "fields": [],
+                  "relations": [
+                    { "name": "components", "target": "parts", "backlink": "part_of" }
+                  ]
+                }
+              ]
+            }"#,
+        )
+        .expect("contract parses");
+
+        let mut records = BTreeMap::new();
+        records.insert(
+            "parts".to_string(),
+            vec![
+                obj(r#"{"id":"A","components":["B"]}"#),
+                obj(r#"{"id":"B"}"#),
+                obj(r#"{"id":"C","components":["B","D"]}"#),
+            ],
+        );
+
+        // B is the forward target of A and C → two `part_of` backlinks.
+        let back = derive_backlinks(&contract, "parts", "B", &records);
+        assert_eq!(back.len(), 2);
+        assert!(back.iter().all(|b| b.name == "part_of"));
+        let from: Vec<&str> = back.iter().map(|b| b.from_id.as_str()).collect();
+        assert!(from.contains(&"A") && from.contains(&"C"));
+
+        // A is referenced by nobody → no derived backlinks.
+        assert!(derive_backlinks(&contract, "parts", "A", &records).is_empty());
+        // The backlink name is the descriptor's, never a hardcoded string.
+        assert_eq!(
+            contract.collections[0].relations[0].backlink.as_deref(),
+            Some("part_of")
+        );
     }
 
     fn ctx_with(target: &str, ids: &[&str]) -> RecordContext {
