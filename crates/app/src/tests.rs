@@ -744,11 +744,12 @@ fn generic_write_emits_a_record_write_audit_entry() {
          "fields":[{"key":"label","type":"string","label":"Label"}]}]}"#,
     )
     .unwrap();
+    let submitted = Arc::new(Mutex::new(Vec::new()));
     let ctx = AppContext {
         repo: Arc::new(MemRepo::new(Vec::new())),
         identity: Box::new(FixedIdentity),
         sink: Box::new(MemSink {
-            submitted: Arc::new(Mutex::new(Vec::new())),
+            submitted: submitted.clone(),
         }),
         registry_name: "test-registry".into(),
         contract: Some(Arc::new(contract)),
@@ -758,13 +759,21 @@ fn generic_write_emits_a_record_write_audit_entry() {
         json!({"op":"Create","collection":"companies","fields":{"label":"Acme"}}),
     );
     assert!(r.data().is_some(), "create ok: {r:?}");
+    // The audit entry is committed IN the PR (the proposal's audit_appends
+    // -> audit_log.jsonl), not merely a local side effect.
+    {
+        let props = submitted.lock().unwrap();
+        let appends = &props.last().unwrap().diff.audit_appends;
+        assert_eq!(appends.len(), 1, "the proposal carries the audit entry");
+        assert_eq!(appends[0].action.kind(), qx_domain::ActionKind::RecordWrite);
+        match &appends[0].target {
+            qx_domain::TargetRef::Record { collection, .. } => assert_eq!(collection, "companies"),
+            other => panic!("expected a Record target, got {other:?}"),
+        }
+    }
     let audit = ctx.repo.list_audit_events(&AuditFilter::default()).unwrap();
     assert_eq!(audit.len(), 1, "the generic create emits one audit entry");
     assert_eq!(audit[0].action.kind(), qx_domain::ActionKind::RecordWrite);
-    match &audit[0].target {
-        qx_domain::TargetRef::Record { collection, .. } => assert_eq!(collection, "companies"),
-        other => panic!("expected a Record target, got {other:?}"),
-    }
 }
 
 // -------------------------------------------------------------------

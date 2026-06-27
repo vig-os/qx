@@ -539,19 +539,28 @@ fn generic_create(
     for (k, v) in fields {
         record.insert(k.clone(), serde_json::Value::String(v.clone()));
     }
+    let request_id = RequestId::new();
+    // Audit the create on the spine, committed IN the PR (ADR-022).
+    let entry = record_write_audit_entry(
+        request_id,
+        op.clone(),
+        collection.to_string(),
+        id.clone(),
+        json!({}),
+    );
     let diff = Diff {
         record_writes: vec![RecordWrite {
             collection: collection.to_string(),
             id: id.clone(),
             record,
         }],
+        audit_appends: vec![entry.clone()],
         ..Diff::default()
     };
-    let request_id = RequestId::new();
     let proposal = Proposal {
         diff: diff.clone(),
         batch_label: None,
-        author: op.clone(),
+        author: op,
         signatures: Vec::new(),
         change_classification: diff.classify(),
         message: format!("create {collection}: {id}"),
@@ -559,10 +568,6 @@ fn generic_create(
     };
     match ctx.sink.submit(proposal) {
         Ok(proposal_ref) => {
-            // Audit the create on the same spine as parts (ADR-022).
-            let extra = json!({ "proposal": proposal_ref.url });
-            let entry =
-                record_write_audit_entry(request_id, op, collection.to_string(), id.clone(), extra);
             emit_audit(&entry);
             if let Err(e) = ctx.repo.append_audit_event(entry) {
                 tracing::warn!(error = %e, "append_audit_event failed; tracing is the fallback");
@@ -608,19 +613,30 @@ fn submit_record_write(
     record: serde_json::Map<String, serde_json::Value>,
     message: String,
 ) -> Response {
+    let request_id = RequestId::new();
+    // The audit entry is committed IN the PR (audit_appends -> audit_log
+    // .jsonl, append-only) AND emitted locally/tracing — non-parts
+    // mutations are audited on the same spine as parts (ADR-022).
+    let entry = record_write_audit_entry(
+        request_id,
+        op.clone(),
+        collection.to_string(),
+        id.to_string(),
+        json!({}),
+    );
     let diff = Diff {
         record_writes: vec![RecordWrite {
             collection: collection.to_string(),
             id: id.to_string(),
             record,
         }],
+        audit_appends: vec![entry.clone()],
         ..Diff::default()
     };
-    let request_id = RequestId::new();
     let proposal = Proposal {
         diff: diff.clone(),
         batch_label: None,
-        author: op.clone(),
+        author: op,
         signatures: Vec::new(),
         change_classification: diff.classify(),
         message,
@@ -628,17 +644,6 @@ fn submit_record_write(
     };
     match ctx.sink.submit(proposal) {
         Ok(proposal_ref) => {
-            // Audit the generic write on the same spine as parts (ADR-022):
-            // a RecordWrite entry keyed on {collection, id}. Without this,
-            // non-parts mutations were silently un-audited.
-            let extra = json!({ "proposal": proposal_ref.url });
-            let entry = record_write_audit_entry(
-                request_id,
-                op,
-                collection.to_string(),
-                id.to_string(),
-                extra,
-            );
             emit_audit(&entry);
             if let Err(e) = ctx.repo.append_audit_event(entry) {
                 tracing::warn!(error = %e, "append_audit_event failed; tracing is the fallback");

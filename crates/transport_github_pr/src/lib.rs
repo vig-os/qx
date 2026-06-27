@@ -1146,6 +1146,40 @@ impl<H: GithubPrHttp> GithubPrProposalSink<H> {
             self.http.put_contents(owner, repo, &path, &put_body)?;
         }
 
+        // 3c. Audit spine (ADR-022/037): append each audit entry as a
+        //     trailing JSONL line to audit_log.jsonl — the trail is
+        //     committed IN the PR, append-only and gate-checked.
+        if !proposal.diff.audit_appends.is_empty() {
+            let path = "audit_log.jsonl";
+            let existing = self.http.get_contents(owner, repo, path, base)?;
+            let mut new_content = match &existing {
+                Some(e) => decode_b64_content(&e.content)
+                    .map_err(|e| HttpError::Transport(e.to_string()))?,
+                None => String::new(),
+            };
+            if !new_content.is_empty() && !new_content.ends_with('\n') {
+                new_content.push('\n');
+            }
+            for entry in &proposal.diff.audit_appends {
+                let line = serde_json::to_string(entry)
+                    .map_err(|e| HttpError::Transport(format!("serialize audit entry: {e}")))?;
+                new_content.push_str(&line);
+                new_content.push('\n');
+            }
+            let put_body = PutContentsRequest {
+                message: format!(
+                    "{} (audit_log.jsonl)",
+                    proposal.message.lines().next().unwrap_or("proposal")
+                ),
+                content: b64_encode(&new_content),
+                branch: branch.to_owned(),
+                sha: existing.as_ref().map(|e| e.sha.clone()),
+                committer: self.committer(),
+                author: self.author_for(&proposal.author),
+            };
+            self.http.put_contents(owner, repo, path, &put_body)?;
+        }
+
         // 4. Open the PR.
         let pr_body = CreatePullRequest {
             title: build_pr_title(proposal),
