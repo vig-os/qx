@@ -154,8 +154,9 @@ id = "port-conformance-wired"
 adr = "ADR-027"
 statement = "Every adapter wires the generic port-conformance suite from crates/port_tests"
 kind = "test"
-status = "pending"
-tracking = "crates/port_tests/src/lib.rs still has TODO bodies; populate per adapter"
+status = "satisfied"
+satisfied_by = ["crates/port_tests/src/lib.rs", "crates/storage_jsonl_git/tests/conformance.rs", "crates/storage_csv_git/tests/conformance.rs", "crates/identity_git_config/tests/conformance.rs"]
+tracking = "SATISFIED (ADR-027): the generic port-conformance functions in crates/port_tests are now REAL (not hollow placeholders) and EVERY adapter wires them — repository_conformance asserts sort-stability (ADR-035 §4) + Part roundtrip + read determinism + unknown->None + read-path-answers (storage_csv_git 15 tests, storage_jsonl_git 23); identity_provider_conformance asserts resolved-operator well-formedness (identity_git_config + identity_github_oauth); signing_provider_conformance asserts algorithm() stability (signing_git_commit); proposal_sink_conformance (transport_github_pr). Proven by the per-adapter tests/conformance.rs binaries all green."
 
 [[obligation]]
 id = "soup-inventory-complete"
