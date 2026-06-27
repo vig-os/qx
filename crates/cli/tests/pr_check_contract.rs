@@ -486,3 +486,44 @@ fn committed_csv_export_fails_the_gate() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+#[test]
+fn qx_check_dispatches_validation_on_kind() {
+    // parts has no open properties and no `resistance` field — that field
+    // is contributed only by the `resistor` kind (ADR-035 §5 kind tree).
+    let contract = r#"{"format_version":1,"collections":[
+        {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+         "lifecycle":{"statuses":["unbound","bound","void"],"initial":"unbound",
+           "transitions":{"unbound":["bound","void"],"bound":["void"],"void":[]}},
+         "fields":[{"key":"type","type":"string","label":"Type"}]}]}"#;
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    fs::create_dir_all(dir.join("collections")).unwrap();
+    fs::create_dir_all(dir.join(".qx")).unwrap();
+    fs::write(dir.join(".qx/contract.json"), contract).unwrap();
+    fs::write(
+        dir.join("collections/parts.jsonl"),
+        "{\"id\":\"PART2223AAAAAA\",\"status\":\"unbound\",\"kind\":\"resistor\",\"resistance\":\"10k\",\"type\":\"r\"}\n",
+    )
+    .unwrap();
+
+    // Without the kind tree, `resistance` is an unknown field — fails.
+    let out = pr_check(dir, None);
+    assert!(
+        !out.status.success(),
+        "an unknown kind field must fail without the types collection"
+    );
+
+    // Declare the kind in the types collection — the field is accepted.
+    fs::write(
+        dir.join("collections/types.jsonl"),
+        "{\"id\":\"resistor\",\"fields\":[{\"key\":\"resistance\",\"type\":\"string\",\"label\":\"R\"}]}\n",
+    )
+    .unwrap();
+    let out2 = pr_check(dir, None);
+    assert!(
+        out2.status.success(),
+        "the kind's field is accepted once the kind tree is declared: {}",
+        String::from_utf8_lossy(&out2.stderr)
+    );
+}
