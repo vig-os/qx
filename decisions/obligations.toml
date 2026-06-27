@@ -649,8 +649,9 @@ id = "contract-ssot-validation"
 adr = "ADR-039"
 statement = "One Rust validation engine (pure crates/contract + crates/validators, wasm-clean: no fs/git2) is the SSOT; the FE calls it via wasm; parity is enforced by a (contract,record,verdict) conformance corpus run by three runners (native, wasm, FE Vitest on the shipped artifact)"
 kind = "crate"
-status = "pending"
-tracking = "ADR-039 §3-4; one pure engine (crates/contract + crates/validators, wasm-clean) is the SSOT. Conformance corpus (conformance/, 27 cases) run by the NATIVE runner (crates/port_tests/tests/conformance.rs) + the wasm-clean build check + the wasm arm façade validate_record_json with native-logic tests (M-A.1 S3, crates/wasm). REMAINING: the FE Vitest runner executing the corpus through the shipped wasm (S4) to close native⇄wasm⇄FE parity"
+status = "satisfied"
+satisfied_by = ["web/src/wasm/conformance.test.ts", "crates/wasm/src/lib.rs", "crates/validators/src/record.rs"]
+tracking = "SATISFIED (ADR-039 §3-4). ONE Rust validation engine (pure crates/contract + crates/validators, wasm-clean — no fs/git2) is the SSOT; the FE calls it via wasm (validate_record_json -> web loader validateRecordSync). PARITY is enforced by the shared (contract, record, verdict) conformance corpus (conformance/contract.json + cases.json) run by ALL THREE runners: (a) NATIVE — crates/port_tests/tests/conformance.rs; (b) WASM — the wasm-clean build check + the wasm-arm native-logic tests; (c) FE VITEST on the SHIPPED ARTIFACT — NEW: web/src/wasm/conformance.test.ts drives every corpus case through the built qx_wasm bundle (validateRecordSync) and asserts the SAME verdict the native gate produces (the identical expect-matching: each expectation maps to exactly one issue, nothing left over). Closes native<->wasm<->FE parity. Proven: the FE runner passes 33/33 (32 cases + a has-cases guard) through the shipped wasm; full web vitest suite green (282 passed). (Also fixed a batch-deprecated regression: web/test-fixtures/registry-header.csv still listed the retired batch column.)"
 
 [[obligation]]
 id = "effective-dated-versioning"
