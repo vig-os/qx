@@ -11,7 +11,7 @@
 //! `[ops]` key or a role-capability key must be a contract-declared
 //! collection (`capability-grain`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
 
@@ -83,6 +83,38 @@ impl Manifest {
             }
         }
         refs
+    }
+
+    /// Generate the `.github/CODEOWNERS` body from the advisory role →
+    /// capability map (ADR-034 §4: the role map is "the source the
+    /// CODEOWNERS seed is generated from"). Each collection any role holds
+    /// a capability over becomes a CODEOWNERS rule mapping its data path to
+    /// the owning role team(s) — GitHub then enforces the human review. The
+    /// tool *generates + advises*; it does not gate. The owner token is the
+    /// role as a team handle (`@<role>`); the deployment binds the team's
+    /// membership (ADR-036 personas / the org).
+    pub fn codeowners_body(&self) -> String {
+        let mut by_collection: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (role, caps) in &self.roles {
+            for key in caps.keys() {
+                if let Some(coll) = key.split(':').next() {
+                    if !coll.is_empty() {
+                        by_collection
+                            .entry(coll.to_string())
+                            .or_default()
+                            .insert(format!("@{role}"));
+                    }
+                }
+            }
+        }
+        let mut out = String::new();
+        out.push_str("# Generated from .qx/manifest.toml role→capability map (ADR-034 §4).\n");
+        out.push_str("# The tool advises; GitHub branch protection + CODEOWNERS enforce.\n");
+        for (coll, owners) in &by_collection {
+            let owners: Vec<&str> = owners.iter().map(String::as_str).collect();
+            out.push_str(&format!("/collections/{coll}.jsonl {}\n", owners.join(" ")));
+        }
+        out
     }
 
     /// Whether a feature (op-family, e.g. `print`) is enabled for a
@@ -161,6 +193,19 @@ mod tests {
         );
         assert!(issues[0].contains("companies"));
         assert!(issues[0].contains("not declared"));
+    }
+
+    #[test]
+    fn codeowners_body_maps_collections_to_role_teams() {
+        // ADR-034 §4: the role→capability map is the CODEOWNERS seed source.
+        let body = Manifest::parse(SAMPLE).unwrap().codeowners_body();
+        // SAMPLE gives quality-lead a capability on `companies`.
+        assert!(
+            body.contains("/collections/companies.jsonl @quality-lead"),
+            "expected a companies rule owned by @quality-lead:\n{body}"
+        );
+        // The tool advises; it does not gate (documented in the header).
+        assert!(body.contains("advises") && body.contains("enforce"));
     }
 
     #[test]

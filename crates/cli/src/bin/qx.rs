@@ -292,6 +292,14 @@ enum Cmd {
         #[arg(long)]
         path: Option<PathBuf>,
     },
+    /// Generate `.github/CODEOWNERS` from the manifest role→capability map
+    /// (ADR-034 §4 host-enforced authz). The tool advises; GitHub branch
+    /// protection + CODEOWNERS enforce — the tool never gates writes.
+    Codeowners {
+        /// Path to the data-repo working tree (reads `.qx/manifest.toml`).
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+    },
     /// Append a stream checkpoint (ADR-037 §1) pinning the current
     /// `audit_log.jsonl` to `audit_checkpoints.jsonl`, restoring standalone
     /// stream verifiability without a base diff.
@@ -525,6 +533,7 @@ fn main() -> ExitCode {
         #[cfg(feature = "serve")]
         Cmd::Serve { addr, static_dir } => serve_cmd(addr, static_dir),
         Cmd::Registries { path } => registries_cmd(path),
+        Cmd::Codeowners { path } => codeowners_cmd(&path),
         Cmd::Checkpoint { path } => checkpoint_cmd(&path),
         Cmd::Verify { path, anchors } => verify_cmd(&path, anchors),
         Cmd::Preflight { path, base } => preflight_cmd(&path, base.as_deref()),
@@ -2217,6 +2226,31 @@ fn checkpoint_cmd(path: &Path) -> ExitCode {
 }
 
 /// `qx registries` — list the operator-workspace registries (ADR-033 §5).
+/// `qx codeowners` — generate `.github/CODEOWNERS` from the manifest's
+/// role→capability map (ADR-034 §4). Prints the body to stdout; the caller
+/// writes it to `.github/CODEOWNERS`, which GitHub enforces. The tool
+/// advises + generates; it does not gate writes (that is host-enforced).
+fn codeowners_cmd(path: &Path) -> ExitCode {
+    let manifest_path = path.join(".qx/manifest.toml");
+    let text = match std::fs::read_to_string(&manifest_path) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("codeowners: read {}: {e}", manifest_path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    match qx_cli::manifest::Manifest::parse(&text) {
+        Ok(m) => {
+            print!("{}", m.codeowners_body());
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("codeowners: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 fn registries_cmd(path: Option<PathBuf>) -> ExitCode {
     let ws_path = match path.or_else(qx_cli::workspace::Workspace::default_path) {
         Some(p) => p,

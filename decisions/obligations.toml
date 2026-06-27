@@ -335,8 +335,9 @@ id = "host-enforced-authz"
 adr = "ADR-034"
 statement = "Write/review authz is host-enforced (branch protection + CODEOWNERS); tool classifies + advises, does not gate"
 kind = "ci"
-status = "pending"
-tracking = "bootstrap --protect + --approvers apply protection/CODEOWNERS; manifest-driven CODEOWNERS generation pending (manifest.toml not yet built)"
+status = "satisfied"
+satisfied_by = ["crates/cli/src/manifest.rs", "crates/cli/src/bin/qx.rs", "crates/validators/src/lib.rs"]
+tracking = "SATISFIED (ADR-034 §2). WRITE/REVIEW AUTHZ IS HOST-ENFORCED, THE TOOL ADVISES + DOES NOT GATE: the tool's write/review authz decision is AuthDecision::RequiresElevation{approver_role} (validators decide_one for destructive/bulk ops), and advise_policy (crates/cli/bin/qx.rs) routes Allow/Warn/RequiresElevation to NOTICES only — never failures — so the tool never gates a write on WHO may approve; it classifies + advises. THE TOOL GENERATES THE CODEOWNERS THE HOST ENFORCES: Manifest::codeowners_body (crates/cli/manifest.rs) generates `.github/CODEOWNERS` from the advisory role->capability map (ADR-034 §4 — the CODEOWNERS seed source), mapping each collection's data path to its owning role team(s); surfaced via the new `qx codeowners` command. GitHub then enforces the human review (CODEOWNERS) + PRs-required (branch protection — the host's repo setting; the obligation's posture is that enforcement is host-side, ADR-034 §2). (The only advise_policy->failures path is a forbidden HeaderChange = a SCHEMA-change policy, orthogonal to write/review authz.) Proven by codeowners_body_maps_collections_to_role_teams + the advise_policy advisory behavior; cli/validators suites + wasm32 green, clippy clean."
 
 [[obligation]]
 id = "registry-manifest"
