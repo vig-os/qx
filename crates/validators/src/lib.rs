@@ -26,7 +26,11 @@
 /// Schema-driven record validation (ADR-039) — the contract-generic
 /// validator that supersedes the `Part`-specific checks below as the FE
 /// and `qx check` migrate onto the canonical form.
+pub mod personas;
 pub mod record;
+pub use personas::{
+    approver_resolution_issues, audit_operator_fk_issues, codeowners_principal_issues, PersonaIndex,
+};
 pub use record::{validate_record, RecordContext, RecordIssue, Severity};
 
 use std::fmt;

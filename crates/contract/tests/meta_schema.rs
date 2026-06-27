@@ -21,7 +21,11 @@ fn load(rel: &str) -> serde_json::Value {
 
 /// Every canonical contract shipped in the repo: the example fixture and
 /// the `qx init` preset. The meta-schema gate must hold for all of them.
-const SHIPPED_CONTRACTS: &[&str] = &["contract.example.json", "presets/company.contract.json"];
+const SHIPPED_CONTRACTS: &[&str] = &[
+    "contract.example.json",
+    "presets/company.contract.json",
+    "presets/personas.contract.json",
+];
 
 #[test]
 fn shipped_contracts_validate_against_meta_schema() {

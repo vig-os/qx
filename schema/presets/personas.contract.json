@@ -1,0 +1,38 @@
+{
+  "format_version": 1,
+  "collections": [
+    {
+      "name": "parts",
+      "id": { "scheme": "nano14", "default": true, "mintable": true, "prefix_length": 8 },
+      "lifecycle": {
+        "statuses": ["unbound", "bound", "void"],
+        "transitions": { "unbound": ["bound", "void"], "bound": ["void"], "void": [] },
+        "initial": "unbound"
+      },
+      "open_properties": true,
+      "render": { "label_fields": ["id", "type"] },
+      "fields": [
+        { "key": "type", "type": "string", "label": "Type", "editable": true,
+          "required_to_enter": "bound", "maxLength": 100,
+          "render": { "widget": "text", "order": 1 } }
+      ]
+    },
+    {
+      "name": "personas",
+      "id": { "scheme": "persona", "default": false, "mintable": false },
+      "lifecycle": {
+        "statuses": ["active", "suspended", "revoked"],
+        "transitions": { "active": ["suspended", "revoked"], "suspended": ["active", "revoked"], "revoked": [] },
+        "initial": "active"
+      },
+      "open_properties": true,
+      "render": { "label_fields": ["legal_name", "github_login"] },
+      "fields": [
+        { "key": "legal_name", "type": "string", "label": "Legal name", "editable": true,
+          "required": true, "maxLength": 200, "render": { "widget": "text", "order": 1 } },
+        { "key": "github_login", "type": "string", "label": "GitHub login", "editable": true,
+          "maxLength": 100, "render": { "widget": "text", "order": 2 } }
+      ]
+    }
+  ]
+}
