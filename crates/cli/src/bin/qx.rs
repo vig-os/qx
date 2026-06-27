@@ -1226,6 +1226,8 @@ fn check_contract(
     };
 
     // 4. Validate the in-scope records against their collection descriptor.
+    // The audit spine indexed once for the lifecycle-timestamps cross-check.
+    let audit_ts = audit_timestamp_index(path);
     let mut validated = 0usize;
     for coll in &contract.collections {
         let Some(recs) = head_records.get(&coll.name) else {
@@ -1253,6 +1255,11 @@ fn check_contract(
             // a stamp implausibly far in the future is clock skew or
             // tampering — the CI plausibility backstop.
             for issue in timestamp_skew_issues(rec, time::OffsetDateTime::now_utc()) {
+                failures.push(format!("{}[{id}]: {issue}", coll.name));
+            }
+            // Lifecycle-timestamps cross-check: each stamp must be a cache
+            // of an audit-spine entry's timestamp for this id (ADR-035 §1b).
+            for issue in stamp_provenance_issues(rec, &audit_ts) {
                 failures.push(format!("{}[{id}]: {issue}", coll.name));
             }
             validated += 1;
@@ -1343,6 +1350,80 @@ fn check_attachment_blobs(
         }
     }
     errs
+}
+
+/// Index the audit spine `audit_log.jsonl` as `{id -> set of entry
+/// timestamps (unix nanos)}`. Used by the lifecycle-timestamps cross-
+/// check. Unparseable lines are skipped (the append-only gate guards
+/// shape separately).
+fn audit_timestamp_index(
+    path: &Path,
+) -> std::collections::BTreeMap<String, std::collections::BTreeSet<i128>> {
+    use std::collections::{BTreeMap, BTreeSet};
+    let mut idx: BTreeMap<String, BTreeSet<i128>> = BTreeMap::new();
+    let text = std::fs::read_to_string(path.join("audit_log.jsonl")).unwrap_or_default();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(entry) = serde_json::from_str::<qx_domain::AuditEntry>(line) else {
+            continue;
+        };
+        let id = match &entry.target {
+            qx_domain::TargetRef::Record { id, .. } => Some(id.clone()),
+            qx_domain::TargetRef::Part { id } => Some(id.as_str().to_string()),
+            _ => None,
+        };
+        if let Some(id) = id {
+            idx.entry(id)
+                .or_default()
+                .insert(entry.timestamp.unix_timestamp_nanos());
+        }
+    }
+    idx
+}
+
+/// Lifecycle-timestamps cross-check (ADR-035 §1b): a record's stamps
+/// (`created_at`, each `transitioned_at[status]`) are validator-checked
+/// CACHES of the audit spine — each must equal an audit entry's timestamp
+/// for that id. A stamp with no backing spine entry is fabricated. An id
+/// absent from the spine is skipped (pre-spine / legacy data, like the FK
+/// universe-absent case). Returns one message per unbacked stamp.
+fn stamp_provenance_issues(
+    rec: &Map<String, Value>,
+    audit_ts: &std::collections::BTreeMap<String, std::collections::BTreeSet<i128>>,
+) -> Vec<String> {
+    let Some(id) = rec.get("id").and_then(Value::as_str) else {
+        return Vec::new();
+    };
+    let Some(ts_set) = audit_ts.get(id) else {
+        return Vec::new();
+    };
+    let fmt = &time::format_description::well_known::Rfc3339;
+    let mut stamps: Vec<(String, &str)> = Vec::new();
+    if let Some(s) = rec.get("created_at").and_then(Value::as_str) {
+        stamps.push(("created_at".to_string(), s));
+    }
+    if let Some(ta) = rec.get("transitioned_at").and_then(Value::as_object) {
+        for (status, v) in ta {
+            if let Some(s) = v.as_str() {
+                stamps.push((format!("transitioned_at.{status}"), s));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for (label, s) in stamps {
+        if let Ok(t) = time::OffsetDateTime::parse(s, fmt) {
+            if !ts_set.contains(&t.unix_timestamp_nanos()) {
+                out.push(format!(
+                    "{label} `{s}` has no matching audit-spine entry for {id} \
+                     (a lifecycle stamp must be a cache of the audit spine)"
+                ));
+            }
+        }
+    }
+    out
 }
 
 /// The timestamps a record carries (`created_at`, each
@@ -2044,6 +2125,56 @@ mod tests {
         )
         .iter()
         .any(|m| m.contains("transitioned_at.bound")));
+    }
+
+    #[test]
+    fn stamp_provenance_cross_check_matches_the_audit_spine() {
+        let fmt = &time::format_description::well_known::Rfc3339;
+        let t = time::OffsetDateTime::parse("2026-06-27T12:00:00Z", fmt).unwrap();
+        let op = qx_domain::Operator {
+            id: qx_domain::OperatorId("test".into()),
+            display_name: "T".into(),
+            source: qx_domain::IdentitySource::GitConfig,
+            verified_at: None,
+            claims: std::collections::BTreeMap::new(),
+            pubkey: None,
+        };
+        // A real audit entry (ts = t) serialized to audit_log.jsonl, then
+        // indexed — verifies the timestamp round-trips through serde.
+        let entry = qx_observability::record_write_audit_entry(
+            qx_domain::RequestId::new(),
+            op,
+            "companies".into(),
+            "CMPY2223AAAAAA".into(),
+            serde_json::json!({}),
+            t,
+        );
+        let line = serde_json::to_string(&entry).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("audit_log.jsonl"), format!("{line}\n")).unwrap();
+        let idx = audit_timestamp_index(tmp.path());
+
+        // created_at equal to the spine entry's ts passes (exact match).
+        let ok: Map<String, Value> =
+            serde_json::from_str(r#"{"id":"CMPY2223AAAAAA","created_at":"2026-06-27T12:00:00Z"}"#)
+                .unwrap();
+        assert!(
+            stamp_provenance_issues(&ok, &idx).is_empty(),
+            "a stamp backed by the spine passes: {:?}",
+            stamp_provenance_issues(&ok, &idx)
+        );
+        // A non-matching created_at is flagged — fabricated stamp.
+        let bad: Map<String, Value> =
+            serde_json::from_str(r#"{"id":"CMPY2223AAAAAA","created_at":"2026-06-27T13:00:00Z"}"#)
+                .unwrap();
+        assert!(stamp_provenance_issues(&bad, &idx)
+            .iter()
+            .any(|m| m.contains("no matching audit-spine")));
+        // An id absent from the spine is skipped (cannot verify).
+        let absent: Map<String, Value> =
+            serde_json::from_str(r#"{"id":"ZZZZZZZZZZZZZZ","created_at":"2030-01-01T00:00:00Z"}"#)
+                .unwrap();
+        assert!(stamp_provenance_issues(&absent, &idx).is_empty());
     }
 
     #[test]

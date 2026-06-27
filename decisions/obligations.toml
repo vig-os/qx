@@ -440,8 +440,9 @@ id = "lifecycle-timestamps"
 adr = "ADR-035"
 statement = "created_at replaces minted_at (micro-core); transitioned_at[status] replaces bound_at — engine-materialized, validator-checked caches of the audit spine (the materialization rule)"
 kind = "test"
-status = "pending"
-tracking = "ADR-035 §1b; the micro-core stamps are now ENGINE-MATERIALIZED (M-B): created_at (replaces minted_at) stamped on generic_create; transitioned_at[status] (replaces bound_at) stamped on generic_transition (crates/app/engine.rs) — proven by generic_create_sets_the_lifecycle_initial_status + generic_edit_and_transition_via_record_writes. REMAINING: the stamp==AuditEntry.ts cross-check validator (rides the audit-spine refactor)"
+status = "satisfied"
+satisfied_by = ["crates/app/src/engine.rs", "crates/cli/src/bin/qx.rs", "crates/transport_github_pr/src/lib.rs"]
+tracking = "SATISFIED (ADR-035 §1b, M-B). All four statement terms: created_at replaces minted_at + transitioned_at[status] replaces bound_at (the Entity micro-core; part_to_entity projects the legacy Part); ENGINE-MATERIALIZED (generic_create stamps created_at, generic_transition stamps transitioned_at[to], crates/app/engine.rs); and VALIDATOR-CHECKED CACHES OF THE AUDIT SPINE — qx check cross-checks every record stamp against the audit_log.jsonl entry timestamps for that id (stamp_provenance_issues + audit_timestamp_index, crates/cli/bin/qx.rs); a stamp with no backing spine entry is fabricated. The chain is exact because the engine threads ONE timestamp into both the record stamp and the RecordWrite audit entry, and that entry is committed IN the PR via Diff.audit_appends -> audit_log.jsonl (the github sink). Proven by stamp_provenance_cross_check_matches_the_audit_spine (round-trip verified lossless) + generic_write_emits_a_record_write_audit_entry + the create/transition materialization tests."
 
 [[obligation]]
 id = "unified-change-vocabulary"

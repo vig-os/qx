@@ -517,13 +517,17 @@ fn generic_create(
         Ok(p) => p.as_str().to_string(),
         Err(e) => return Response::error(ErrorKind::Backend, e),
     };
+    // One stamp for both the record's created_at AND the audit entry's
+    // timestamp, so the lifecycle-timestamps cross-check (stamp == the
+    // audit-spine ts) holds exactly (ADR-035 §1b).
+    let now = OffsetDateTime::now_utc();
     let mut record = serde_json::Map::new();
     record.insert("id".to_string(), serde_json::Value::String(id.clone()));
     // created_at is the engine-materialized creation stamp (ADR-035 §1b
     // micro-core: created_at replaces the legacy minted_at).
     record.insert(
         "created_at".to_string(),
-        serde_json::Value::String(rfc3339(&OffsetDateTime::now_utc())),
+        serde_json::Value::String(rfc3339(&now)),
     );
     // A lifecycle collection's new record starts at the declared initial
     // status (ADR-035 — e.g. a JSONL-native part mints at `unbound`).
@@ -547,6 +551,7 @@ fn generic_create(
         collection.to_string(),
         id.clone(),
         json!({}),
+        now,
     );
     let diff = Diff {
         record_writes: vec![RecordWrite {
@@ -612,17 +617,21 @@ fn submit_record_write(
     id: &str,
     record: serde_json::Map<String, serde_json::Value>,
     message: String,
+    stamp: OffsetDateTime,
 ) -> Response {
     let request_id = RequestId::new();
     // The audit entry is committed IN the PR (audit_appends -> audit_log
     // .jsonl, append-only) AND emitted locally/tracing — non-parts
-    // mutations are audited on the same spine as parts (ADR-022).
+    // mutations are audited on the same spine as parts (ADR-022). The
+    // `stamp` matches the record's created_at / transitioned_at so the
+    // lifecycle-timestamps cross-check holds exactly.
     let entry = record_write_audit_entry(
         request_id,
         op.clone(),
         collection.to_string(),
         id.to_string(),
         json!({}),
+        stamp,
     );
     let diff = Diff {
         record_writes: vec![RecordWrite {
@@ -683,6 +692,7 @@ fn generic_edit(
     for (k, v) in fields {
         record.insert(k.clone(), serde_json::Value::String(v.clone()));
     }
+    // An edit changes no lifecycle stamp; the audit entry is stamped now.
     submit_record_write(
         ctx,
         op,
@@ -690,6 +700,7 @@ fn generic_edit(
         id,
         record,
         format!("edit {collection}: {id}"),
+        OffsetDateTime::now_utc(),
     )
 }
 
@@ -745,8 +756,10 @@ fn generic_transition(
         serde_json::Value::String(to.to_string()),
     );
     // Engine-materialized transition stamp (ADR-035 §1b: transitioned_at
-    // [status] replaces the legacy bound_at).
-    let now = serde_json::Value::String(rfc3339(&OffsetDateTime::now_utc()));
+    // [status] replaces the legacy bound_at). One `now` for both the
+    // stamp and the audit entry's timestamp (the cross-check).
+    let now_dt = OffsetDateTime::now_utc();
+    let now = serde_json::Value::String(rfc3339(&now_dt));
     match record
         .entry("transitioned_at".to_string())
         .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()))
@@ -766,6 +779,7 @@ fn generic_transition(
         id,
         record,
         format!("transition {collection}: {id} -> {to}"),
+        now_dt,
     )
 }
 
