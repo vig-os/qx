@@ -66,9 +66,8 @@ use time::OffsetDateTime;
 use qx_codec::{encode_pinned, render_label, Ec, Family, Layout, TextFormat};
 use qx_config::{Config, IdentityAdapterChoice, StorageAdapterChoice};
 use qx_domain::{
-    Action, AuditEntry, Diff, DiffEdit, DiffRow, Operator, OperatorRef, Part, PartId, PartStatus,
-    PrintEvent, Proposal, ProposalRef, ProposalStatus, RequestId, Signature, TargetRef,
-    PART_ID_ALPHABET, PART_ID_LEN,
+    Action, AuditEntry, Diff, DiffEdit, DiffRow, Operator, Part, PartId, PartStatus, Proposal,
+    ProposalRef, ProposalStatus, RequestId, Signature, TargetRef, PART_ID_ALPHABET, PART_ID_LEN,
 };
 use qx_identity::IdentityProvider;
 use qx_identity_git_config::GitConfigIdentity;
@@ -1019,19 +1018,8 @@ impl Repository for ArcRepository {
         self.0.list_audit_events(filter)
     }
 
-    fn list_print_events(
-        &self,
-        filter: &qx_storage::PrintEventFilter,
-    ) -> Result<Vec<PrintEvent>, qx_storage::RepoError> {
-        self.0.list_print_events(filter)
-    }
-
     fn append_audit_event(&self, ev: AuditEntry) -> Result<(), qx_storage::RepoError> {
         self.0.append_audit_event(ev)
-    }
-
-    fn append_print_event(&self, ev: PrintEvent) -> Result<(), qx_storage::RepoError> {
-        self.0.append_print_event(ev)
     }
 
     fn snapshot_hash(&self) -> Result<qx_domain::Hash, qx_storage::RepoError> {
@@ -1355,19 +1343,32 @@ pub fn run_label(args: &LabelArgs, wiring: &Wiring) -> Result<LabelOutcome, CliE
         };
 
         let now = OffsetDateTime::now_utc();
+        // Print-fold (ADR-022): the label print is a typed audit event on
+        // the one spine, not a print_log row.
+        let op = qx_domain::Operator {
+            id: qx_domain::OperatorId(operator_name.clone()),
+            display_name: operator_name.clone(),
+            source: qx_domain::IdentitySource::GitConfig,
+            verified_at: None,
+            claims: std::collections::BTreeMap::new(),
+            pubkey: None,
+        };
+        let request_id = qx_domain::RequestId::new();
         for part in &selected {
-            let ev = PrintEvent {
-                id: part.id.clone(),
-                printed_at: now,
-                printed_by: OperatorRef(qx_domain::OperatorId(operator_name.clone())),
-                layout: layout_name.into(),
-                size_mm,
-                extra: extra.clone(),
-                copies: args.copies,
-                output_mode: args.output_mode.clone(),
-                batch_label: batch_label.clone(),
-            };
-            wiring.repo.append_print_event(ev)?;
+            let print_extra = json!({
+                "layout": layout_name, "size_mm": size_mm,
+                "output_mode": args.output_mode, "batch_label": batch_label,
+                "extra": extra,
+            });
+            let entry = qx_observability::print_audit_entry(
+                request_id,
+                op.clone(),
+                part.id.clone(),
+                args.copies,
+                print_extra,
+                now,
+            );
+            wiring.repo.append_audit_event(entry)?;
         }
     }
 

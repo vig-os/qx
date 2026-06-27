@@ -70,12 +70,9 @@ pub trait Repository: Send + Sync {
     // Read: audit log (per ADR-022)
     fn list_audit_events(&self, filter: &AuditFilter) -> Result<Vec<AuditEntry>, RepoError>;
 
-    // Read: print events (per ADR-015)
-    fn list_print_events(&self, filter: &PrintEventFilter) -> Result<Vec<PrintEvent>, RepoError>;
-
-    // Append-only side effects.
+    // Append-only side effects. Print events fold into the audit spine
+    // (ADR-022 print-fold) — there is no separate print_log port.
     fn append_audit_event(&self, ev: AuditEntry) -> Result<(), RepoError>;
-    fn append_print_event(&self, ev: PrintEvent) -> Result<(), RepoError>;
 
     /// Reproducibility hash per ADR-024 §Reproducible builds.
     fn snapshot_hash(&self) -> Result<Hash, RepoError>;

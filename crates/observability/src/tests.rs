@@ -19,9 +19,7 @@ use qx_domain::{
     Action, AuditEntry, Hash, IdentitySource, KeyId, Operator, OperatorId, PartId, RekorProof,
     RequestId, Signature, TargetRef,
 };
-use qx_storage::{
-    AuditFilter, Part, PartFilter, PrintEvent, PrintEventFilter, RepoError, Repository,
-};
+use qx_storage::{AuditFilter, Part, PartFilter, RepoError, Repository};
 use serde_json::Value as Json;
 use time::OffsetDateTime;
 use tracing_subscriber::layer::SubscriberExt;
@@ -101,17 +99,11 @@ impl Repository for CapturingRepo {
     fn list_audit_events(&self, _filter: &AuditFilter) -> Result<Vec<AuditEntry>, RepoError> {
         Ok(self.audit.lock().unwrap().clone())
     }
-    fn list_print_events(&self, _f: &PrintEventFilter) -> Result<Vec<PrintEvent>, RepoError> {
-        Ok(vec![])
-    }
     fn append_audit_event(&self, ev: AuditEntry) -> Result<(), RepoError> {
         if std::mem::replace(&mut *self.fail_next.lock().unwrap(), false) {
             return Err(RepoError::Backend("forced fail".into()));
         }
         self.audit.lock().unwrap().push(ev);
-        Ok(())
-    }
-    fn append_print_event(&self, _ev: PrintEvent) -> Result<(), RepoError> {
         Ok(())
     }
     fn snapshot_hash(&self) -> Result<Hash, RepoError> {

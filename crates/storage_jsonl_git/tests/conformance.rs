@@ -19,10 +19,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use qx_domain::{
-    Action, ActionKind, AuditEntry, Hash, IdentitySource, KeyId, Operator, OperatorId, OperatorRef,
-    Part, PartFilter, PartId, PartStatus, RekorProof, RequestId, Signature, TargetRef, Timestamp,
+    Action, ActionKind, AuditEntry, Hash, IdentitySource, KeyId, Operator, OperatorId, Part,
+    PartFilter, PartId, PartStatus, RekorProof, RequestId, Signature, TargetRef, Timestamp,
 };
-use qx_storage::{AuditFilter, PrintEvent, PrintEventFilter, Repository};
+use qx_storage::{AuditFilter, Repository};
 use qx_storage_jsonl_git::{JsonlGitConfig, JsonlGitRepository};
 use serde_json::json;
 use tempfile::TempDir;
@@ -107,25 +107,6 @@ fn fixture_parts() -> Vec<Part> {
         ),
     ]
 }
-
-fn print_event(id: &str) -> PrintEvent {
-    PrintEvent {
-        id: pid(id),
-        printed_at: datetime!(2026-05-08 13:03:10 UTC),
-        printed_by: OperatorRef(OperatorId("gerchowl".into())),
-        layout: "horz".into(),
-        size_mm: 8.0,
-        extra: json!({}),
-        copies: 1,
-        output_mode: "dk-1201-3x5-micro".into(),
-        batch_label: Some("B-2026-05-08-sheet-1".into()),
-    }
-}
-
-fn fixture_print_events() -> Vec<PrintEvent> {
-    vec![print_event("26N4T5BU5FCGAB"), print_event("2Y5PZVD7PBK9CD")]
-}
-
 fn write_lines<T: serde::Serialize>(path: &Path, items: &[T]) {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).unwrap();
@@ -138,8 +119,8 @@ fn write_lines<T: serde::Serialize>(path: &Path, items: &[T]) {
     fs::write(path, buf).unwrap();
 }
 
-/// Create a tempdir seeded with `collections/parts.jsonl` +
-/// `print_log.jsonl`, and open a `JsonlGitRepository` with
+/// Create a tempdir seeded with `collections/parts.jsonl` and open a
+/// `JsonlGitRepository` with
 /// `commit_on_write = false` (tests must never commit or push).
 fn fresh_repo() -> (TempDir, JsonlGitRepository) {
     let tmp = TempDir::new().expect("tempdir");
@@ -147,7 +128,6 @@ fn fresh_repo() -> (TempDir, JsonlGitRepository) {
         &tmp.path().join("collections").join("parts.jsonl"),
         &fixture_parts(),
     );
-    write_lines(&tmp.path().join("print_log.jsonl"), &fixture_print_events());
     let repo = open_at(tmp.path());
     (tmp, repo)
 }
@@ -240,18 +220,6 @@ fn list_parts_filters_by_batch_and_vendor() {
     assert_eq!(parts.len(), 1);
     assert_eq!(parts[0].id.as_str(), "4M4DWPCHD9PTGH");
 }
-
-#[test]
-fn list_print_events_reads_seeded_file() {
-    let (_tmp, repo) = fresh_repo();
-    let events = repo
-        .list_print_events(&PrintEventFilter::default())
-        .unwrap();
-    assert_eq!(events.len(), 2);
-    assert_eq!(events[0].layout, "horz");
-    assert_eq!(events[0].copies, 1);
-}
-
 // -------------------------------------------------------------------
 // Parts write path — write_parts roundtrip + sorted-on-write
 // (ADR-035 §4 sort-stability; ADR-027 §T2 forward shape on Part)
@@ -437,34 +405,6 @@ fn list_audit_events_applies_filters() {
     assert_eq!(by_kind.len(), 1);
     assert_eq!(by_kind[0].action.kind(), ActionKind::RowVoid);
 }
-
-// -------------------------------------------------------------------
-// Print-append (trait parity; folds into audit spine per ADR-035 §0)
-// -------------------------------------------------------------------
-
-#[test]
-fn append_print_event_is_append_only_and_round_trips() {
-    let (tmp, repo) = fresh_repo();
-    let before_lines = raw_lines(tmp.path(), "print_log.jsonl");
-    let mut ev = print_event("3NYKQ7D2GRX3EF");
-    ev.printed_at = datetime!(2026-05-09 09:00 UTC);
-    ev.batch_label = Some("B-2026-05-08-sheet-2".into());
-    repo.append_print_event(ev.clone()).unwrap();
-
-    // Existing lines untouched; one new line at the end.
-    let after_lines = raw_lines(tmp.path(), "print_log.jsonl");
-    assert_eq!(after_lines.len(), before_lines.len() + 1);
-    assert_eq!(&after_lines[..before_lines.len()], &before_lines[..]);
-
-    let read = repo
-        .list_print_events(&PrintEventFilter {
-            id: Some(ev.id.clone()),
-            ..Default::default()
-        })
-        .unwrap();
-    assert_eq!(read, vec![ev]);
-}
-
 // -------------------------------------------------------------------
 // Missing-file behaviour
 // -------------------------------------------------------------------
@@ -479,10 +419,6 @@ fn missing_log_files_read_as_empty() {
     let repo = open_at(tmp.path());
     assert!(repo
         .list_audit_events(&AuditFilter::default())
-        .unwrap()
-        .is_empty());
-    assert!(repo
-        .list_print_events(&PrintEventFilter::default())
         .unwrap()
         .is_empty());
 }
@@ -540,7 +476,6 @@ fn snapshot_hash_treats_missing_file_as_empty() {
         &fixture_parts(),
     );
     fs::write(tmp_empty.path().join("audit_log.jsonl"), "").unwrap();
-    fs::write(tmp_empty.path().join("print_log.jsonl"), "").unwrap();
     let repo_empty = open_at(tmp_empty.path());
 
     assert_eq!(

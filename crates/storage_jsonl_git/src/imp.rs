@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use qx_domain::{AuditEntry, Hash, Part, PartId, PartSortKey, PartStatus, RequestId};
-use qx_storage::{AuditFilter, PartFilter, PrintEvent, PrintEventFilter, RepoError, Repository};
+use qx_storage::{AuditFilter, PartFilter, RepoError, Repository};
 use sha2::{Digest, Sha256};
 
 /// Relative path of the parts collection (ADR-035 §0/§4: a registry
@@ -20,14 +20,10 @@ const PARTS_FILE: &str = "collections/parts.jsonl";
 /// Relative path of the append-only audit stream (ADR-022).
 const AUDIT_FILE: &str = "audit_log.jsonl";
 
-/// Relative path of the append-only print log. Per ADR-035 §0
-/// guardrail 3 this stream folds into the audit spine as a typed
-/// event kind later; it exists today for ADR-018 trait parity.
-const PRINT_FILE: &str = "print_log.jsonl";
-
 /// Fixed, documented file order for [`Repository::snapshot_hash`].
-/// A missing file hashes as the empty byte sequence.
-const SNAPSHOT_FILES: [&str; 3] = [PARTS_FILE, AUDIT_FILE, PRINT_FILE];
+/// A missing file hashes as the empty byte sequence. Print events fold
+/// into the audit spine (ADR-022 print-fold) — there is no print_log.
+const SNAPSHOT_FILES: [&str; 2] = [PARTS_FILE, AUDIT_FILE];
 
 // -------------------------------------------------------------------
 // Config
@@ -109,20 +105,12 @@ impl JsonlGitRepository {
         self.cfg.repo_path.join(AUDIT_FILE)
     }
 
-    fn print_log_path(&self) -> PathBuf {
-        self.cfg.repo_path.join(PRINT_FILE)
-    }
-
     fn read_parts(&self) -> Result<Vec<Part>, RepoError> {
         read_jsonl(&self.parts_path(), PARTS_FILE)
     }
 
     fn read_audit_events(&self) -> Result<Vec<AuditEntry>, RepoError> {
         read_jsonl(&self.audit_log_path(), AUDIT_FILE)
-    }
-
-    fn read_print_events(&self) -> Result<Vec<PrintEvent>, RepoError> {
-        read_jsonl(&self.print_log_path(), PRINT_FILE)
     }
 
     /// Rewrite `collections/parts.jsonl` from the given parts, sorted
@@ -290,37 +278,6 @@ impl Repository for JsonlGitRepository {
         Ok(all)
     }
 
-    fn list_print_events(&self, filter: &PrintEventFilter) -> Result<Vec<PrintEvent>, RepoError> {
-        let mut all = self.read_print_events()?;
-        if let Some(id) = &filter.id {
-            all.retain(|e| &e.id == id);
-        }
-        if let Some(by) = &filter.printed_by {
-            all.retain(|e| &e.printed_by.0 == by);
-        }
-        if let Some(since) = filter.since {
-            all.retain(|e| e.printed_at >= since);
-        }
-        if let Some(until) = filter.until {
-            all.retain(|e| e.printed_at <= until);
-        }
-        if let Some(batch) = &filter.batch {
-            all.retain(|e| e.batch_label.as_deref() == Some(batch.as_str()));
-        }
-        // Sort ascending by (printed_at, id) per ADR-015; like the
-        // audit stream, ordering is read-side — the file is
-        // append-only.
-        all.sort_by(|a, b| {
-            a.printed_at
-                .cmp(&b.printed_at)
-                .then_with(|| a.id.as_str().cmp(b.id.as_str()))
-        });
-        if let Some(lim) = filter.limit {
-            all.truncate(lim as usize);
-        }
-        Ok(all)
-    }
-
     fn append_audit_event(&self, ev: AuditEntry) -> Result<(), RepoError> {
         // Append-only: existing lines are never rewritten, the new
         // entry lands as one new line at the end (atomic rewrite via
@@ -333,19 +290,6 @@ impl Repository for JsonlGitRepository {
             self.commit_audit_append(&request_id)?;
         }
         Ok(())
-    }
-
-    /// Append one `PrintEvent` line to `print_log.jsonl`.
-    ///
-    /// Per ADR-035 §0 guardrail 3, the print log folds into the
-    /// unified audit stream as a typed event kind (`{parts, print}`)
-    /// in a later step — `PrintEvent` leaves the storage port with the
-    /// ADR-018 refinement. This method exists for trait parity until
-    /// that fold lands.
-    fn append_print_event(&self, ev: PrintEvent) -> Result<(), RepoError> {
-        let line = serde_json::to_string(&ev)
-            .map_err(|e| RepoError::Backend(format!("encode print event: {e}").into()))?;
-        append_jsonl_line(&self.print_log_path(), &line, PRINT_FILE)
     }
 
     fn snapshot_hash(&self) -> Result<Hash, RepoError> {

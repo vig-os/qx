@@ -11,10 +11,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use qx_domain::{
-    Action, AuditEntry, Hash, Operator, OperatorId, OperatorRef, Part, PartId, PartSortKey,
-    PartStatus, RequestId, Signature, TargetRef, Timestamp,
+    Action, AuditEntry, Hash, Operator, Part, PartId, PartSortKey, PartStatus, RequestId,
+    Signature, TargetRef, Timestamp,
 };
-use qx_storage::{AuditFilter, PartFilter, PrintEvent, PrintEventFilter, RepoError, Repository};
+use qx_storage::{AuditFilter, PartFilter, RepoError, Repository};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use sha2::{Digest, Sha256};
@@ -94,10 +94,6 @@ impl CsvGitRepository {
         self.cfg.repo_path.join("registry.csv")
     }
 
-    fn print_log_path(&self) -> PathBuf {
-        self.cfg.repo_path.join("print_log.csv")
-    }
-
     fn audit_log_path(&self) -> PathBuf {
         self.cfg.repo_path.join("audit_log.csv")
     }
@@ -110,22 +106,6 @@ impl CsvGitRepository {
         for rec in rdr.deserialize::<PartRow>() {
             let row = rec
                 .map_err(|e| RepoError::SchemaMismatch(format!("registry.csv row decode: {e}")))?;
-            out.push(row.into_domain()?);
-        }
-        Ok(out)
-    }
-
-    fn read_print_events(&self) -> Result<Vec<PrintEvent>, RepoError> {
-        let path = self.print_log_path();
-        if !path.exists() {
-            return Ok(Vec::new());
-        }
-        let mut rdr = csv::Reader::from_path(&path)
-            .map_err(|e| RepoError::Backend(format!("read {}: {e}", path.display()).into()))?;
-        let mut out = Vec::new();
-        for rec in rdr.deserialize::<PrintEventRow>() {
-            let row = rec
-                .map_err(|e| RepoError::SchemaMismatch(format!("print_log.csv row decode: {e}")))?;
             out.push(row.into_domain()?);
         }
         Ok(out)
@@ -290,34 +270,6 @@ impl Repository for CsvGitRepository {
         Ok(all)
     }
 
-    fn list_print_events(&self, filter: &PrintEventFilter) -> Result<Vec<PrintEvent>, RepoError> {
-        let mut all = self.read_print_events()?;
-        if let Some(id) = &filter.id {
-            all.retain(|e| &e.id == id);
-        }
-        if let Some(by) = &filter.printed_by {
-            all.retain(|e| &e.printed_by.0 == by);
-        }
-        if let Some(since) = filter.since {
-            all.retain(|e| e.printed_at >= since);
-        }
-        if let Some(until) = filter.until {
-            all.retain(|e| e.printed_at <= until);
-        }
-        if let Some(batch) = &filter.batch {
-            all.retain(|e| e.batch_label.as_deref() == Some(batch.as_str()));
-        }
-        all.sort_by(|a, b| {
-            a.printed_at
-                .cmp(&b.printed_at)
-                .then_with(|| a.id.as_str().cmp(b.id.as_str()))
-        });
-        if let Some(lim) = filter.limit {
-            all.truncate(lim as usize);
-        }
-        Ok(all)
-    }
-
     fn append_audit_event(&self, ev: AuditEntry) -> Result<(), RepoError> {
         // Read current, append, sort by (timestamp, request_id), write.
         let mut events = self.read_audit_events()?;
@@ -332,30 +284,6 @@ impl Repository for CsvGitRepository {
         if self.cfg.commit_on_write {
             self.commit_audit_append(&request_id)?;
         }
-        Ok(())
-    }
-
-    fn append_print_event(&self, ev: PrintEvent) -> Result<(), RepoError> {
-        // Read existing print events, append, sort by (printed_at,
-        // id), write back. The original on-disk `print_log.csv`
-        // header (ADR-015) is preserved by the `PrintEventRow` shape.
-        let mut events = self.read_print_events()?;
-        events.push(ev);
-        events.sort_by(|a, b| {
-            a.printed_at
-                .cmp(&b.printed_at)
-                .then_with(|| a.id.as_str().cmp(b.id.as_str()))
-        });
-        let path = self.print_log_path();
-        let mut wtr = csv::Writer::from_path(&path)
-            .map_err(|e| RepoError::Backend(format!("write {}: {e}", path.display()).into()))?;
-        for e in &events {
-            let row = PrintEventRow::from_domain(e)?;
-            wtr.serialize(&row)
-                .map_err(|e| RepoError::Backend(format!("serialize print row: {e}").into()))?;
-        }
-        wtr.flush()
-            .map_err(|e| RepoError::Backend(format!("flush print_log.csv: {e}").into()))?;
         Ok(())
     }
 
@@ -578,69 +506,6 @@ impl PartRow {
                 .as_ref()
                 .map(|h| h.0.clone())
                 .unwrap_or_default(),
-        })
-    }
-}
-
-// --- print_log.csv ---
-// header: id,printed_at,printed_by,layout,size_mm,extra,copies,output_mode,batch_label
-
-#[derive(Debug, Serialize, Deserialize)]
-struct PrintEventRow {
-    id: String,
-    printed_at: String,
-    printed_by: String,
-    layout: String,
-    size_mm: f64,
-    extra: String,
-    copies: u32,
-    output_mode: String,
-    batch_label: String,
-}
-
-impl PrintEventRow {
-    fn into_domain(self) -> Result<PrintEvent, RepoError> {
-        let id = PartId::new(self.id.clone()).map_err(|e| {
-            RepoError::SchemaMismatch(format!("invalid part id {:?}: {e}", self.id))
-        })?;
-        let printed_at = parse_ts(&self.printed_at).map_err(|e| {
-            RepoError::SchemaMismatch(format!("invalid printed_at {:?}: {e}", self.printed_at))
-        })?;
-        let extra: Json = if self.extra.is_empty() {
-            Json::Object(serde_json::Map::new())
-        } else {
-            serde_json::from_str(&self.extra)
-                .map_err(|e| RepoError::SchemaMismatch(format!("invalid extra JSON: {e}")))?
-        };
-        Ok(PrintEvent {
-            id,
-            printed_at,
-            printed_by: OperatorRef(OperatorId(self.printed_by)),
-            layout: self.layout,
-            size_mm: self.size_mm,
-            extra,
-            copies: self.copies,
-            output_mode: self.output_mode,
-            batch_label: opt(self.batch_label),
-        })
-    }
-
-    fn from_domain(e: &PrintEvent) -> Result<Self, RepoError> {
-        Ok(Self {
-            id: e.id.as_str().into(),
-            printed_at: fmt_ts(&e.printed_at)?,
-            printed_by: e.printed_by.0 .0.clone(),
-            layout: e.layout.clone(),
-            size_mm: e.size_mm,
-            extra: if matches!(&e.extra, Json::Object(o) if o.is_empty()) {
-                "{}".into()
-            } else {
-                serde_json::to_string(&e.extra)
-                    .map_err(|err| RepoError::Backend(format!("encode extra: {err}").into()))?
-            },
-            copies: e.copies,
-            output_mode: e.output_mode.clone(),
-            batch_label: e.batch_label.clone().unwrap_or_default(),
         })
     }
 }

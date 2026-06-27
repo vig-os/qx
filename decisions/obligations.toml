@@ -459,8 +459,9 @@ id = "print-fold-audit-spine"
 adr = "ADR-035"
 statement = "Print events are typed audit events (one stream); print_log retired from anatomy; PrintEvent leaves the storage port (ADR-018 refinement; per ADR-022 §Migration)"
 kind = "issue"
-status = "pending"
-tracking = "ADR-035 §0 guardrail 3 + ADR-018 refinement note; PrintEvent still in crates/storage"
+status = "satisfied"
+satisfied_by = ["crates/storage/src/lib.rs", "crates/observability/src/lib.rs", "crates/app/src/engine.rs", "crates/cli/src/lib.rs"]
+tracking = "SATISFIED (ADR-022 print-fold, ADR-018 refinement). PrintEvent LEFT THE STORAGE PORT — list_print_events + append_print_event removed from the Repository trait (crates/storage) and every adapter (csv, jsonl), the wasm + serve + test repos. Print events are now TYPED AUDIT EVENTS on the ONE stream: Action::Print{id,copies} + ActionKind::Print + print_audit_entry (crates/observability), emitted via append_audit_event from both the dispatch Print op and the qx label parity path (crates/app/engine.rs, crates/cli/lib.rs). print_log RETIRED from anatomy: PRINT_FILE/print_log.csv/jsonl writers gone, snapshot_hash drops it. Proven by the rewritten label_e2e (asserts Print audit events) + the print app-tests + the adapter conformance suites, all green; wasm32 builds."
 
 [[obligation]]
 id = "export-never-committed"

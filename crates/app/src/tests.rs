@@ -9,11 +9,11 @@ use serde_json::json;
 use time::macros::datetime;
 
 use qx_domain::{
-    AuditEntry, Hash, IdentitySource, Operator, OperatorId, Part, PartId, PartStatus, PrintEvent,
-    Proposal, ProposalRef, ProposalStatus,
+    AuditEntry, Hash, IdentitySource, Operator, OperatorId, Part, PartId, PartStatus, Proposal,
+    ProposalRef, ProposalStatus,
 };
 use qx_identity::{Capabilities, IdentityError, IdentityProvider};
-use qx_storage::{AuditFilter, PartFilter, PrintEventFilter, RepoError, Repository};
+use qx_storage::{AuditFilter, PartFilter, RepoError, Repository};
 use qx_transport::{ProposalError, ProposalSink};
 
 use crate::engine::{dispatch, AppContext};
@@ -26,7 +26,6 @@ use crate::protocol::{ErrorKind, Request, Response};
 struct MemRepo {
     parts: Mutex<Vec<Part>>,
     audit: Mutex<Vec<AuditEntry>>,
-    prints: Mutex<Vec<PrintEvent>>,
     collections: BTreeMap<String, Vec<serde_json::Map<String, serde_json::Value>>>,
     jsonl: bool,
 }
@@ -36,7 +35,6 @@ impl MemRepo {
         Self {
             parts: Mutex::new(parts),
             audit: Mutex::new(Vec::new()),
-            prints: Mutex::new(Vec::new()),
             collections: BTreeMap::new(),
             jsonl: false,
         }
@@ -89,15 +87,8 @@ impl Repository for MemRepo {
     fn list_audit_events(&self, _filter: &AuditFilter) -> Result<Vec<AuditEntry>, RepoError> {
         Ok(self.audit.lock().expect("lock").clone())
     }
-    fn list_print_events(&self, _filter: &PrintEventFilter) -> Result<Vec<PrintEvent>, RepoError> {
-        Ok(self.prints.lock().expect("lock").clone())
-    }
     fn append_audit_event(&self, ev: AuditEntry) -> Result<(), RepoError> {
         self.audit.lock().expect("lock").push(ev);
-        Ok(())
-    }
-    fn append_print_event(&self, ev: PrintEvent) -> Result<(), RepoError> {
-        self.prints.lock().expect("lock").push(ev);
         Ok(())
     }
     fn snapshot_hash(&self) -> Result<Hash, RepoError> {
@@ -909,12 +900,17 @@ fn print_renders_svgs_and_logs_events() {
     let svg = d["labels"][0]["svg"].as_str().expect("svg");
     assert!(svg.contains("<svg"));
     assert_eq!(d["chars"], json!("44"));
+    // Print-fold (ADR-022): the print is a Print audit event.
     let events = ctx
         .repo
-        .list_print_events(&PrintEventFilter::default())
+        .list_audit_events(&AuditFilter::default())
         .expect("events");
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].layout, "horz");
+    let prints: Vec<_> = events
+        .iter()
+        .filter(|e| e.action.kind() == qx_domain::ActionKind::Print)
+        .collect();
+    assert_eq!(prints.len(), 1);
+    assert_eq!(prints[0].extra["layout"], "horz");
 }
 
 #[test]
@@ -974,17 +970,22 @@ fn print_px_true_deduces_module_from_exact_canvas() {
     assert_eq!(d["unit"], json!("px"));
     assert_eq!(d["size_px"], json!(64));
     assert_eq!(d["padding_mode"], json!("overlap"));
-    // Print events still log, with the resolved px params as evidence.
+    // Print-fold (ADR-022): Print audit events carry the resolved px
+    // params as evidence.
     let events = ctx
         .repo
-        .list_print_events(&PrintEventFilter::default())
+        .list_audit_events(&AuditFilter::default())
         .expect("events");
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].extra["module_px"], json!(3));
-    assert_eq!(events[0].extra["data_px"], json!(51));
-    assert_eq!(events[0].extra["white"]["top"], json!(6));
-    assert_eq!(events[0].extra["padding_mode"], json!("overlap"));
-    assert_eq!(events[0].extra["symbology"], json!("micro-m4-m"));
+    let prints: Vec<_> = events
+        .iter()
+        .filter(|e| e.action.kind() == qx_domain::ActionKind::Print)
+        .collect();
+    assert_eq!(prints.len(), 1);
+    assert_eq!(prints[0].extra["module_px"], json!(3));
+    assert_eq!(prints[0].extra["data_px"], json!(51));
+    assert_eq!(prints[0].extra["white"]["top"], json!(6));
+    assert_eq!(prints[0].extra["padding_mode"], json!("overlap"));
+    assert_eq!(prints[0].extra["symbology"], json!("micro-m4-m"));
 
     // additive excludes the quiet zone from the padding floor:
     // (17 + 2·2)·m + 2·2 ≤ 64 → m=2, module part 34px.
