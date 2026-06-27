@@ -597,10 +597,20 @@ impl Wiring {
     }
 }
 
-/// Resolve the GitHub token per ADR-020 §"Credential resolution order"
-/// (first hit wins): explicit config → `GITHUB_TOKEN` → `GH_TOKEN`.
+/// Resolve the GitHub token per ADR-020 §"Credential resolution order",
+/// first-hit-wins across the non-interactive rungs: explicit/env → cached
+/// → system-borrow. The interactive device-flow rung is NOT auto-triggered
+/// mid-operation (it is the explicit `login` path, native-only); the
+/// resolver supports it via [`resolve_github_token_chain`].
 fn resolve_github_token(cfg: &Config) -> Option<String> {
-    resolve_github_token_from(cfg, |k| std::env::var(k).ok())
+    resolve_github_token_chain(
+        cfg,
+        |k| std::env::var(k).ok(),
+        cached_github_token,
+        gh_borrowed_token,
+        || None,
+    )
+    .map(|(t, _)| t)
 }
 
 /// Testable form: the env lookup is injected so tests don't race on
@@ -621,6 +631,181 @@ fn resolve_github_token_from(cfg: &Config, env: impl Fn(&str) -> Option<String>)
         .and_then(non_blank)
         .or_else(|| env("GITHUB_TOKEN").and_then(non_blank))
         .or_else(|| env("GH_TOKEN").and_then(non_blank))
+}
+
+/// Which rung of the ADR-020 credential resolution chain produced a token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenSource {
+    /// Explicit config or a conventional env name (`GITHUB_TOKEN`/`GH_TOKEN`).
+    Env,
+    /// A token cached by a prior login (`~/.config/qx/github-token.json`).
+    Cached,
+    /// Borrowed from system auth (`gh auth token` / keychain), if present.
+    SystemBorrow,
+    /// Obtained via the interactive `github.com/login/device` flow.
+    DeviceFlow,
+}
+
+/// Resolve the GitHub token first-hit-wins across the FULL ADR-020
+/// resolution chain. The four rungs are injected as closures so the
+/// ordering — explicit/env → cached → system-borrow → device-flow — is
+/// exercised deterministically without touching the real env, filesystem,
+/// `gh`, or network. A blank value at any rung is "unset" and falls
+/// through. Returns the token plus the [`TokenSource`] that produced it.
+fn resolve_github_token_chain(
+    cfg: &Config,
+    env: impl Fn(&str) -> Option<String>,
+    cached: impl FnOnce() -> Option<String>,
+    system_borrow: impl FnOnce() -> Option<String>,
+    device_flow: impl FnOnce() -> Option<String>,
+) -> Option<(String, TokenSource)> {
+    let non_blank = |t: String| (!t.trim().is_empty()).then_some(t);
+    if let Some(t) = resolve_github_token_from(cfg, &env) {
+        return Some((t, TokenSource::Env));
+    }
+    if let Some(t) = cached().and_then(non_blank) {
+        return Some((t, TokenSource::Cached));
+    }
+    if let Some(t) = system_borrow().and_then(non_blank) {
+        return Some((t, TokenSource::SystemBorrow));
+    }
+    device_flow()
+        .and_then(non_blank)
+        .map(|t| (t, TokenSource::DeviceFlow))
+}
+
+/// Rung 2 — a token cached by a prior login at
+/// `<config-dir>/qx/github-token.json` (`{ "token": "..." }`).
+fn cached_github_token() -> Option<String> {
+    let path = dirs::config_dir()?.join("qx").join("github-token.json");
+    let text = std::fs::read_to_string(path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    v.get("token")?.as_str().map(str::to_owned)
+}
+
+/// Rung 3 — borrow the system's GitHub auth via `gh auth token`, used only
+/// when `gh` is installed and logged in (no hard dependency on it).
+fn gh_borrowed_token() -> Option<String> {
+    let out = std::process::Command::new("gh")
+        .args(["auth", "token"])
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+        .filter(|t| !t.is_empty())
+}
+
+/// One HTTP POST against GitHub's OAuth device endpoints (form-encoded in,
+/// JSON out). Injected so the device-flow logic is testable without
+/// network. `Err` is a transport failure.
+pub trait DeviceFlowHttp {
+    fn post_form(&self, url: &str, form: &[(&str, &str)]) -> Result<serde_json::Value, String>;
+}
+
+/// Rung 4 — the `github.com/login/device` flow (ADR-020): request a device
+/// code, show the user the code + verification URL, then poll the token
+/// endpoint until authorised. `client_id` is the registered OAuth app (a
+/// deployment registration). `prompt` shows the user_code; `sleep` paces
+/// polling. Returns the access token, or an error string.
+fn device_flow_token(
+    client_id: &str,
+    http: &dyn DeviceFlowHttp,
+    mut prompt: impl FnMut(&str, &str),
+    mut sleep: impl FnMut(u64),
+    max_polls: u32,
+) -> Result<String, String> {
+    let code = http.post_form(
+        "https://github.com/login/device/code",
+        &[("client_id", client_id), ("scope", "repo")],
+    )?;
+    let device_code = code["device_code"].as_str().ok_or("no device_code")?;
+    let user_code = code["user_code"].as_str().ok_or("no user_code")?;
+    let verification_uri = code["verification_uri"]
+        .as_str()
+        .unwrap_or("https://github.com/login/device");
+    let interval = code["interval"].as_u64().unwrap_or(5);
+    prompt(user_code, verification_uri);
+
+    for _ in 0..max_polls {
+        sleep(interval);
+        let resp = http.post_form(
+            "https://github.com/login/oauth/access_token",
+            &[
+                ("client_id", client_id),
+                ("device_code", device_code),
+                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+            ],
+        )?;
+        if let Some(token) = resp["access_token"].as_str() {
+            return Ok(token.to_owned());
+        }
+        match resp["error"].as_str() {
+            Some("authorization_pending") => continue,
+            Some("slow_down") => continue,
+            Some(e) => return Err(format!("device flow: {e}")),
+            None => return Err("device flow: malformed token response".into()),
+        }
+    }
+    Err("device flow: timed out waiting for authorisation".into())
+}
+
+/// Production [`DeviceFlowHttp`] over blocking `reqwest` (rustls).
+struct ReqwestDeviceFlow {
+    client: reqwest::blocking::Client,
+}
+
+impl DeviceFlowHttp for ReqwestDeviceFlow {
+    fn post_form(&self, url: &str, form: &[(&str, &str)]) -> Result<serde_json::Value, String> {
+        self.client
+            .post(url)
+            .header("Accept", "application/json")
+            .form(form)
+            .send()
+            .map_err(|e| e.to_string())?
+            .json::<serde_json::Value>()
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// `qx login` — rung 4 of the credential chain (ADR-020): run the
+/// interactive `github.com/login/device` flow and cache the token at
+/// `<config-dir>/qx/github-token.json` so subsequent runs resolve it from
+/// the cached rung. The OAuth-app `client_id` is the deployment
+/// registration (`identity.github_client_id`).
+pub fn run_login(cfg: &Config, prompt: impl FnMut(&str, &str)) -> Result<String, CliError> {
+    let client_id = cfg.identity.github_client_id.clone().ok_or_else(|| {
+        CliError::Other(
+            "no identity.github_client_id configured — register a GitHub OAuth app and set it \
+             (PART_REGISTRY__IDENTITY__GITHUB_CLIENT_ID) to use `qx login`'s device flow."
+                .into(),
+        )
+    })?;
+    let http = ReqwestDeviceFlow {
+        client: reqwest::blocking::Client::builder()
+            .user_agent(concat!("qx/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .map_err(|e| CliError::Other(format!("http client: {e}")))?,
+    };
+    let token = device_flow_token(
+        &client_id,
+        &http,
+        prompt,
+        |secs| std::thread::sleep(std::time::Duration::from_secs(secs)),
+        180,
+    )
+    .map_err(CliError::Other)?;
+
+    // Cache for the rung-2 resolver.
+    if let Some(dir) = dirs::config_dir() {
+        let qx = dir.join("qx");
+        let _ = std::fs::create_dir_all(&qx);
+        let _ = std::fs::write(
+            qx.join("github-token.json"),
+            serde_json::json!({ "token": token }).to_string(),
+        );
+    }
+    Ok(token)
 }
 
 // -------------------------------------------------------------------
@@ -1802,6 +1987,96 @@ mod tests {
         //    with the set-a-token guidance).
         let tok = resolve_github_token_from(&cfg, |_| None);
         assert!(tok.is_none());
+    }
+
+    #[test]
+    fn token_chain_resolves_first_hit_wins_across_all_four_rungs() {
+        let cfg = Config::from_layers(None, std::iter::empty::<(String, String)>())
+            .expect("defaults parse");
+        // env wins over cached/borrow/device.
+        let r = resolve_github_token_chain(
+            &cfg,
+            |k| (k == "GITHUB_TOKEN").then(|| "env-tok".into()),
+            || Some("cached-tok".into()),
+            || Some("gh-tok".into()),
+            || Some("device-tok".into()),
+        );
+        assert_eq!(r, Some(("env-tok".into(), TokenSource::Env)));
+        // No env → cached wins over borrow/device.
+        let r = resolve_github_token_chain(
+            &cfg,
+            |_| None,
+            || Some("cached-tok".into()),
+            || Some("gh-tok".into()),
+            || Some("device-tok".into()),
+        );
+        assert_eq!(r, Some(("cached-tok".into(), TokenSource::Cached)));
+        // No env/cached → system-borrow wins over device.
+        let r = resolve_github_token_chain(
+            &cfg,
+            |_| None,
+            || None,
+            || Some("gh-tok".into()),
+            || Some("device-tok".into()),
+        );
+        assert_eq!(r, Some(("gh-tok".into(), TokenSource::SystemBorrow)));
+        // Blank earlier rungs fall through; device-flow is the last resort.
+        let r = resolve_github_token_chain(
+            &cfg,
+            |_| None,
+            || Some("   ".into()),
+            || None,
+            || Some("device-tok".into()),
+        );
+        assert_eq!(r, Some(("device-tok".into(), TokenSource::DeviceFlow)));
+        // Nothing anywhere → None.
+        assert!(resolve_github_token_chain(&cfg, |_| None, || None, || None, || None).is_none());
+    }
+
+    #[test]
+    fn device_flow_requests_code_then_polls_until_authorised() {
+        use std::cell::Cell;
+        // Fake the two OAuth endpoints: code request, then a pending poll,
+        // then the granted token.
+        struct FakeOAuth {
+            poll: Cell<u32>,
+        }
+        impl DeviceFlowHttp for FakeOAuth {
+            fn post_form(
+                &self,
+                url: &str,
+                _form: &[(&str, &str)],
+            ) -> Result<serde_json::Value, String> {
+                if url.ends_with("/device/code") {
+                    Ok(serde_json::json!({
+                        "device_code": "DEV", "user_code": "WXYZ-1234",
+                        "verification_uri": "https://github.com/login/device",
+                        "interval": 1
+                    }))
+                } else {
+                    let n = self.poll.get();
+                    self.poll.set(n + 1);
+                    if n == 0 {
+                        Ok(serde_json::json!({ "error": "authorization_pending" }))
+                    } else {
+                        Ok(serde_json::json!({ "access_token": "gho_granted" }))
+                    }
+                }
+            }
+        }
+        let http = FakeOAuth { poll: Cell::new(0) };
+        let mut shown = String::new();
+        let token = device_flow_token(
+            "client-123",
+            &http,
+            |code, _uri| shown = code.to_string(),
+            |_secs| {},
+            10,
+        )
+        .expect("device flow resolves");
+        assert_eq!(token, "gho_granted");
+        assert_eq!(shown, "WXYZ-1234", "the user_code is shown to the operator");
+        assert_eq!(http.poll.get(), 2, "polled past the pending response");
     }
 
     #[test]

@@ -43,6 +43,9 @@ serde_json = { workspace = true }
 toml = "0.8"
 # Pre-flight base-ref materialization (ADR-031 §6 read path).
 tempfile = { workspace = true }
+# `qx login` device-flow HTTP (ADR-020 rung 4). Already in the build via
+# the transport adapter; named here for the credential resolver.
+reqwest = { workspace = true }
 # Operator-workspace path resolution (XDG config dir, ADR-033 §5).
 dirs = { workspace = true }
 time = { workspace = true }
