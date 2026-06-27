@@ -223,8 +223,9 @@ id = "px-true-qr-render"
 adr = "ADR-031"
 statement = "px-true render: size = exact output canvas, padding = floor, module_px DEDUCED from (size-2*pad)/N, ERROR on impossible fit; symbol_px % N == 0"
 kind = "test"
-status = "pending"
-tracking = "px geometry + clip + per-side padding + --type + --size suffix + nx75 typography ALL LANDED; REMAINING: --size-mode snap, --align, combination validation (geometry-only); printer profiles CUT per ADR-031 SS9 — printing is downstream"
+status = "satisfied"
+satisfied_by = ["crates/codec/src/px.rs"]
+tracking = "ALL FIVE STATEMENT TERMS implemented + tested in crates/codec/src/px.rs: size = exact output canvas (SizeMode::Exact); padding = floor (Padding floor_a/floor_b); module_px DEDUCED from the available span (deduce_module_px, the largest module size that fits); ERROR on impossible fit (CodecError::Render — proven by impossible_fit_errors_with_boundary_hints_per_mode, asymmetric_impossible_fit_names_both_pads, glyph_block_that_cannot_fit_errors_with_a_chars_hint); symbol_px % N == 0 (symbol_px = modules * module_px = N * module_px by construction). NOTE: the earlier 'REMAINING' list is stale/over-inclusive — --size-mode snap IS implemented (engine.rs Some(\"snap\")=>SizeMode::Snap + px.rs render arms), and --align + combination-validation are post-statement ENHANCEMENTS (the roadmap's 'px-true-qr-render extras'), not terms of this obligation's statement; printer profiles CUT per ADR-031 §9."
 
 [[obligation]]
 id = "print-contracts"
