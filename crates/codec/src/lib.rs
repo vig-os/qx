@@ -47,6 +47,7 @@ pub mod px;
 pub mod qr;
 pub mod receipt;
 pub mod repeat;
+pub mod scan;
 pub mod solver;
 pub mod svg;
 pub mod symbology;
