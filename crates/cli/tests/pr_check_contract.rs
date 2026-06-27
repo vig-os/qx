@@ -468,6 +468,113 @@ fn audit_log_tampering_fails_the_gate() {
 }
 
 #[test]
+fn personas_cross_check_rejects_unknown_operator_and_codeowner() {
+    // ADR-036 §1/§2: with a personas collection, an audit operator that is
+    // not a declared persona AND a CODEOWNERS principal that does not
+    // resolve to an active persona both fail the gate.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    write_repo(dir, TWO_COLLECTION_CONTRACT, "", "");
+    fs::write(
+        dir.join("collections/personas.jsonl"),
+        "{\"id\":\"persona:alice\",\"status\":\"active\",\"github_login\":\"alice\",\"legal_name\":\"Alice A\"}\n\
+         {\"id\":\"persona:bob\",\"status\":\"revoked\",\"github_login\":\"bob\",\"legal_name\":\"Bob B\"}\n",
+    )
+    .unwrap();
+    // An audit entry whose operator is NOT a declared persona.
+    fs::write(
+        dir.join("audit_log.jsonl"),
+        "{\"request_id\":\"00000000-0000-0000-0000-000000000001\",\"timestamp\":[1970,1,0,0,0,0,0,0,0],\"actor\":{\"id\":\"github:stranger\",\"display_name\":\"S\",\"source\":{\"kind\":\"git_config\"},\"verified_at\":null,\"claims\":{},\"pubkey\":null},\"action\":{\"kind\":\"add\",\"row\":{}},\"target\":{\"kind\":\"part\",\"id\":\"PART2223AAAAAA\"},\"before\":null,\"after\":null,\"extra\":{}}\n",
+    )
+    .unwrap();
+    // CODEOWNERS names a revoked persona (bob) and a team (skipped).
+    fs::write(dir.join("CODEOWNERS"), "*  @bob @org/admins\n").unwrap();
+
+    let out = pr_check(dir, None);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "personas violations must fail the gate, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("audit operator `github:stranger`"),
+        "expected the operator FK violation, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("not active"),
+        "expected the revoked-CODEOWNERS-principal violation, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn personas_approver_must_resolve_to_active_persona() {
+    // ADR-036 §2: a merge approver (supplied by CI via --approver) who does
+    // not resolve to an active persona fails the gate.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    write_repo(dir, TWO_COLLECTION_CONTRACT, "", "");
+    fs::write(
+        dir.join("collections/personas.jsonl"),
+        "{\"id\":\"persona:alice\",\"status\":\"active\",\"github_login\":\"alice\",\"legal_name\":\"Alice A\"}\n",
+    )
+    .unwrap();
+
+    // An unregistered approver blocks.
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_qx"));
+    cmd.args(["check", "--path"])
+        .arg(dir)
+        .args(["--approver", "stranger"]);
+    let out = cmd.current_dir(dir).output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "unregistered approver must block: {stderr}"
+    );
+    assert!(
+        stderr.contains("merge approver `stranger`"),
+        "got:\n{stderr}"
+    );
+
+    // An active-persona approver passes.
+    let mut ok = Command::new(env!("CARGO_BIN_EXE_qx"));
+    ok.args(["check", "--path"])
+        .arg(dir)
+        .args(["--approver", "alice"]);
+    let out = ok.current_dir(dir).output().unwrap();
+    assert!(
+        out.status.success(),
+        "active-persona approver must pass, got:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn personas_cross_check_passes_when_all_resolve() {
+    // The same shape, but every principal resolves to an active persona.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    write_repo(dir, TWO_COLLECTION_CONTRACT, "", "");
+    fs::write(
+        dir.join("collections/personas.jsonl"),
+        "{\"id\":\"persona:alice\",\"status\":\"active\",\"github_login\":\"alice\",\"legal_name\":\"Alice A\"}\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("audit_log.jsonl"),
+        "{\"request_id\":\"00000000-0000-0000-0000-000000000002\",\"timestamp\":[1970,1,0,0,0,0,0,0,0],\"actor\":{\"id\":\"persona:alice\",\"display_name\":\"Alice\",\"source\":{\"kind\":\"git_config\"},\"verified_at\":null,\"claims\":{},\"pubkey\":null},\"action\":{\"kind\":\"add\",\"row\":{}},\"target\":{\"kind\":\"part\",\"id\":\"PART2223AAAAAA\"},\"before\":null,\"after\":null,\"extra\":{}}\n",
+    )
+    .unwrap();
+    fs::write(dir.join("CODEOWNERS"), "*  @alice\n").unwrap();
+
+    let out = pr_check(dir, None);
+    assert!(
+        out.status.success(),
+        "all-resolve personas repo must pass, got:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
 fn committed_csv_export_fails_the_gate() {
     // ADR-035: CSV is an export view; a *.csv committed beside the JSONL
     // collections is rejected (generate on demand, never store).

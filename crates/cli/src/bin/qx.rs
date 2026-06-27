@@ -300,6 +300,11 @@ enum Cmd {
         /// semantic-diff classification + policy advisory.
         #[arg(long)]
         base: Option<String>,
+        /// Merge-approver github logins (comma-separated), supplied by CI
+        /// from the host's PR review data (ADR-036 §2). Each must resolve
+        /// to an active persona when a `personas` collection is declared.
+        #[arg(long, value_delimiter = ',')]
+        approver: Vec<String>,
     },
     /// Scaffold a fresh company data repo: the canonical contract
     /// (parts + companies + contacts), empty collections, and the CI
@@ -428,7 +433,11 @@ fn main() -> ExitCode {
         Cmd::Mint(args) => parity_mint(args),
         Cmd::Label(args) => parity_label(args),
         Cmd::Bind(args) => parity_bind(args),
-        Cmd::Check { path, base } => check(&path, base.as_deref()),
+        Cmd::Check {
+            path,
+            base,
+            approver,
+        } => check(&path, base.as_deref(), &approver),
         Cmd::Init { path, force } => init_repo(&path, force),
         Cmd::Promote {
             collection,
@@ -1026,7 +1035,7 @@ fn protocol_print(
 // enforces)
 // -------------------------------------------------------------------
 
-fn check(path: &Path, base: Option<&str>) -> ExitCode {
+fn check(path: &Path, base: Option<&str>, approvers: &[String]) -> ExitCode {
     let mut failures: Vec<String> = Vec::new();
     let mut notices: Vec<String> = Vec::new();
     let mut ran_something = false;
@@ -1083,6 +1092,12 @@ fn check(path: &Path, base: Option<&str>) -> ExitCode {
             failures.push(format!("audit_log.jsonl: {violation}"));
         }
     }
+
+    // --- Personas accountability (ADR-036 §1/§2): when a registry declares
+    //     a `personas` collection, the audit operator FK + CODEOWNERS
+    //     principals must resolve to (active) personas. Skipped silently
+    //     when no personas collection is present.
+    personas_cross_check(path, approvers, &mut failures);
 
     // --- Exports never committed (ADR-035): a `*.csv` beside the JSONL
     //     collections is a committed export. CSV is an export VIEW —
@@ -1404,6 +1419,56 @@ fn resolve_kind_schemas(
         resolved.insert(kind.clone(), acc);
     }
     resolved
+}
+
+/// Personas accountability cross-check (ADR-036 §1/§2). When the registry
+/// declares a `personas` collection (`collections/personas.jsonl`), every
+/// audit `operator` must resolve to a declared persona (the typed FK), and
+/// every individual CODEOWNERS principal must resolve to an *active*
+/// persona. A registry without personas is unaffected (the check returns
+/// early). The merge-approver half uses the same resolver
+/// ([`qx_validators::approver_resolution_issues`]) fed the host's approver
+/// list at CI time.
+fn personas_cross_check(path: &Path, approvers: &[String], failures: &mut Vec<String>) {
+    let personas = match read_jsonl_records(&path.join("collections/personas.jsonl")) {
+        Ok(recs) if !recs.is_empty() => recs,
+        _ => return,
+    };
+    let idx = qx_validators::PersonaIndex::from_records(&personas);
+
+    // Merge approvers (ADR-036 §2): the host's approver logins (supplied by
+    // CI via --approver) must each resolve to an active persona.
+    let approver_refs: Vec<&str> = approvers.iter().map(String::as_str).collect();
+    for issue in qx_validators::approver_resolution_issues(&idx, &approver_refs) {
+        failures.push(format!("personas: {}", issue.message));
+    }
+
+    // Audit-operator FK: each distinct operator on the spine must resolve.
+    let text = std::fs::read_to_string(path.join("audit_log.jsonl")).unwrap_or_default();
+    let mut operators: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Ok(entry) = serde_json::from_str::<qx_domain::AuditEntry>(line) {
+            operators.insert(entry.actor.id.0);
+        }
+    }
+    let op_refs: Vec<&str> = operators.iter().map(String::as_str).collect();
+    for issue in qx_validators::audit_operator_fk_issues(&idx, &op_refs) {
+        failures.push(format!("personas: {}", issue.message));
+    }
+
+    // CODEOWNERS principals must resolve to active personas.
+    for candidate in ["CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"] {
+        if let Ok(codeowners) = std::fs::read_to_string(path.join(candidate)) {
+            for issue in qx_validators::codeowners_principal_issues(&idx, &codeowners) {
+                failures.push(format!("personas ({candidate}): {}", issue.message));
+            }
+            break;
+        }
+    }
 }
 
 /// Index the audit spine `audit_log.jsonl` as `{id -> set of entry

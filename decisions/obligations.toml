@@ -518,8 +518,9 @@ id = "personas-collection"
 adr = "ADR-036"
 statement = "personas is a code-owned collection preset; audit operator is a typed FK; CODEOWNERS principals + merge approvers must resolve to active personas"
 kind = "crate"
-status = "pending"
-tracking = "ADR-036 §1/§2; personas descriptor + FK validator + CODEOWNERS cross-check not yet built"
+status = "satisfied"
+satisfied_by = ["schema/presets/personas.contract.json", "crates/validators/src/personas.rs", "crates/cli/src/bin/qx.rs"]
+tracking = "SATISFIED (ADR-036 §1/§2). ALL THREE TERMS WIRED + ENFORCED in qx check (runs in CI): (1) PERSONAS IS A CODE-OWNED COLLECTION PRESET — schema/presets/personas.contract.json (typed persona id scheme, fields legal_name/github_login + open_properties for roles[]/ssh_key_fprs[]/oidc_subjects[], lifecycle active->suspended->revoked); gated by the meta-schema + Rust SSOT (added to SHIPPED_CONTRACTS, both tests green). (2) AUDIT OPERATOR IS A TYPED FK — qx_validators::audit_operator_fk_issues; personas_cross_check reads every distinct actor.id on audit_log.jsonl and fails any that is not a declared persona. (3) CODEOWNERS PRINCIPALS + MERGE APPROVERS MUST RESOLVE TO ACTIVE PERSONAS — codeowners_principal_issues (reads CODEOWNERS/.github/CODEOWNERS, resolves each @login to an ACTIVE persona; teams @org/x skipped) + approver_resolution_issues fed by the new `qx check --approver <logins>` flag (CI supplies the host approver list, same pattern as --base supplies the git ref). PersonaIndex resolves by persona id OR github_login; active=status active, suspended/revoked=inactive blocks. Proven by 3 e2e (reject unknown operator + revoked CODEOWNERS principal; reject unregistered approver + pass active; pass all-resolve) + 4 unit tests. Whole workspace suite + wasm32 green, clippy clean."
 
 [[obligation]]
 id = "pr-is-truth-write-path"
