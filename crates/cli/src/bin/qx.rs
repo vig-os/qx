@@ -300,6 +300,19 @@ enum Cmd {
         #[arg(long, default_value = ".")]
         path: PathBuf,
     },
+    /// Verify a data-repo clone OFFLINE (ADR-037 §5): contract + record/FK
+    /// validation, audit content-hash + checkpoint integrity, and persona
+    /// accountability — all base-free (no PR diff, no network). `--anchors`
+    /// adds anchor-ledger ancestry + immutability checks (reserved until
+    /// the release ledger lands).
+    Verify {
+        /// Path to the cloned data repo to verify.
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        /// Also run the anchor-ledger ancestry + immutability checks.
+        #[arg(long)]
+        anchors: bool,
+    },
     /// Stdio MCP server speaking the command protocol (for agents).
     #[cfg(feature = "mcp")]
     Mcp,
@@ -466,6 +479,7 @@ fn main() -> ExitCode {
         Cmd::Serve { addr, static_dir } => serve_cmd(addr, static_dir),
         Cmd::Registries { path } => registries_cmd(path),
         Cmd::Checkpoint { path } => checkpoint_cmd(&path),
+        Cmd::Verify { path, anchors } => verify_cmd(&path, anchors),
         #[cfg(feature = "mcp")]
         Cmd::Mcp => mcp_cmd(),
         #[cfg(feature = "tui")]
@@ -1857,6 +1871,59 @@ fn promote_field(
     );
     fields.push(serde_json::Value::Object(field));
     Ok(())
+}
+
+/// `qx verify` — offline clone verification (ADR-037 §5). Runs the
+/// base-free integrity suite: contract + record/FK validation, audit
+/// content-hash + checkpoint integrity, persona accountability, and the
+/// manifest↔contract FK. No PR diff, no network. `--anchors` would add the
+/// anchor-ledger ancestry + immutability-enabled checks — reserved until
+/// the immutable-release ledger lands (reported, not silently skipped).
+fn verify_cmd(path: &Path, anchors: bool) -> ExitCode {
+    let mut failures: Vec<String> = Vec::new();
+    let mut notices: Vec<String> = Vec::new();
+
+    // Contract + per-record + cross-collection FK (base=None → full scan).
+    if path.join(".qx/contract.json").exists() {
+        check_contract(path, None, &mut failures, &mut notices);
+    } else {
+        notices.push("no .qx/contract.json — contract/FK checks skipped".into());
+    }
+    // Audit integrity: per-entry content_hash + stream checkpoints (the
+    // base-free form of the append-only guarantee).
+    audit_integrity_check(path, &mut failures);
+    // Persona accountability (audit-operator FK + CODEOWNERS principals).
+    personas_cross_check(path, &[], &mut failures);
+    // Manifest↔contract FK.
+    manifest_cross_check(path, &mut failures);
+
+    if anchors {
+        // Anchor-ledger ancestry + immutability checks (ADR-037 §5). The
+        // release anchor ledger does not exist yet; surface that rather
+        // than silently passing.
+        notices.push(
+            "--anchors: anchor-ledger ancestry + immutability checks are reserved \
+             (the immutable-release ledger is not yet provisioned)"
+                .into(),
+        );
+    }
+
+    for n in &notices {
+        eprintln!("note: {n}");
+    }
+    if failures.is_empty() {
+        println!(
+            "verify: OK — clone is internally consistent ({})",
+            path.display()
+        );
+        ExitCode::SUCCESS
+    } else {
+        for f in &failures {
+            eprintln!("FAIL: {f}");
+        }
+        eprintln!("qx verify: {} failure(s)", failures.len());
+        ExitCode::FAILURE
+    }
 }
 
 /// `qx checkpoint` — append a stream checkpoint (ADR-037 §1). Reads the

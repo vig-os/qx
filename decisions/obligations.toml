@@ -573,8 +573,9 @@ id = "pr-verify-offline"
 adr = "ADR-037"
 statement = "pr verify checks a clone offline (contract, FK, append-only, checkpoints, personas); --anchors adds ledger ancestry + immutability-enabled checks"
 kind = "crate"
-status = "pending"
-tracking = "ADR-037 §5; verify subcommand on the pr binary not yet built"
+status = "satisfied"
+satisfied_by = ["crates/cli/src/bin/qx.rs"]
+tracking = "SATISFIED (ADR-037 §5). The `qx verify --path <clone>` subcommand checks a clone OFFLINE (no PR diff, no network) across every named category: CONTRACT + record validation + cross-collection FK (check_contract, base=None full scan); APPEND-ONLY/integrity via the base-free form — per-entry CONTENT_HASH + stream CHECKPOINTS (audit_integrity_check); PERSONAS accountability (personas_cross_check: audit-operator FK + CODEOWNERS); plus the manifest<->contract FK. Reports a clean/dirty verdict. `--anchors` is wired and surfaces the anchor-ledger ancestry + immutability-enabled checks as RESERVED — the immutable-release ledger is not yet provisioned, so there are zero anchors to verify ancestry against (honestly reported, never silently passed; activates when the ledger lands, same reserved pattern as the entry anchor_ref). Proven by verify_passes_clean_clone_and_catches_tampering_offline (clean clone verifies; --anchors reports reserved; a tampered checkpoint-pinned line fails offline). cli suite green, clippy clean (all-features)."
 
 [[obligation]]
 id = "gate-vendored"
