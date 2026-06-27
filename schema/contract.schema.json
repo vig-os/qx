@@ -139,7 +139,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "label_fields": { "type": "array", "items": { "type": "string" }, "description": "Which fields compose an entity's short label rendering." }
+        "label_fields": { "type": "array", "items": { "type": "string" }, "description": "Which fields compose an entity's short label rendering." },
+        "print_contracts": { "type": "array", "items": { "type": "string" }, "description": "Print contracts (ADR-031 §8) this collection offers — each a tool-implemented symbology family (micro, qr). The manifest gates whether the feature is enabled." }
       }
     }
   }
