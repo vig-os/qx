@@ -313,6 +313,20 @@ enum Cmd {
         #[arg(long)]
         anchors: bool,
     },
+    /// Pre-flight for optimistic mint+print (ADR-031 §6): fetch the
+    /// contract + registry from `main` (a base git ref, or the working
+    /// copy) and run the SAME validators locally, confirming the base is
+    /// valid + mintable before allocating IDs and printing optimistically.
+    Preflight {
+        /// Path to the data-repo working tree.
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        /// Base git ref to fetch contract+registry from (e.g. origin/main).
+        /// Omit to validate the working copy (already at `main` for a
+        /// fresh clone).
+        #[arg(long)]
+        base: Option<String>,
+    },
     /// Sync the host's merge witness into the audit stream (ADR-037 §2):
     /// convert ephemeral approver/review/merge evidence + gate provenance
     /// (supplied by CI) into a durable, content-hashed audit record.
@@ -513,6 +527,7 @@ fn main() -> ExitCode {
         Cmd::Registries { path } => registries_cmd(path),
         Cmd::Checkpoint { path } => checkpoint_cmd(&path),
         Cmd::Verify { path, anchors } => verify_cmd(&path, anchors),
+        Cmd::Preflight { path, base } => preflight_cmd(&path, base.as_deref()),
         Cmd::MergeSync {
             path,
             approver,
@@ -1925,6 +1940,94 @@ fn promote_field(
     );
     fields.push(serde_json::Value::Object(field));
     Ok(())
+}
+
+/// `qx preflight` — the optimistic-mint pre-flight (ADR-031 §6). Fetches
+/// the contract + registry from `main` (a base ref, materialized into a
+/// temp tree; or the working copy) and runs the SAME Rust validators
+/// locally — authoritative, not a guess (the core is shared, ADR-017/030).
+/// A clean pre-flight is what makes minting+printing optimistically safe:
+/// the client validated against current `main` before allocating IDs, so
+/// an abandoned proposal leaves only harmless voidable `unbound` IDs.
+fn preflight_cmd(path: &Path, base: Option<&str>) -> ExitCode {
+    // Resolve the tree to validate: the working copy, or a materialization
+    // of the base ref (the "fetch contract+registry from main" read path).
+    let tmp;
+    let tree: &Path = match base {
+        None => path,
+        Some(base_ref) => {
+            tmp = match materialize_base(path, base_ref) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("preflight: fetch {base_ref}: {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            tmp.path()
+        }
+    };
+
+    let mut failures: Vec<String> = Vec::new();
+    let mut notices: Vec<String> = Vec::new();
+    if !tree.join(".qx/contract.json").exists() {
+        eprintln!("preflight: no .qx/contract.json at the base — nothing to validate");
+        return ExitCode::FAILURE;
+    }
+    check_contract(tree, None, &mut failures, &mut notices);
+
+    // Mint-readiness: the base must declare at least one mintable collection
+    // (otherwise optimistic `-n` minting has no home).
+    let mintable = std::fs::read(tree.join(".qx/contract.json"))
+        .ok()
+        .and_then(|b| qx_contract::Contract::from_bytes(&b).ok())
+        .map(|c| c.collections.iter().filter(|c| c.id.mintable).count())
+        .unwrap_or(0);
+    if mintable == 0 {
+        failures.push("no mintable collection declared — nothing to optimistically mint".into());
+    }
+
+    for n in &notices {
+        eprintln!("note: {n}");
+    }
+    if failures.is_empty() {
+        let src = base.unwrap_or("working copy");
+        println!(
+            "preflight OK ({src}): {mintable} mintable collection(s), registry valid — safe to optimistically mint+print"
+        );
+        ExitCode::SUCCESS
+    } else {
+        for f in &failures {
+            eprintln!("FAIL: {f}");
+        }
+        eprintln!(
+            "preflight: {} issue(s) — do NOT mint against this base",
+            failures.len()
+        );
+        ExitCode::FAILURE
+    }
+}
+
+/// Materialize a base ref's contract + every declared collection file into
+/// a fresh temp tree (ADR-031 §6 pre-flight read path: the `github:`
+/// raw-fetch equivalent for a local git ref). Returns the temp dir.
+fn materialize_base(repo: &Path, base_ref: &str) -> Result<tempfile::TempDir, String> {
+    let tmp = tempfile::tempdir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(tmp.path().join(".qx")).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(tmp.path().join("collections")).map_err(|e| e.to_string())?;
+    // Contract first — it names the collections to fetch.
+    let contract_text = git_show(repo, base_ref, ".qx/contract.json")?;
+    std::fs::write(tmp.path().join(".qx/contract.json"), &contract_text)
+        .map_err(|e| e.to_string())?;
+    if let Ok(contract) = qx_contract::Contract::from_bytes(contract_text.as_bytes()) {
+        for coll in &contract.collections {
+            let rel = format!("collections/{}.jsonl", coll.name);
+            // A collection file may not exist yet at the base (empty registry).
+            if let Ok(text) = git_show(repo, base_ref, &rel) {
+                std::fs::write(tmp.path().join(&rel), text).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    Ok(tmp)
 }
 
 struct MergeSyncArgs {

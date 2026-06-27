@@ -74,6 +74,87 @@ fn git_init(dir: &Path) {
 }
 
 #[test]
+fn preflight_validates_main_and_reports_mint_readiness() {
+    // ADR-031 §6: pre-flight fetches contract+registry from main (a base
+    // ref), validates locally, and confirms mint-readiness before the
+    // optimistic mint+print.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    git_init(dir);
+    write_repo(
+        dir,
+        TWO_COLLECTION_CONTRACT,
+        "{\"id\":\"PART2223AAAAAA\",\"status\":\"bound\",\"type\":\"bolt\",\"torque\":\"1.50\",\"manufacturer\":\"CMPY2223AAAAAA\"}\n",
+        "{\"id\":\"CMPY2223AAAAAA\",\"label\":\"Acme\"}\n",
+    );
+    git(&["add", "-A"], dir);
+    git(&["commit", "-m", "clean main"], dir);
+    let main_sha = {
+        let out = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+
+    // Working-copy preflight passes + reports mint-readiness.
+    let out = Command::new(env!("CARGO_BIN_EXE_qx"))
+        .args(["preflight", "--path"])
+        .arg(dir)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "clean working-copy preflight must pass: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("mintable collection"));
+
+    // Base-ref preflight (fetch contract+registry from the committed main).
+    let out = Command::new(env!("CARGO_BIN_EXE_qx"))
+        .args(["preflight", "--path"])
+        .arg(dir)
+        .args(["--base", &main_sha])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "base-ref preflight must fetch + validate main: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // Break the working copy: a dangling FK → preflight refuses to mint.
+    fs::write(
+        dir.join("collections/parts.jsonl"),
+        "{\"id\":\"PART2223AAAAAA\",\"status\":\"bound\",\"type\":\"bolt\",\"torque\":\"1.50\",\"manufacturer\":\"GHOST999\"}\n",
+    )
+    .unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_qx"))
+        .args(["preflight", "--path"])
+        .arg(dir)
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "invalid base must fail preflight");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("do NOT mint"),
+        "expected a mint-refusal, got:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // ...but the committed main is still clean via --base (effective-dating).
+    let out = Command::new(env!("CARGO_BIN_EXE_qx"))
+        .args(["preflight", "--path"])
+        .arg(dir)
+        .args(["--base", &main_sha])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "the committed main remains a valid base regardless of the dirty working copy"
+    );
+}
+
+#[test]
 fn merge_sync_writes_a_durable_content_hashed_witness() {
     // ADR-037 §2: `qx merge-sync` converts the host's ephemeral merge
     // evidence into a durable, content-hashed audit record that then
