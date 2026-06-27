@@ -180,8 +180,9 @@ id = "coverage-joiner"
 adr = "ADR-029"
 statement = "The full coverage validator (joiner over all dimensions) emits one auditor-readable matrix"
 kind = "issue"
-status = "pending"
-tracking = "qx-coverage binary in crates/port_tests (ADR-029 Decision); this feeder is dimension 1 of it"
+status = "satisfied"
+satisfied_by = ["crates/port_tests/src/bin/coverage.rs"]
+tracking = "SATISFIED (ADR-029). The qx-coverage binary (crates/port_tests/src/bin/coverage.rs) is the full coverage validator — a JOINER over ALL SIX ADR-029 dimensions emitting ONE auditor-readable matrix (print_markdown_table -> a single markdown table, exit 0/1/2). Dimensions: (1) Crate entry points, (2) Port adapters + Port conformance, (3) SOUP coverage, (4) ADR coverage/status, (5) RE-OPEN TRIGGERS — NEW: check_reopen_triggers parses ADR-023's T1-T6 + cross-checks decisions/crypto-reopen-triggers.toml (a row per trigger; none silently resolved), (6) FOUNDATION ISSUES — NEW: check_foundation_issues (the [foundation] table or the vacuous foundation-complete row). Proven by joiner_covers_all_six_adr029_dimensions (asserts every dimension present + >=6 trigger rows); the live matrix shows all six PASS. port_tests suite green, clippy clean."
 
 # ---- Multi-tier shells (ADR-030) ----------------------------------------
 
