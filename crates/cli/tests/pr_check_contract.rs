@@ -73,6 +73,65 @@ fn git_init(dir: &Path) {
     git(&["config", "commit.gpgsign", "false"], dir);
 }
 
+#[test]
+fn merge_sync_writes_a_durable_content_hashed_witness() {
+    // ADR-037 §2: `qx merge-sync` converts the host's ephemeral merge
+    // evidence into a durable, content-hashed audit record that then
+    // passes the integrity gate.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    write_repo(dir, TWO_COLLECTION_CONTRACT, "", "");
+    fs::write(dir.join("audit_log.jsonl"), "").unwrap();
+
+    let out = Command::new(env!("CARGO_BIN_EXE_qx"))
+        .args(["merge-sync", "--path"])
+        .arg(dir)
+        .args([
+            "--approver",
+            "persona:alice",
+            "--reviewer",
+            "persona:bob",
+            "--pr-ref",
+            "#123",
+            "--meaning",
+            "parts:bind",
+            "--artifact-sha256",
+            "sha256:abc",
+            "--run-ref",
+            "run/42",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "merge-sync must succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // The durable record is on the audit stream with the witness + gate.
+    let log = fs::read_to_string(dir.join("audit_log.jsonl")).unwrap();
+    assert!(log.contains("persona:alice"), "approver recorded: {log}");
+    assert!(log.contains("parts:bind"), "derived meaning recorded");
+    assert!(log.contains("sha256:abc"), "gate artifact recorded");
+    assert!(log.contains("run/42"), "run ref recorded");
+    assert!(log.contains("content_hash"), "record is content-hashed");
+
+    // And it survives the integrity gate (content_hash + append-only).
+    assert!(
+        pr_check(dir, None).status.success(),
+        "the synced witness must pass the integrity gate"
+    );
+
+    // Tampering the witness body breaks its content_hash.
+    let tampered = log.replace("persona:alice", "persona:mallory");
+    fs::write(dir.join("audit_log.jsonl"), tampered).unwrap();
+    let out = pr_check(dir, None);
+    assert!(
+        !out.status.success(),
+        "a tampered witness must fail the content_hash gate"
+    );
+}
+
 fn qx_verify(dir: &Path, anchors: bool) -> std::process::Output {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_qx"));
     cmd.arg("verify").arg("--path").arg(dir);

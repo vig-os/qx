@@ -313,6 +313,39 @@ enum Cmd {
         #[arg(long)]
         anchors: bool,
     },
+    /// Sync the host's merge witness into the audit stream (ADR-037 §2):
+    /// convert ephemeral approver/review/merge evidence + gate provenance
+    /// (supplied by CI) into a durable, content-hashed audit record.
+    MergeSync {
+        /// Path to the data-repo working tree.
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        /// The accountable approver/merger login (→ persona FK, ADR-036).
+        #[arg(long)]
+        approver: String,
+        /// Reviewer logins (repeatable).
+        #[arg(long = "reviewer")]
+        reviewers: Vec<String>,
+        /// The merged PR ref (e.g. `#123` or the PR URL).
+        #[arg(long)]
+        pr_ref: String,
+        /// The derived meaning — the `collection:op-kind[:edge]` the merge
+        /// effected (never left implicit in the diff).
+        #[arg(long)]
+        meaning: String,
+        /// Gate version that ran the check.
+        #[arg(long)]
+        gate_version: Option<String>,
+        /// `sha256` of the gate artifact the CI step verified against the pin.
+        #[arg(long)]
+        artifact_sha256: Option<String>,
+        /// Digest of the CI environment image.
+        #[arg(long)]
+        env_digest: Option<String>,
+        /// CI run reference (workflow run URL/id).
+        #[arg(long)]
+        run_ref: Option<String>,
+    },
     /// Stdio MCP server speaking the command protocol (for agents).
     #[cfg(feature = "mcp")]
     Mcp,
@@ -480,6 +513,27 @@ fn main() -> ExitCode {
         Cmd::Registries { path } => registries_cmd(path),
         Cmd::Checkpoint { path } => checkpoint_cmd(&path),
         Cmd::Verify { path, anchors } => verify_cmd(&path, anchors),
+        Cmd::MergeSync {
+            path,
+            approver,
+            reviewers,
+            pr_ref,
+            meaning,
+            gate_version,
+            artifact_sha256,
+            env_digest,
+            run_ref,
+        } => merge_sync_cmd(MergeSyncArgs {
+            path,
+            approver,
+            reviewers,
+            pr_ref,
+            meaning,
+            gate_version,
+            artifact_sha256,
+            env_digest,
+            run_ref,
+        }),
         #[cfg(feature = "mcp")]
         Cmd::Mcp => mcp_cmd(),
         #[cfg(feature = "tui")]
@@ -1871,6 +1925,88 @@ fn promote_field(
     );
     fields.push(serde_json::Value::Object(field));
     Ok(())
+}
+
+struct MergeSyncArgs {
+    path: PathBuf,
+    approver: String,
+    reviewers: Vec<String>,
+    pr_ref: String,
+    meaning: String,
+    gate_version: Option<String>,
+    artifact_sha256: Option<String>,
+    env_digest: Option<String>,
+    run_ref: Option<String>,
+}
+
+/// `qx merge-sync` — convert the host's ephemeral merge witness into a
+/// durable audit record (ADR-037 §2). CI supplies the approver/reviewers/
+/// PR ref + derived meaning + gate provenance; this appends one
+/// content-hashed `merge_sync` record to `audit_log.jsonl`, so the
+/// otherwise host-custodial evidence becomes repo-resident (it survives
+/// the host per ADR-038's "GH gone" matrix). The append-only gate +
+/// content_hash (ADR-037 §1) make the record tamper-evident.
+fn merge_sync_cmd(args: MergeSyncArgs) -> ExitCode {
+    let operator = qx_domain::Operator {
+        id: qx_domain::OperatorId(args.approver.clone()),
+        display_name: args.approver.clone(),
+        source: qx_domain::IdentitySource::GitConfig,
+        verified_at: None,
+        claims: std::collections::BTreeMap::new(),
+        pubkey: None,
+    };
+    // Gate provenance — only the fields CI actually supplied.
+    let mut gate = serde_json::Map::new();
+    for (k, v) in [
+        ("version", args.gate_version),
+        ("artifact_sha256", args.artifact_sha256),
+        ("env_digest", args.env_digest),
+        ("run_ref", args.run_ref),
+    ] {
+        if let Some(v) = v {
+            gate.insert(k.into(), Value::String(v));
+        }
+    }
+    let extra = serde_json::json!({
+        "witness": {
+            "approver": args.approver,
+            "reviewers": args.reviewers,
+            "pr_ref": args.pr_ref,
+            "meaning": args.meaning,
+        },
+        "gate": gate,
+    });
+    let entry = qx_observability::with_content_hash(qx_observability::record_write_audit_entry(
+        qx_domain::RequestId::new(),
+        operator,
+        "merge_sync".to_string(),
+        args.pr_ref.clone(),
+        extra,
+        time::OffsetDateTime::now_utc(),
+    ));
+    let line = match serde_json::to_string(&entry) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("merge-sync: serialize: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let log_path = args.path.join("audit_log.jsonl");
+    let mut body = std::fs::read_to_string(&log_path).unwrap_or_default();
+    if !body.is_empty() && !body.ends_with('\n') {
+        body.push('\n');
+    }
+    body.push_str(&line);
+    body.push('\n');
+    if let Err(e) = std::fs::write(&log_path, body) {
+        eprintln!("merge-sync: write {}: {e}", log_path.display());
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "merge-sync: durable witness recorded for {} (approver {})",
+        args.pr_ref, args.approver
+    );
+    ExitCode::SUCCESS
 }
 
 /// `qx verify` — offline clone verification (ADR-037 §5). Runs the
