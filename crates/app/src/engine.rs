@@ -1204,28 +1204,34 @@ fn print(
 }
 
 /// Human-ID grouping → `TextFormat` (+ legibility warning).
+///
+/// The valid groupings come from the **id-scheme declaration** (ADR-031
+/// §7: groupings are data, not code) — `qx_codec::scheme_groupings`, not a
+/// hardcoded match. The default id scheme is `nano14` (the parts preset).
 /// `legibility_mm` is the *physical* label size the warning tiers are
 /// defined over — for px-mode requests it is the dpi-converted size.
 fn parse_chars(chars: &str, legibility_mm: f64) -> Result<(TextFormat, Option<String>), Response> {
-    match chars {
-        "auto" => Ok(recommend_format(legibility_mm)),
-        "44" => Ok((
-            TextFormat::FourFour,
-            check_format_warning(legibility_mm, TextFormat::FourFour),
-        )),
-        "444" => Ok((
-            TextFormat::FourFourFour,
-            check_format_warning(legibility_mm, TextFormat::FourFourFour),
-        )),
-        "554" => Ok((
-            TextFormat::FiveFiveFour,
-            check_format_warning(legibility_mm, TextFormat::FiveFiveFour),
-        )),
-        other => Err(Response::error(
-            ErrorKind::Validation,
-            format!("unknown chars grouping {other:?}; nano14 declares: 44, 444, 554, auto"),
-        )),
+    const SCHEME: &str = "nano14";
+    if chars == "auto" {
+        return Ok(recommend_format(legibility_mm));
     }
+    // Resolve the requested grouping against the scheme's DECLARED set.
+    if let Some(rows) = qx_codec::scheme_grouping_rows(SCHEME, chars) {
+        if let Some(fmt) = TextFormat::for_rows(rows) {
+            return Ok((fmt, check_format_warning(legibility_mm, fmt)));
+        }
+    }
+    let declared: Vec<&str> = qx_codec::scheme_groupings(SCHEME)
+        .iter()
+        .map(|g| g.name)
+        .collect();
+    Err(Response::error(
+        ErrorKind::Validation,
+        format!(
+            "unknown chars grouping {chars:?}; {SCHEME} declares: {}, auto",
+            declared.join(", ")
+        ),
+    ))
 }
 
 fn chars_name(fmt: TextFormat) -> &'static str {

@@ -35,6 +35,19 @@ impl TextFormat {
         self.chars_per_row().len()
     }
 
+    /// The preset whose row vector equals `rows`, if any. Lets a grouping
+    /// resolved from the id-scheme *declaration* (data) map to the render
+    /// representation without a second hardcoded name table.
+    pub fn for_rows(rows: &[usize]) -> Option<TextFormat> {
+        [
+            TextFormat::FourFour,
+            TextFormat::FourFourFour,
+            TextFormat::FiveFiveFour,
+        ]
+        .into_iter()
+        .find(|f| f.chars_per_row() == rows)
+    }
+
     /// Human-readable name matching `label.py`'s `--format` CLI flag.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -53,16 +66,72 @@ impl TextFormat {
     /// invariant (`canonical.startswith(displayed_text)`) holds for
     /// every format/length combination the test suite covers.
     pub fn split(self, canonical: &str) -> Vec<String> {
-        let chars: Vec<char> = canonical.chars().collect();
-        let mut rows = Vec::with_capacity(self.n_rows());
-        let mut idx = 0;
-        for &n in self.chars_per_row() {
-            let end = (idx + n).min(chars.len());
-            rows.push(chars[idx..end].iter().collect());
-            idx = end;
-        }
-        rows
+        // Delegate to the ONE text renderer (ADR-031 §7: groupings are data
+        // vectors; one renderer consumes the vector).
+        split_rows(canonical, self.chars_per_row())
     }
+}
+
+/// THE text renderer (ADR-031 §7): split a canonical id into rows by a
+/// grouping row-length *vector* — data, not a per-format code path. Every
+/// grouping (a [`TextFormat`] preset or an id-scheme-declared vector) is
+/// rendered through this one function. If `canonical` is shorter than the
+/// vector demands, trailing rows are short (Python slice semantics — the
+/// text-prefix invariant holds for every length the suite covers).
+pub fn split_rows(canonical: &str, rows: &[usize]) -> Vec<String> {
+    let chars: Vec<char> = canonical.chars().collect();
+    let mut out = Vec::with_capacity(rows.len());
+    let mut idx = 0;
+    for &n in rows {
+        let end = (idx + n).min(chars.len());
+        out.push(chars[idx..end].iter().collect());
+        idx = end;
+    }
+    out
+}
+
+/// One declared grouping an id-scheme offers: a display `name` and the
+/// row-length `rows` vector THE text renderer consumes. Data, not code —
+/// adding a grouping is a declaration (ADR-031 §7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SchemeGrouping {
+    pub name: &'static str,
+    pub rows: &'static [usize],
+}
+
+/// The groupings an id-scheme DECLARES (ADR-031 §7: "human-form groupings
+/// come from the id-scheme declaration"). Tool-owned per known scheme —
+/// nano14's 14-char structure declares 4/4, 4/4/4, 5/5/4. An unknown
+/// scheme offers none (callers fall back to the recommended default).
+pub fn scheme_groupings(scheme: &str) -> &'static [SchemeGrouping] {
+    match scheme {
+        // Names are the user-facing grouping tokens (the CLI `--chars`
+        // values); `rows` is the data vector THE renderer consumes.
+        "nano14" => &[
+            SchemeGrouping {
+                name: "44",
+                rows: &[4, 4],
+            },
+            SchemeGrouping {
+                name: "444",
+                rows: &[4, 4, 4],
+            },
+            SchemeGrouping {
+                name: "554",
+                rows: &[5, 5, 4],
+            },
+        ],
+        _ => &[],
+    }
+}
+
+/// Resolve a grouping `name` against a scheme's declaration → its row
+/// vector. `None` when the scheme does not declare that grouping.
+pub fn scheme_grouping_rows(scheme: &str, name: &str) -> Option<&'static [usize]> {
+    scheme_groupings(scheme)
+        .iter()
+        .find(|g| g.name == name)
+        .map(|g| g.rows)
 }
 
 /// Recommended format for a label of `size_mm` mm. Mirrors
@@ -136,5 +205,45 @@ fn format_size(size_mm: f64) -> String {
             .unwrap_or_else(|_| format!("{size_mm}"))
     } else {
         format!("{size_mm}")
+    }
+}
+
+#[cfg(test)]
+mod grouping_tests {
+    use super::*;
+
+    #[test]
+    fn groupings_come_from_the_id_scheme_declaration() {
+        // ADR-031 §7: the valid groupings + their row vectors are DATA
+        // declared by the id-scheme, not a per-format code path.
+        let g = scheme_groupings("nano14");
+        assert_eq!(g.len(), 3);
+        assert_eq!(scheme_grouping_rows("nano14", "44"), Some(&[4, 4][..]));
+        assert_eq!(scheme_grouping_rows("nano14", "554"), Some(&[5, 5, 4][..]));
+        assert_eq!(scheme_grouping_rows("nano14", "464"), None);
+        // An unknown scheme declares nothing.
+        assert!(scheme_groupings("udi").is_empty());
+    }
+
+    #[test]
+    fn one_renderer_splits_any_row_vector() {
+        // THE text renderer consumes an arbitrary vector — a declared
+        // grouping renders with no new code path.
+        assert_eq!(
+            split_rows("ABCDEFGHJKMNPQ", &[4, 4, 4]),
+            ["ABCD", "EFGH", "JKMN"]
+        );
+        assert_eq!(
+            split_rows("ABCDEFGHJKMNPQ", &[4, 6, 4]),
+            ["ABCD", "EFGHJK", "MNPQ"]
+        );
+        // TextFormat.split delegates to the same one renderer (parity).
+        assert_eq!(
+            TextFormat::FiveFiveFour.split("ABCDEFGHJKMNPQ"),
+            split_rows("ABCDEFGHJKMNPQ", &[5, 5, 4])
+        );
+        // A declared grouping round-trips to its preset by row vector.
+        let rows = scheme_grouping_rows("nano14", "444").unwrap();
+        assert_eq!(TextFormat::for_rows(rows), Some(TextFormat::FourFourFour));
     }
 }
