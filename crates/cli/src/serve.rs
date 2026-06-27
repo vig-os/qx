@@ -165,7 +165,6 @@ mod tests {
             id: PartId::new("23456789ABCDEF").expect("id"),
             status: PartStatus::Unbound,
             minted_at: time::OffsetDateTime::UNIX_EPOCH,
-            batch: None,
             bound_at: None,
             type_: None,
             description: None,

@@ -417,8 +417,9 @@ id = "batch-deprecated"
 adr = "ADR-035"
 statement = "batch retired from core: grouping = shared minted_at / mint audit-entry; removed from validators, CLI selection, print events, web pickers; legacy B-* migrated"
 kind = "issue"
-status = "pending"
-tracking = "ADR-035 §0+§1b; batch still in validators REQUIRED_ALWAYS, mint/label CLIs, web bulk-add"
+status = "satisfied"
+satisfied_by = ["crates/domain/src/lib.rs", "crates/validators/src/lib.rs", "crates/cli/src/lib.rs", "schema/registry-contract.json"]
+tracking = "SATISFIED (ADR-035). batch RETIRED from the core data model: removed from Part, the SSOT contract (schema/registry-contract.json), REGISTRY_HEADER (validators), PartFilter, AuditFilter, and TargetRef (the Batch target variant). REMOVED FROM CLI SELECTION: mint --batch + label --batch gone (the mint no longer sets a batch; build_mint_diff drops the column). GROUPING = SHARED minted_at / mint audit-entry: parts minted together share minted_at and the mint's request_id audit entries — no explicit batch. PRINT EVENTS: batch_label gone via print-fold (PrintEvent left the port). WEB PICKERS: vacuous (no FE batch picker exists). LEGACY B-* MIGRATED: the B-* labels removed from every fixture (registry.csv, conformance, e2e) + the part() helpers. Note: Proposal.batch_label is retained as a generic optional PR-grouping label (set None by mint) — a distinct PR-metadata layer, not the retired Part batch. Whole workspace suite + wasm32 green."
 
 [[obligation]]
 id = "timestamp-trust"

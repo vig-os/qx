@@ -34,12 +34,6 @@
       "editable": false
     },
     {
-      "key": "batch",
-      "label": "Batch",
-      "type": "string",
-      "editable": false
-    },
-    {
       "key": "bound_at",
       "label": "Bound at",
       "type": "date",

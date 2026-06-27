@@ -144,7 +144,6 @@ fn part(id: &str, status: PartStatus, type_: Option<&str>, vendor: Option<&str>)
         id: PartId::new(id).expect("valid test id"),
         status,
         minted_at: datetime!(2026-05-10 12:00 UTC),
-        batch: Some("B-2026-05-10-1200".into()),
         bound_at: if status == PartStatus::Bound {
             Some(datetime!(2026-05-11 09:30 UTC))
         } else {

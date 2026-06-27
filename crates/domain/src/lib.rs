@@ -753,7 +753,6 @@ pub struct Part {
     pub id: PartId,
     pub status: PartStatus,
     pub minted_at: Timestamp,
-    pub batch: Option<String>,
     pub bound_at: Option<Timestamp>,
     /// `type` is a Rust keyword — serialised as `type` in CSV/JSON.
     #[serde(rename = "type")]
@@ -821,9 +820,6 @@ pub struct PrintEvent {
 pub enum TargetRef {
     Part {
         id: PartId,
-    },
-    Batch {
-        label: String,
     },
     Diff {
         hash: Hash,
@@ -898,7 +894,6 @@ pub enum PartSortKey {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PartFilter {
     pub status: Option<Vec<PartStatus>>,
-    pub batch: Option<String>,
     pub bound: Option<bool>,
     pub vendor_contains: Option<String>,
     pub limit: Option<u32>,
@@ -927,7 +922,6 @@ pub struct PrintEventFilter {
     pub printed_by: Option<OperatorId>,
     pub since: Option<Timestamp>,
     pub until: Option<Timestamp>,
-    pub batch: Option<String>,
     pub limit: Option<u32>,
 }
 
@@ -1342,7 +1336,6 @@ mod tests {
             id: sample_part_id(),
             status: PartStatus::Unbound,
             minted_at: now(),
-            batch: Some("B-2026-05-08-sheet-1".into()),
             bound_at: None,
             type_: Some("PT100".into()),
             description: None,

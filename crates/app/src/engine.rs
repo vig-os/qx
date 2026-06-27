@@ -837,24 +837,12 @@ fn create(
         }
     }
 
-    // Diff: N RowAdds. The legacy `batch` column is still part of the
-    // stored schema pre-migration (ADR-035 retires it; obligation
-    // `batch-deprecated`) — populate it with the timestamp-derived
-    // label so existing validators stay green.
-    let legacy_batch = format!(
-        "B-{:04}-{:02}-{:02}-{:02}{:02}",
-        now.year(),
-        u8::from(now.month()),
-        now.day(),
-        now.hour(),
-        now.minute()
-    );
+    // Diff: N adds.
     let mut adds = Vec::with_capacity(new_ids.len());
     for id in &new_ids {
         let mut f = BTreeMap::new();
         f.insert("status".into(), "unbound".into());
         f.insert("minted_at".into(), now_iso.clone());
-        f.insert("batch".into(), legacy_batch.clone());
         adds.push(DiffRow {
             id: Some(id.clone()),
             fields: f,

@@ -204,10 +204,6 @@ impl Repository for JsonlGitRepository {
         if let Some(allowed) = &filter.status {
             all.retain(|p| allowed.contains(&p.status));
         }
-        // batch filter — exact match against Part.batch (Option<String>).
-        if let Some(needle) = &filter.batch {
-            all.retain(|p| p.batch.as_deref() == Some(needle.as_str()));
-        }
         // bound filter — true iff status == Bound.
         if let Some(bound) = filter.bound {
             all.retain(|p| (p.status == PartStatus::Bound) == bound);

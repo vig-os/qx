@@ -527,8 +527,6 @@ pub struct PrMetadata {
     pub author_display: String,
     pub classification: Vec<String>,
     #[serde(default)]
-    pub batch: Option<String>,
-    #[serde(default)]
     pub signatures: Vec<Signature>,
 }
 
@@ -543,7 +541,6 @@ impl PrMetadata {
                 .iter()
                 .map(|a| action_kind_str(a.kind()).to_owned())
                 .collect(),
-            batch: p.batch_label.clone(),
             signatures: p.signatures.clone(),
         }
     }
@@ -635,9 +632,6 @@ fn serde_yaml_lite(m: &PrMetadata) -> String {
     out.push_str(&format!("  request_id: {}\n", m.request_id));
     out.push_str(&format!("  author: {}\n", m.author));
     out.push_str(&format!("  author_display: {}\n", m.author_display));
-    if let Some(b) = &m.batch {
-        out.push_str(&format!("  batch: {}\n", b));
-    }
     out.push_str("  classification:\n");
     if m.classification.is_empty() {
         out.push_str("    []\n");
@@ -666,7 +660,6 @@ pub fn parse_pr_metadata(body: &str) -> Option<PrMetadata> {
     let mut request_id = String::new();
     let mut author = String::new();
     let mut author_display = String::new();
-    let mut batch: Option<String> = None;
     let mut classification: Vec<String> = Vec::new();
     let mut signatures: Vec<Signature> = Vec::new();
 
@@ -684,9 +677,6 @@ pub fn parse_pr_metadata(body: &str) -> Option<PrMetadata> {
             in_classification = false;
         } else if let Some(rest) = line.trim_start().strip_prefix("author:") {
             author = rest.trim().to_owned();
-            in_classification = false;
-        } else if let Some(rest) = line.trim_start().strip_prefix("batch:") {
-            batch = Some(rest.trim().to_owned());
             in_classification = false;
         } else if line.trim_start().starts_with("classification:") {
             in_classification = true;
@@ -707,7 +697,6 @@ pub fn parse_pr_metadata(body: &str) -> Option<PrMetadata> {
         author,
         author_display,
         classification,
-        batch,
         signatures,
     })
 }
@@ -1620,7 +1609,6 @@ mod tests {
         let mut fields = BTreeMap::new();
         fields.insert("status".into(), "unbound".into());
         fields.insert("minted_at".into(), "2026-05-11T12:00:00Z".into());
-        fields.insert("batch".into(), "B-2026-05-11-experiment".into());
         Diff {
             adds: vec![DiffRow {
                 id: Some(pid("ABCDEFGHJKMNPQ")),
@@ -1825,7 +1813,6 @@ mod tests {
             "id".into(),
             "status".into(),
             "minted_at".into(),
-            "batch".into(),
             "bound_at".into(),
             "type".into(),
             "description".into(),
@@ -2195,7 +2182,6 @@ mod tests {
         let meta = parse_pr_metadata(&body).expect("metadata block present");
         assert_eq!(meta.request_id, proposal.request_id.to_string());
         assert_eq!(meta.author, "github:gerchowl");
-        assert_eq!(meta.batch.as_deref(), Some("B-2026-05-11-experiment"));
     }
 
     #[test]

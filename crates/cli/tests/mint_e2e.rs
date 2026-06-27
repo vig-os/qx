@@ -21,7 +21,6 @@ fn mint_three_ids_produces_diff_and_audit_entries() {
 
     let args = MintArgs {
         count: 3,
-        batch: Some("B-test-001".into()),
         dry_run: true,
         dry_run_file: None,
         local: false,
@@ -29,7 +28,6 @@ fn mint_three_ids_produces_diff_and_audit_entries() {
 
     let outcome = run_mint(&args, &wiring).expect("mint succeeds");
     assert_eq!(outcome.minted.len(), 3);
-    assert_eq!(outcome.batch, "B-test-001");
 
     // Each minted id is ADR-012 conformant.
     for id in &outcome.minted {
@@ -47,7 +45,8 @@ fn mint_three_ids_produces_diff_and_audit_entries() {
     assert!(p.diff.edits.is_empty());
     assert!(p.diff.deletes.is_empty());
     assert!(p.diff.header_changes.is_empty());
-    assert_eq!(p.batch_label.as_deref(), Some("B-test-001"));
+    // batch retired (ADR-035; obligation batch-deprecated): no batch label.
+    assert_eq!(p.batch_label, None);
 
     // minted_by is populated with the operator ID (#18).
     for add in &p.diff.adds {
@@ -80,7 +79,6 @@ fn mint_zero_count_errors() {
     let (_tmp, wiring, _store) = common::fresh_wiring();
     let args = MintArgs {
         count: 0,
-        batch: None,
         dry_run: true,
         dry_run_file: None,
         local: false,
@@ -93,16 +91,15 @@ fn mint_summary_text_matches_python_shape() {
     let (_tmp, wiring, _store) = common::fresh_wiring();
     let args = MintArgs {
         count: 2,
-        batch: Some("B-fixture".into()),
         dry_run: true,
         dry_run_file: None,
         local: false,
     };
     let outcome = run_mint(&args, &wiring).unwrap();
     let s = qx_cli::render_mint_summary(&outcome, &wiring.repo_root);
-    assert!(s.starts_with("minted 2 ids in batch B-fixture\n"));
+    assert!(s.starts_with("minted 2 ids\n"));
     assert!(s.contains("  registry: "));
-    assert!(s.contains("render labels:  label --batch B-fixture --layout horz"));
+    assert!(s.contains("render labels:  label <id> --layout horz"));
 }
 
 #[test]
@@ -112,7 +109,6 @@ fn audit_entry_roundtrips_through_storage_with_empty_signatures() {
     let (_tmp, wiring, _store) = common::fresh_wiring();
     let args = MintArgs {
         count: 1,
-        batch: Some("B-roundtrip".into()),
         dry_run: true,
         dry_run_file: None,
         local: false,
@@ -145,7 +141,6 @@ fn mint_avoids_collisions_with_existing_registry() {
     let (_tmp, wiring, _store) = common::seeded_wiring(&rows);
     let args = MintArgs {
         count: 5,
-        batch: Some("B-fresh".into()),
         dry_run: true,
         dry_run_file: None,
         local: false,

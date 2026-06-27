@@ -128,7 +128,6 @@ fn list_parts_filters_by_status() {
 fn list_parts_filters_by_batch_and_vendor() {
     let (_tmp, repo) = fresh_repo();
     let filter = PartFilter {
-        batch: Some("B-2026-05-08-sheet-2".into()),
         vendor_contains: Some("Beta".into()),
         ..Default::default()
     };

@@ -62,12 +62,7 @@ pub fn part_to_entity(p: &Part) -> Entity {
         transitioned_at.insert("bound".to_string(), rfc3339(b));
     }
 
-    let mut properties = serde_json::Map::new();
-    if let Some(batch) = &p.batch {
-        // Legacy column (ADR-035 retires `batch`); surfaced as an open
-        // property until the data migration drops it.
-        properties.insert("batch".to_string(), Json::String(batch.clone()));
-    }
+    let properties = serde_json::Map::new();
 
     Entity {
         id: p.id.as_str().to_string(),
