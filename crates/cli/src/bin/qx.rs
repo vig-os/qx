@@ -1099,6 +1099,11 @@ fn check(path: &Path, base: Option<&str>, approvers: &[String]) -> ExitCode {
     //     when no personas collection is present.
     personas_cross_check(path, approvers, &mut failures);
 
+    // --- Manifest↔contract FK (ADR-034 §3 / capability-grain): when a
+    //     `.qx/manifest.toml` is present, every collection it names (in
+    //     [ops] or a role map) must be a contract-declared collection.
+    manifest_cross_check(path, &mut failures);
+
     // --- Exports never committed (ADR-035): a `*.csv` beside the JSONL
     //     collections is a committed export. CSV is an export VIEW —
     //     generated on demand (Export op / Pages build), never stored.
@@ -1419,6 +1424,37 @@ fn resolve_kind_schemas(
         resolved.insert(kind.clone(), acc);
     }
     resolved
+}
+
+/// Manifest↔contract FK cross-check (ADR-034 §3 / `capability-grain`).
+/// When a `.qx/manifest.toml` is present, parse it and require every
+/// collection it references (via `[ops]` keys or role-capability keys) to
+/// be declared in the contract. A repo without a manifest is unaffected.
+fn manifest_cross_check(path: &Path, failures: &mut Vec<String>) {
+    let manifest_path = path.join(".qx/manifest.toml");
+    let Ok(text) = std::fs::read_to_string(&manifest_path) else {
+        return;
+    };
+    let manifest = match qx_cli::manifest::Manifest::parse(&text) {
+        Ok(m) => m,
+        Err(e) => {
+            failures.push(format!(".qx/manifest.toml: {e}"));
+            return;
+        }
+    };
+    // The contract's declared collection roster is the FK target universe.
+    let contract_path = path.join(".qx/contract.json");
+    let declared: Vec<String> = match std::fs::read(&contract_path) {
+        Ok(bytes) => match qx_contract::Contract::from_bytes(&bytes) {
+            Ok(c) => c.collections.iter().map(|c| c.name.clone()).collect(),
+            Err(_) => Vec::new(), // contract invalidity is reported by check_contract
+        },
+        Err(_) => Vec::new(),
+    };
+    let declared_refs: Vec<&str> = declared.iter().map(String::as_str).collect();
+    for issue in manifest.contract_fk_issues(&declared_refs) {
+        failures.push(issue);
+    }
 }
 
 /// Personas accountability cross-check (ADR-036 §1/§2). When the registry

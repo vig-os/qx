@@ -338,8 +338,9 @@ id = "registry-manifest"
 adr = "ADR-034"
 statement = "Per-registry manifest.toml declares enabled ops, feature flags, identity, and the advisory role→capability map"
 kind = "artifact"
-status = "pending"
-tracking = "ADR-034 §3-4; .qx/manifest.toml + roles.toml not yet defined/seeded"
+status = "satisfied"
+satisfied_by = ["crates/cli/src/manifest.rs", "crates/cli/src/bin/qx.rs"]
+tracking = "SATISFIED (ADR-034 §3). .qx/manifest.toml is parsed by crates/cli/src/manifest.rs (Manifest{registry, ops, roles}, serde deny_unknown_fields). DECLARES: identity/metadata (RegistryMeta{id,name,description,owner}); ENABLED OPS at the (op-family x collection [x edge]) grain (ops map, keys create:parts / transition:parts:void, values on/off); the ADVISORY ROLE->CAPABILITY map (roles.<role> = {collection:op-kind -> elevation}, the CODEOWNERS-seed source). Feature flags dissolve into ops + descriptors per ADR-034 §3 (single-home). Proven by parses_identity_ops_and_roles + the qx-check e2e; suite green."
 
 [[obligation]]
 id = "canary-pipeline"
@@ -490,8 +491,9 @@ id = "capability-grain"
 adr = "ADR-034"
 statement = "Manifest enables ops at (op-family × collection [× edge]) grain; render structure lives only in descriptors; CI validates manifest↔contract FK"
 kind = "ci"
-status = "pending"
-tracking = "ADR-034 §3 (2026-06-11 grain); manifest schema + FK validator not yet built"
+status = "satisfied"
+satisfied_by = ["crates/cli/src/manifest.rs", "crates/cli/src/bin/qx.rs"]
+tracking = "SATISFIED (ADR-034 §3, 2026-06-11 grain). OPS AT (op-family x collection [x edge]) GRAIN: manifest ops keys are `<family>:<collection>` or `<family>:<collection>:<edge>` (create:parts, transition:parts:void). RENDER STRUCTURE LIVES ONLY IN DESCRIPTORS: the manifest carries NO render fields (serde deny_unknown_fields rejects any) — the single-home rule, layouts/groupings stay in the contract descriptor. CI VALIDATES MANIFEST<->CONTRACT FK: Manifest::contract_fk_issues (every collection named by an ops key OR a role-capability key must be a contract-declared collection) is wired into qx check via manifest_cross_check. Proven by fk_flags_collection_absent_from_contract + manifest_fk_rejects_undeclared_collection (e2e); suite green, clippy clean."
 
 [[obligation]]
 id = "typed-ids"
