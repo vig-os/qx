@@ -548,8 +548,9 @@ id = "audit-append-only-gate-rule"
 adr = "ADR-037"
 statement = "pr check rejects any PR whose diff to audit_log.jsonl is not pure trailing addition; chain links retired for content_hash + checkpoints"
 kind = "gate"
-status = "pending"
-tracking = "ADR-037 §1; the append-only DIFF RULE is BUILT (M-B): qx check --base rejects any audit_log.jsonl change that is not a pure trailing append (existing entries immutable) — audit_append_only_violation in crates/cli, proven by the unit test + e2e audit_log_tampering_fails_the_gate. REMAINING: the hash-chain link (per-entry prev-hash) + the checkpoint writer in the anchor CI job"
+status = "satisfied"
+satisfied_by = ["crates/observability/src/lib.rs", "crates/cli/src/bin/qx.rs", "crates/domain/src/lib.rs"]
+tracking = "SATISFIED (ADR-037 §1). ALL TERMS: (1) APPEND-ONLY GATE — qx check rejects any PR whose audit_log.jsonl diff is not a pure trailing addition (audit_append_only_violation, wired with --base; proven by the existing rewriting-an-entry e2e). (2) CHAIN LINKS RETIRED — chain_hash is no longer load-bearing (Optional/None); the replacement self-describes without referencing predecessors. (3) CONTENT_HASH — AuditEntry carries a per-entry content_hash = sha256 of its OWN canonical body (content_hash cleared before hashing, so no self-reference + no chain); stamped on every emitted entry via with_content_hash in the observability constructors; qx check's audit_integrity_check rejects any entry whose recorded content_hash != recompute (in-line tamper evidence). (4) CHECKPOINTS — Checkpoint{seq,line_count,stream_digest,head_sha,anchor_ref?} + make_checkpoint/stream_digest/verify_checkpoint (observability) + the `qx checkpoint` writer appends a pin to audit_checkpoints.jsonl; qx check verifies every checkpoint's pinned prefix still digests correctly (catches historical tampering base-free). anchor_ref reserved (None) until the release anchor ledger lands. Proven by content_hash + checkpoint unit tests + 2 e2e (checkpoint_then_check_verifies_and_catches_tampering, content_hash_mismatch_fails_the_gate); whole workspace suite + wasm32 green, clippy clean."
 
 [[obligation]]
 id = "merge-sync-witness"

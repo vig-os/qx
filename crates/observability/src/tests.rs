@@ -68,6 +68,7 @@ fn sample_audit_entry(rid: RequestId, signatures: Vec<Signature>) -> AuditEntry 
         extra: Json::Object(Default::default()),
         signatures,
         chain_hash: None,
+        content_hash: None,
     }
 }
 
@@ -524,6 +525,26 @@ fn mint_audit_entry_constructs_row_add() {
     );
     assert_eq!(entry.action.kind(), qx_domain::ActionKind::RowAdd);
     assert!(matches!(entry.target, TargetRef::Part { .. }));
+    // content_hash (ADR-037 §1): the emitted entry self-describes via a
+    // sha256 of its own body, and the recorded hash verifies.
+    let h = entry.content_hash.as_ref().expect("content_hash stamped");
+    assert!(h.0.starts_with("sha256:"), "content_hash form: {}", h.0);
+    assert!(super::content_hash_valid(&entry), "fresh entry must verify");
+    // Tamper the body → the recorded hash no longer matches.
+    let mut tampered = entry.clone();
+    tampered.extra = serde_json::json!({"tampered": true});
+    assert!(
+        !super::content_hash_valid(&tampered),
+        "a mutated body must fail content-hash verification"
+    );
+    // It does NOT reference a predecessor (chain retired): the hash is a
+    // pure, deterministic function of the body — a clone hashes identically,
+    // and the already-stamped content_hash field does not perturb it.
+    assert_eq!(
+        super::content_hash_of(&entry),
+        super::content_hash_of(&entry.clone()),
+        "content_hash is a deterministic pure function of the body"
+    );
     // timestamp-trust (ADR-035 §1b): the stamp's provenance is recorded —
     // a local-clock stamp is `system`, and it round-trips through the
     // durable audit log as a self-describing field.
@@ -795,4 +816,28 @@ fn discrete_form_carries_real_part_id_in_action() {
         }
         other => panic!("expected RowBind, got {other:?}"),
     }
+}
+
+#[test]
+fn checkpoint_pins_and_verifies_the_stream() {
+    // ADR-037 §1: a checkpoint pins the stream prefix; verification fails
+    // if a historical line is tampered or the stream is truncated.
+    let log = "{\"a\":1}\n{\"b\":2}\n{\"c\":3}\n";
+    let cp = super::make_checkpoint(log, 0, "deadbeef".into());
+    assert_eq!(cp.line_count, 3);
+    assert!(cp.stream_digest.0.starts_with("sha256:"));
+    assert!(
+        cp.anchor_ref.is_none(),
+        "anchor_ref reserved until the ledger"
+    );
+    // Unchanged stream verifies; appending more lines still verifies the
+    // pinned prefix (append-only is fine).
+    assert!(super::verify_checkpoint(&cp, log).is_ok());
+    let appended = format!("{log}{}", "{\"d\":4}\n");
+    assert!(super::verify_checkpoint(&cp, &appended).is_ok());
+    // Tampering a pinned line fails.
+    let tampered = "{\"a\":1}\n{\"b\":99}\n{\"c\":3}\n";
+    assert!(super::verify_checkpoint(&cp, tampered).is_err());
+    // Truncating below the pinned count fails.
+    assert!(super::verify_checkpoint(&cp, "{\"a\":1}\n").is_err());
 }

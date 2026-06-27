@@ -570,6 +570,7 @@ impl AuditEntryRow {
             extra,
             signatures,
             chain_hash,
+            content_hash: None,
         })
     }
 

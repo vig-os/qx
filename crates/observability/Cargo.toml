@@ -15,6 +15,8 @@ tracing-subscriber = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# Per-entry `content_hash` over the canonical body (ADR-037 §1).
+sha2 = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }
 qx-config = { path = "../config" }

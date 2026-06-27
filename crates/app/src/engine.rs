@@ -1159,6 +1159,7 @@ fn edit(
         extra: json!({ "proposal": proposal_ref.url }),
         signatures: Vec::new(),
         chain_hash: None,
+        content_hash: None,
     };
     emit_audit(&entry);
     ctx.repo.append_audit_event(entry).ok();
