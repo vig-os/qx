@@ -73,6 +73,58 @@ fn git_init(dir: &Path) {
     git(&["config", "commit.gpgsign", "false"], dir);
 }
 
+fn qx_verify(dir: &Path, anchors: bool) -> std::process::Output {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_qx"));
+    cmd.arg("verify").arg("--path").arg(dir);
+    if anchors {
+        cmd.arg("--anchors");
+    }
+    cmd.current_dir(dir).output().expect("spawn verify")
+}
+
+#[test]
+fn verify_passes_clean_clone_and_catches_tampering_offline() {
+    // ADR-037 §5: `qx verify` checks a clone offline — contract/FK,
+    // content-hash + checkpoints, personas — with no base and no network.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    write_repo(
+        dir,
+        TWO_COLLECTION_CONTRACT,
+        "{\"id\":\"PART2223AAAAAA\",\"status\":\"bound\",\"type\":\"bolt\",\"torque\":\"1.50\",\"manufacturer\":\"CMPY2223AAAAAA\"}\n",
+        "{\"id\":\"CMPY2223AAAAAA\",\"label\":\"Acme\"}\n",
+    );
+    fs::write(dir.join("audit_log.jsonl"), "{\"a\":1}\n{\"b\":2}\n").unwrap();
+    Command::new(env!("CARGO_BIN_EXE_qx"))
+        .args(["checkpoint", "--path"])
+        .arg(dir)
+        .output()
+        .unwrap();
+
+    // Clean clone verifies.
+    let out = qx_verify(dir, false);
+    assert!(
+        out.status.success(),
+        "clean clone must verify, got:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("verify: OK"));
+
+    // --anchors reports the reserved checks (does not silently pass over).
+    let out = qx_verify(dir, true);
+    assert!(out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("anchor-ledger"),
+        "expected the reserved-anchors notice"
+    );
+
+    // Tamper a checkpoint-pinned audit line → verify fails offline.
+    fs::write(dir.join("audit_log.jsonl"), "{\"a\":999}\n{\"b\":2}\n").unwrap();
+    let out = qx_verify(dir, false);
+    assert!(!out.status.success(), "tampered clone must fail verify");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("digest mismatch"));
+}
+
 #[test]
 fn checkpoint_then_check_verifies_and_catches_tampering() {
     // ADR-037 §1: `qx checkpoint` pins the stream; a later `qx check`
