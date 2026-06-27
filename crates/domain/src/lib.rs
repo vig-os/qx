@@ -327,45 +327,38 @@ pub type ChangeClass = ActionKind;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Action {
-    RowAdd {
-        row: Json,
-    },
-    RowDelete {
-        id: PartId,
-    },
-    RowVoid {
-        id: PartId,
-        reason: String,
-    },
+    #[serde(rename = "add", alias = "row_add")]
+    RowAdd { row: Json },
+    #[serde(rename = "delete", alias = "row_delete")]
+    RowDelete { id: PartId },
+    #[serde(rename = "void", alias = "row_void")]
+    RowVoid { id: PartId, reason: String },
+    #[serde(rename = "bind", alias = "row_bind")]
     RowBind {
         id: PartId,
         fields: BTreeMap<String, String>,
     },
+    #[serde(rename = "edit", alias = "row_edit")]
     RowEdit {
         id: PartId,
         before: BTreeMap<String, String>,
         after: BTreeMap<String, String>,
     },
+    #[serde(rename = "descriptor_change", alias = "header_change")]
     HeaderChange {
         before: Vec<String>,
         after: Vec<String>,
     },
-    BulkChange {
-        description: String,
-        count: u32,
-    },
+    #[serde(rename = "bulk", alias = "bulk_change")]
+    BulkChange { description: String, count: u32 },
     /// A generic entity-store record upsert (ADR-035) — the collection
     /// and id it targets, so policy/audit key on {collection, op-kind}.
-    RecordWrite {
-        collection: String,
-        id: String,
-    },
+    #[serde(rename = "write", alias = "record_write")]
+    RecordWrite { collection: String, id: String },
     /// A label print (ADR-022 print-fold) — the id printed and the copy
     /// count, recorded on the audit spine rather than a separate log.
-    Print {
-        id: String,
-        copies: u32,
-    },
+    #[serde(rename = "print")]
+    Print { id: String, copies: u32 },
 }
 
 impl Action {
@@ -382,6 +375,33 @@ impl Action {
             Action::BulkChange { .. } => ActionKind::BulkChange,
             Action::RecordWrite { .. } => ActionKind::RecordWrite,
             Action::Print { .. } => ActionKind::Print,
+        }
+    }
+
+    /// The generic operation kind (ADR-016/030 unified vocabulary): every
+    /// action keys on {collection, op-kind}. `descriptor_change`
+    /// generalizes the legacy `header_change`.
+    pub fn op_kind(&self) -> &'static str {
+        match self {
+            Action::RowAdd { .. } => "add",
+            Action::RowDelete { .. } => "delete",
+            Action::RowVoid { .. } => "void",
+            Action::RowBind { .. } => "bind",
+            Action::RowEdit { .. } => "edit",
+            Action::HeaderChange { .. } => "descriptor_change",
+            Action::BulkChange { .. } => "bulk",
+            Action::RecordWrite { .. } => "write",
+            Action::Print { .. } => "print",
+        }
+    }
+
+    /// The collection this action targets (the other half of the
+    /// {collection, op-kind} key). Parts-row + descriptor + bulk + print
+    /// actions are the `parts` collection; record writes carry theirs.
+    pub fn collection(&self) -> &str {
+        match self {
+            Action::RecordWrite { collection, .. } => collection,
+            _ => "parts",
         }
     }
 }
@@ -1280,6 +1300,36 @@ mod tests {
             }
             other => panic!("expected RecordWrite, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn actions_key_on_collection_and_op_kind() {
+        // Every action exposes {collection, op-kind} (unified vocabulary).
+        let rw = Action::RecordWrite {
+            collection: "companies".into(),
+            id: "X".into(),
+        };
+        assert_eq!(rw.op_kind(), "write");
+        assert_eq!(rw.collection(), "companies");
+        let h = Action::HeaderChange {
+            before: vec![],
+            after: vec![],
+        };
+        // descriptor_change generalizes header_change.
+        assert_eq!(h.op_kind(), "descriptor_change");
+        assert_eq!(h.collection(), "parts");
+
+        // The generic op-kind is what persists; the legacy tag still reads.
+        let row = Action::RowAdd {
+            row: serde_json::json!({}),
+        };
+        let j = serde_json::to_string(&row).unwrap();
+        assert!(
+            j.contains("\"kind\":\"add\""),
+            "persists generic op-kind: {j}"
+        );
+        let legacy: Action = serde_json::from_str(r#"{"kind":"row_add","row":{}}"#).unwrap();
+        assert_eq!(legacy.op_kind(), "add", "legacy row_add still deserializes");
     }
 
     // -----------------------------------------------------------
