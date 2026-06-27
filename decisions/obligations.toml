@@ -128,8 +128,9 @@ id = "crypto-reopen-triggers-watched"
 adr = "ADR-023"
 statement = "Crypto re-open triggers T1-T6 are surveyed, not silently resolved"
 kind = "test"
-status = "pending"
-tracking = "ADR-029 dimension 5 (trigger watchers); validator binary not yet built"
+status = "satisfied"
+satisfied_by = ["decisions/crypto-reopen-triggers.toml", "crates/devtools/src/crypto_triggers.rs"]
+tracking = "SATISFIED (ADR-029 dim 5 trigger watchers, surveying ADR-023 re-open triggers). The watcher registry decisions/crypto-reopen-triggers.toml enumerates ADR-023's T1-T6 each with an EXPLICIT status (watching/fired). The crypto-triggers-survey binary (crates/devtools/src/crypto_triggers.rs) parses the T<n> ids straight out of ADR-023 (the SSOT) and cross-checks: every defined trigger has a watcher row (no SILENT RESOLUTION), every watcher row maps to an ADR-023 trigger (no orphan), each status is recognized, and any `fired` trigger is surfaced loudly (exit 2). Drift exits 1. So a trigger cannot be silently dropped from either ADR-023 or the registry without the survey failing. Proven by adr_trigger_ids_extracts_t1_through_t6 + shipped_registry_covers_every_adr_trigger (runs the real survey over the shipped files: 6 watched, no drift); clippy clean."
 
 [[obligation]]
 id = "reproducible-signed-releases"
