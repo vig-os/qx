@@ -403,6 +403,12 @@ pub struct Diff {
     /// adds/edits above (registry.csv) until the JSONL cutover.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub record_writes: Vec<RecordWrite>,
+    /// Audit entries to append to the audit spine `audit_log.jsonl` as
+    /// part of this change (ADR-022/037): the audit trail is committed
+    /// IN the PR (append-only, gate-checked), not a side effect. The
+    /// sink renders each as a trailing JSONL line.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub audit_appends: Vec<AuditEntry>,
 }
 
 /// A generic record upsert in a non-parts collection (ADR-035 entity
