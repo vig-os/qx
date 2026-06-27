@@ -54,6 +54,7 @@ fn sample_audit_entry(rid: RequestId, signatures: Vec<Signature>) -> AuditEntry 
     AuditEntry {
         request_id: rid,
         timestamp: fixed_ts(),
+        time_source: qx_domain::TimeSource::System,
         actor: sample_operator(),
         action: Action::RowBind {
             id: sample_part_id(),
@@ -523,6 +524,22 @@ fn mint_audit_entry_constructs_row_add() {
     );
     assert_eq!(entry.action.kind(), qx_domain::ActionKind::RowAdd);
     assert!(matches!(entry.target, TargetRef::Part { .. }));
+    // timestamp-trust (ADR-035 §1b): the stamp's provenance is recorded —
+    // a local-clock stamp is `system`, and it round-trips through the
+    // durable audit log as a self-describing field.
+    assert_eq!(entry.time_source, qx_domain::TimeSource::System);
+    let json = serde_json::to_string(&entry).expect("serialize");
+    assert!(
+        json.contains("\"time_source\":\"system\""),
+        "provenance must serialize into the spine: {json}"
+    );
+    let back: qx_domain::AuditEntry = serde_json::from_str(&json).expect("round-trip");
+    assert_eq!(back.time_source, qx_domain::TimeSource::System);
+    // Pre-provenance entries (no field) default to `system` on read.
+    let legacy = json.replacen(",\"time_source\":\"system\"", "", 1);
+    let from_legacy: qx_domain::AuditEntry =
+        serde_json::from_str(&legacy).expect("legacy entry deserializes");
+    assert_eq!(from_legacy.time_source, qx_domain::TimeSource::System);
 }
 
 #[test]

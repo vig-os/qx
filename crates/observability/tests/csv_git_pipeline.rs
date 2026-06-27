@@ -90,6 +90,7 @@ fn full_pipeline_writes_csv_with_sigstore_round_trip() {
     let entry = AuditEntry {
         request_id: rid,
         timestamp: time::OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap(),
+        time_source: qx_domain::TimeSource::System,
         actor: sample_operator(),
         action: Action::RowBind {
             id: PartId::new("ABCDEFGHJKMNPQ").unwrap(),

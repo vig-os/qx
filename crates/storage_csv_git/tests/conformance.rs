@@ -154,6 +154,7 @@ fn sample_entry(request_id: RequestId, signatures: Vec<Signature>) -> AuditEntry
     AuditEntry {
         request_id,
         timestamp: OffsetDateTime::from_unix_timestamp(1_715_000_000).unwrap(),
+        time_source: qx_domain::TimeSource::System,
         actor: sample_actor(),
         action: Action::RowAdd {
             row: json!({"id": "26N4T5BU5FCGAB", "status": "unbound"}),

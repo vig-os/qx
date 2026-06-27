@@ -629,6 +629,7 @@ where
     Some(AuditEntry {
         request_id,
         timestamp: now_utc(),
+        time_source: qx_domain::TimeSource::System,
         actor,
         action,
         target,
@@ -734,6 +735,7 @@ pub fn mint_audit_entry(
     AuditEntry {
         request_id,
         timestamp: time::OffsetDateTime::now_utc(),
+        time_source: qx_domain::TimeSource::System,
         actor,
         action: Action::RowAdd { row },
         target: TargetRef::Part { id: minted_id },
@@ -759,6 +761,7 @@ pub fn record_write_audit_entry(
     AuditEntry {
         request_id,
         timestamp,
+        time_source: qx_domain::TimeSource::System,
         actor,
         action: Action::RecordWrite {
             collection: collection.clone(),
@@ -786,6 +789,7 @@ pub fn print_audit_entry(
     AuditEntry {
         request_id,
         timestamp,
+        time_source: qx_domain::TimeSource::System,
         actor,
         action: Action::Print {
             id: id.as_str().to_string(),
@@ -811,6 +815,7 @@ pub fn bind_audit_entry(
     AuditEntry {
         request_id,
         timestamp: time::OffsetDateTime::now_utc(),
+        time_source: qx_domain::TimeSource::System,
         actor,
         action: Action::RowBind {
             id: id.clone(),
@@ -837,6 +842,7 @@ pub fn edit_audit_entry(
     AuditEntry {
         request_id,
         timestamp: time::OffsetDateTime::now_utc(),
+        time_source: qx_domain::TimeSource::System,
         actor,
         action: Action::RowEdit {
             id: id.clone(),
@@ -863,6 +869,7 @@ pub fn void_audit_entry(
     AuditEntry {
         request_id,
         timestamp: time::OffsetDateTime::now_utc(),
+        time_source: qx_domain::TimeSource::System,
         actor,
         action: Action::RowVoid {
             id: id.clone(),

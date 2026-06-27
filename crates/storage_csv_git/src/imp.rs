@@ -561,6 +561,7 @@ impl AuditEntryRow {
         Ok(AuditEntry {
             request_id,
             timestamp,
+            time_source: qx_domain::TimeSource::System,
             actor,
             action,
             target,

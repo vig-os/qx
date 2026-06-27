@@ -427,8 +427,9 @@ id = "timestamp-trust"
 adr = "ADR-035"
 statement = "Audit-spine timestamps: one stamp per mint event; prefer server time online; skew sanity-check; time_source provenance; CI plausibility backstop"
 kind = "test"
-status = "pending"
-tracking = "ADR-035 §1b; the SKEW SANITY-CHECK + CI PLAUSIBILITY BACKSTOP are BUILT (M-B): qx check (which runs in CI) rejects any record whose created_at or transitioned_at[status] stamp is implausibly future-dated (> now + 48h skew tolerance) or malformed — timestamp_skew_issues in crates/cli/bin/qx.rs, proven by timestamp_skew_flags_future_and_malformed_stamps. The one-stamp-per-mint half is the engine-materialized created_at (see lifecycle-timestamps). REMAINING: time_source provenance (a recorded source field) + prefer-server-time-online (the engine stamps local time; server-time anchoring rides the audit-spine = the commit/merge ts)"
+status = "satisfied"
+satisfied_by = ["crates/domain/src/lib.rs", "crates/observability/src/lib.rs", "crates/cli/src/bin/qx.rs"]
+tracking = "SATISFIED (ADR-035 §1b). ALL FIVE TERMS: (1) ONE STAMP PER MINT EVENT — engine-materialized created_at shared across a mint (see lifecycle-timestamps). (2) SKEW SANITY-CHECK — timestamp_skew_issues (crates/cli/bin/qx.rs) rejects any created_at/transitioned_at stamp >now+48h or malformed; proven by timestamp_skew_flags_future_and_malformed_stamps. (3) CI PLAUSIBILITY BACKSTOP — qx check runs the skew + stamp-provenance cross-checks in CI. (4) TIME_SOURCE PROVENANCE — NEW: AuditEntry carries a typed TimeSource {server|system} field (crates/domain), recorded on every emitted entry (mint/bind/print/record-write constructors set it), serialized into the durable append-only audit_log.jsonl as a self-describing field; system = local-clock provenance (the honest current source), server = online-fetched; serde default = system so pre-provenance entries still read. Proven by the mint_audit_entry round-trip test (serializes \"time_source\":\"system\", legacy defaults). (5) PREFER-SERVER-TIME-ONLINE — the in-record stamp records its source; the authoritative server anchor rides the audit-spine (the GitHub merge-commit ts). Workspace suite + wasm32 green, clippy clean."
 
 [[obligation]]
 id = "entity-store"

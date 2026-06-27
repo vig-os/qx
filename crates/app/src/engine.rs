@@ -1144,6 +1144,7 @@ fn edit(
     let entry = qx_domain::AuditEntry {
         request_id,
         timestamp: OffsetDateTime::now_utc(),
+        time_source: qx_domain::TimeSource::System,
         actor: op,
         action: qx_domain::Action::RowEdit {
             id: target.id.clone(),
