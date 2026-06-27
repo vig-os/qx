@@ -389,8 +389,9 @@ id = "properties-promotion"
 adr = "ADR-035"
 statement = "Open properties bag is shape-checked; a promote op moves a hot key into a typed tier-2 field"
 kind = "test"
-status = "pending"
-tracking = "ADR-035 §3; the SHAPE-CHECK half is BUILT (M-B): validate_record now shape-checks the tier-3 open-properties bag — when open_properties=true, an object/array-valued open property is rejected (structured data must be a declared field), excluding the engine envelope keys (id/status/created_at/transitioned_at/label/kind). Proven by open_property_with_structured_value_is_rejected. REMAINING: the promote op (a contract-mutating qx command that moves a hot open-property key into a declared tier-2 field — the contract crate is a pure parser today, so it needs raw-JSON contract editing + re-validation)"
+status = "satisfied"
+satisfied_by = ["crates/validators/src/record.rs", "crates/cli/src/bin/qx.rs"]
+tracking = "SATISFIED (ADR-035 §3, M-B). BOTH halves done: (1) the tier-3 open-properties bag is SHAPE-CHECKED — validate_record rejects an object/array-valued open property (structured data must be a declared field), proven by open_property_with_structured_value_is_rejected; (2) the PROMOTE OP — `qx promote <collection> <key> --field-type <t>` moves a hot open-property key into a declared typed tier-2 field by editing .qx/contract.json (promote_field: scalar types string/integer/number/decimal/date/timestamp/bool; rejects already-declared keys, unknown collections, non-promotable types, envelope keys; the edit must re-parse as a valid Contract). Proven by promote_field_adds_a_declared_field_and_stays_valid + promote_field_rejects_invalid_promotions + an init->promote->check e2e."
 
 [[obligation]]
 id = "idd-controlled-vocab"
