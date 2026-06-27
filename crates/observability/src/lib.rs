@@ -370,7 +370,6 @@ fn action_kind_str(action: &Action) -> &'static str {
 fn target_kind_str(t: &TargetRef) -> &'static str {
     match t {
         TargetRef::Part { .. } => "part",
-        TargetRef::Batch { .. } => "batch",
         TargetRef::Diff { .. } => "diff",
         TargetRef::File { .. } => "file",
         TargetRef::Record { .. } => "record",
@@ -604,10 +603,6 @@ where
             .as_deref()
             .and_then(|s| qx_domain::PartId::new(s.to_string()).ok())
             .map(|id| TargetRef::Part { id }),
-        Some("batch") => v
-            .target_value
-            .clone()
-            .map(|label| TargetRef::Batch { label }),
         Some("diff") => v
             .target_value
             .clone()

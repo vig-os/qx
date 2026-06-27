@@ -36,18 +36,11 @@ fn pid(s: &str) -> PartId {
     PartId::new(s).unwrap()
 }
 
-fn part(
-    id: &str,
-    status: PartStatus,
-    batch: &str,
-    bound_at: Option<Timestamp>,
-    vendor: Option<&str>,
-) -> Part {
+fn part(id: &str, status: PartStatus, bound_at: Option<Timestamp>, vendor: Option<&str>) -> Part {
     Part {
         id: pid(id),
         status,
         minted_at: datetime!(2026-05-08 13:00 UTC),
-        batch: Some(batch.into()),
         bound_at,
         type_: None,
         description: None,
@@ -73,35 +66,20 @@ fn fixture_parts() -> Vec<Part> {
         part(
             "26N4T5BU5FCGAB",
             PartStatus::Bound,
-            "B-2026-05-08-sheet-1",
             Some(datetime!(2026-05-08 14:00 UTC)),
             Some("Acme"),
         ),
         part(
             "2Y5PZVD7PBK9CD",
             PartStatus::Bound,
-            "B-2026-05-08-sheet-1",
             Some(datetime!(2026-05-08 14:30 UTC)),
             Some("Acme"),
         ),
-        part(
-            "3NYKQ7D2GRX3EF",
-            PartStatus::Unbound,
-            "B-2026-05-08-sheet-1",
-            None,
-            None,
-        ),
-        part(
-            "4M4DWPCHD9PTGH",
-            PartStatus::Unbound,
-            "B-2026-05-08-sheet-2",
-            None,
-            Some("Beta"),
-        ),
+        part("3NYKQ7D2GRX3EF", PartStatus::Unbound, None, None),
+        part("4M4DWPCHD9PTGH", PartStatus::Unbound, None, Some("Beta")),
         part(
             "5RHCG9G7CHKMJK",
             PartStatus::Void,
-            "B-2026-05-08-sheet-2",
             Some(datetime!(2026-05-08 15:00 UTC)),
             Some("Gamma"),
         ),
@@ -212,7 +190,6 @@ fn list_parts_filters_by_status() {
 fn list_parts_filters_by_batch_and_vendor() {
     let (_tmp, repo) = fresh_repo();
     let filter = PartFilter {
-        batch: Some("B-2026-05-08-sheet-2".into()),
         vendor_contains: Some("Beta".into()),
         ..Default::default()
     };

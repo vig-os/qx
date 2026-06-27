@@ -25,7 +25,6 @@ fn label_renders_svg_per_id_and_logs_print_event() {
     let (_tmp, wiring, _store) = common::seeded_wiring(&rows);
     let args = LabelArgs {
         ids: vec![FIXED_ID_A.into(), FIXED_ID_B.into()],
-        batch: None,
         status: None,
         layout: LayoutArg::Horz,
         size: Some(11.0),
@@ -86,7 +85,6 @@ fn label_no_log_skips_print_event_append() {
     let (_tmp, wiring, _store) = common::seeded_wiring(&rows);
     let args = LabelArgs {
         ids: vec![FIXED_ID_A.into()],
-        batch: None,
         status: None,
         layout: LayoutArg::Horz,
         size: Some(11.0),
@@ -118,7 +116,6 @@ fn label_flag_layout_requires_cable_od() {
     let (_tmp, wiring, _store) = common::seeded_wiring(&rows);
     let args = LabelArgs {
         ids: vec![FIXED_ID_A.into()],
-        batch: None,
         status: None,
         layout: LayoutArg::Flag,
         size: Some(11.0),
@@ -147,7 +144,6 @@ fn label_status_filter_selects_matching_rows() {
     let (_tmp, wiring, _store) = common::seeded_wiring(&rows);
     let args = LabelArgs {
         ids: vec![],
-        batch: None,
         status: Some(StatusArg::Unbound),
         layout: LayoutArg::Horz,
         size: Some(11.0),
@@ -172,7 +168,6 @@ fn label_tape_preset_resolves_size() {
     let (_tmp, wiring, _store) = common::seeded_wiring(&rows);
     let args = LabelArgs {
         ids: vec![FIXED_ID_A.into()],
-        batch: None,
         status: None,
         layout: LayoutArg::Horz,
         size: None,
@@ -196,7 +191,6 @@ fn label_vertical_layout_produces_1to2_aspect() {
     let (_tmp, wiring, _store) = common::seeded_wiring(&rows);
     let args = LabelArgs {
         ids: vec![FIXED_ID_A.into()],
-        batch: None,
         status: None,
         layout: LayoutArg::Vert,
         size: Some(8.0),
@@ -222,7 +216,6 @@ fn label_flag_layout_renders_with_wrap_zone() {
     let (_tmp, wiring, _store) = common::seeded_wiring(&rows);
     let args = LabelArgs {
         ids: vec![FIXED_ID_A.into()],
-        batch: None,
         status: None,
         layout: LayoutArg::Flag,
         size: Some(11.0),

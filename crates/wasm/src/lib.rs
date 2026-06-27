@@ -654,7 +654,7 @@ mod tests {
     fn validate_diff_passes_on_canonical_headers() {
         let input: ValidateInput = serde_json::from_value(serde_json::json!({
             "registry_header": [
-                "id", "status", "minted_at", "batch", "bound_at", "type",
+                "id", "status", "minted_at", "bound_at", "type",
                 "description", "vendor", "part_number", "location", "notes",
                 "minted_by", "bound_by", "last_edited_at", "last_edited_by",
                 "components", "manufacturer_id", "metadata"

@@ -198,10 +198,6 @@ impl Repository for CsvGitRepository {
         if let Some(allowed) = &filter.status {
             all.retain(|p| allowed.contains(&p.status));
         }
-        // batch filter — exact match against Part.batch (Option<String>).
-        if let Some(needle) = &filter.batch {
-            all.retain(|p| p.batch.as_deref() == Some(needle.as_str()));
-        }
         // bound filter — true iff status == Bound.
         if let Some(bound) = filter.bound {
             all.retain(|p| (p.status == PartStatus::Bound) == bound);
@@ -347,14 +343,13 @@ fn status_order(s: PartStatus) -> u8 {
 // reviewable per ADR-018.
 
 // --- registry.csv ---
-// header: id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,minted_by,bound_by,last_edited_at,last_edited_by,components,manufacturer_id,metadata,signatures,chain_hash
+// header: id,status,minted_at,bound_at,type,description,vendor,part_number,location,notes,minted_by,bound_by,last_edited_at,last_edited_by,components,manufacturer_id,metadata,signatures,chain_hash
 
 #[derive(Debug, Serialize, Deserialize)]
 struct PartRow {
     id: String,
     status: String,
     minted_at: String,
-    batch: String,
     bound_at: String,
     #[serde(rename = "type")]
     type_: String,
@@ -422,7 +417,6 @@ impl PartRow {
             id,
             status,
             minted_at,
-            batch: opt(self.batch),
             bound_at,
             type_: opt(self.type_),
             description: opt(self.description),
@@ -464,7 +458,6 @@ impl PartRow {
             id: p.id.as_str().into(),
             status: p.status.to_string(),
             minted_at: fmt_ts(&p.minted_at)?,
-            batch: p.batch.clone().unwrap_or_default(),
             bound_at: match &p.bound_at {
                 Some(t) => fmt_ts(t)?,
                 None => String::new(),

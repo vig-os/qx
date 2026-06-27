@@ -1936,7 +1936,6 @@ fn rows_to_parts(
             id,
             status,
             minted_at,
-            batch: row.get("batch").cloned(),
             bound_at: None,
             type_: row.get("type").cloned(),
             description: row.get("description").cloned(),

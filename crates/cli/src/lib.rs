@@ -293,13 +293,6 @@ pub struct MintArgs {
     #[arg(long, required = true)]
     pub count: u32,
 
-    /// Batch label. Defaults to `B-YYYY-MM-DD-HHMM`. Parity with
-    /// `mint.py --batch`. Matched against the Python CLI's `--subtype`
-    /// alias for forward-compat (issue #32 spec); both write to
-    /// `Part::batch`.
-    #[arg(long, alias = "subtype")]
-    pub batch: Option<String>,
-
     /// Suppress ProposalSink submission; write the proposal JSON to
     /// stdout or `--dry-run-file` instead. The minted-IDs summary is
     /// still printed to stdout (after the proposal JSON when stdout
@@ -343,7 +336,7 @@ pub struct MintArgs {
                   two equal-size square blocks (QR + text), assembled as \
                   vert (1:2), horz (2:1), or flag (horz mirrored around \
                   a cable-wrap zone, requires --cable-od).\n\n\
-                  Selection is by any combination of --id/--batch/--status. \
+                  Selection is by any combination of --id/--status. \
                   Geometry: --size or --tape (presets pt-9..dk-62). \
                   Text format: --format (auto by size tier by default).\n\n\
                   Per ADR-015, a row per ID is appended to print_log.csv \
@@ -353,10 +346,6 @@ pub struct LabelArgs {
     /// Explicit ID. Repeat for multiple. Parity with `label.py --id`.
     #[arg(long = "id", value_name = "ID")]
     pub ids: Vec<String>,
-
-    /// Render every ID in this batch. Parity with `label.py --batch`.
-    #[arg(long)]
-    pub batch: Option<String>,
 
     /// Render every ID with this status. Parity with `label.py --status`.
     #[arg(long, value_enum)]
@@ -1036,7 +1025,6 @@ impl Repository for ArcRepository {
 #[derive(Debug, Clone)]
 pub struct MintOutcome {
     pub minted: Vec<PartId>,
-    pub batch: String,
     pub minted_at: OffsetDateTime,
     pub proposal_ref: ProposalRef,
 }
@@ -1057,12 +1045,7 @@ pub fn run_mint(args: &MintArgs, wiring: &Wiring) -> Result<MintOutcome, CliErro
     let operator = wiring.identity.current()?;
     let _op_guard = OperatorGuard::new(operator.clone());
 
-    let now = OffsetDateTime::now_utc();
-    let batch = args
-        .batch
-        .clone()
-        .unwrap_or_else(|| default_batch_label(now));
-    let minted_at = now;
+    let minted_at = OffsetDateTime::now_utc();
 
     // Existing IDs (sorted ascending by id, which is the natural CSV
     // order). PartFilter::default() returns every status.
@@ -1080,20 +1063,16 @@ pub fn run_mint(args: &MintArgs, wiring: &Wiring) -> Result<MintOutcome, CliErro
         new_ids.push(id);
     }
 
-    // Build the Diff (N RowAdds).
-    let diff = build_mint_diff(&new_ids, &batch, minted_at, &operator)?;
+    // Build the Diff (N adds).
+    let diff = build_mint_diff(&new_ids, minted_at, &operator)?;
     let request_id = RequestId::new();
     let proposal = Proposal {
         diff: diff.clone(),
-        batch_label: Some(batch.clone()),
+        batch_label: None,
         author: operator.clone(),
         signatures: Vec::new(),
         change_classification: diff.classify(),
-        message: format!(
-            "mint: {n} new IDs in batch {batch}",
-            n = new_ids.len(),
-            batch = batch
-        ),
+        message: format!("mint: {n} new IDs", n = new_ids.len()),
         request_id,
     };
 
@@ -1104,10 +1083,7 @@ pub fn run_mint(args: &MintArgs, wiring: &Wiring) -> Result<MintOutcome, CliErro
     // entry directly via `Repository::append_audit_event` so the
     // round-trip is testable without a global subscriber.
     for id in &new_ids {
-        let extra = json!({
-            "batch": batch,
-            "proposal": proposal_ref.url,
-        });
+        let extra = json!({ "proposal": proposal_ref.url });
         let entry = mint_audit_entry(request_id, operator.clone(), id.clone(), extra);
         emit_audit(&entry);
         // Direct append for tests + audit independence from tracing
@@ -1119,7 +1095,6 @@ pub fn run_mint(args: &MintArgs, wiring: &Wiring) -> Result<MintOutcome, CliErro
 
     Ok(MintOutcome {
         minted: new_ids,
-        batch,
         minted_at,
         proposal_ref,
     })
@@ -1130,35 +1105,16 @@ pub fn run_mint(args: &MintArgs, wiring: &Wiring) -> Result<MintOutcome, CliErro
 pub fn render_mint_summary(outcome: &MintOutcome, repo_root: &Path) -> String {
     let registry_path = repo_root.join("registry.csv");
     let mut s = String::new();
-    s.push_str(&format!(
-        "minted {n} ids in batch {batch}\n",
-        n = outcome.minted.len(),
-        batch = outcome.batch
-    ));
+    s.push_str(&format!("minted {n} ids\n", n = outcome.minted.len()));
     s.push_str(&format!("  registry: {}\n", registry_path.display()));
     for id in &outcome.minted {
         s.push_str(&format!("    {id}\n"));
     }
-    s.push_str(&format!(
-        "\nrender labels:  label --batch {batch} --layout horz\n",
-        batch = outcome.batch
-    ));
+    s.push_str("\nrender labels:  label <id> --layout horz\n");
     s
 }
-
-fn default_batch_label(now: OffsetDateTime) -> String {
-    // `B-%Y-%m-%d-%H%M` — matches mint.py:59.
-    let yyyy = now.year();
-    let mm: u8 = now.month().into();
-    let dd = now.day();
-    let hh = now.hour();
-    let mi = now.minute();
-    format!("B-{yyyy:04}-{mm:02}-{dd:02}-{hh:02}{mi:02}")
-}
-
 fn build_mint_diff(
     new_ids: &[PartId],
-    batch: &str,
     minted_at: OffsetDateTime,
     operator: &Operator,
 ) -> Result<Diff, CliError> {
@@ -1170,7 +1126,6 @@ fn build_mint_diff(
         let mut fields = BTreeMap::new();
         fields.insert("status".into(), "unbound".into());
         fields.insert("minted_at".into(), ts.clone());
-        fields.insert("batch".into(), batch.to_owned());
         fields.insert("minted_by".into(), operator.id.0.clone());
         adds.push(DiffRow {
             id: Some(id.clone()),
@@ -1258,16 +1213,15 @@ pub fn run_label(args: &LabelArgs, wiring: &Wiring) -> Result<LabelOutcome, CliE
 
     // Selection.
     let all_parts = wiring.repo.list_parts(&PartFilter::default())?;
-    let selected = select_parts(&all_parts, &args.ids, args.batch.as_deref(), args.status)?;
+    let selected = select_parts(&all_parts, &args.ids, args.status)?;
     if selected.is_empty() {
         return Err(CliError::NotFound("no IDs matched the selection".into()));
     }
 
     // Out-dir.
     let descriptor = args
-        .batch
-        .clone()
-        .or_else(|| args.status.map(|s| s.to_domain().to_string()))
+        .status
+        .map(|s| s.to_domain().to_string())
         .unwrap_or_else(|| "ad-hoc".into());
     let layout_name = match args.layout {
         LayoutArg::Vert => "vert",
@@ -1321,21 +1275,6 @@ pub fn run_label(args: &LabelArgs, wiring: &Wiring) -> Result<LabelOutcome, CliE
             std::env::var("USER").unwrap_or_else(|_| operator.display_name.clone())
         });
 
-        // batch_label: prefer explicit --batch, else fall back to the
-        // common batch across selected rows if there's exactly one.
-        let batch_label = match args.batch.clone() {
-            Some(b) => Some(b),
-            None => {
-                let batches: std::collections::HashSet<Option<String>> =
-                    selected.iter().map(|p| p.batch.clone()).collect();
-                if batches.len() == 1 {
-                    batches.into_iter().next().unwrap()
-                } else {
-                    None
-                }
-            }
-        };
-
         // Layout-specific extra.
         let extra = match args.layout {
             LayoutArg::Flag => json!({"cableOd": args.cable_od.unwrap_or(0.0)}),
@@ -1357,7 +1296,7 @@ pub fn run_label(args: &LabelArgs, wiring: &Wiring) -> Result<LabelOutcome, CliE
         for part in &selected {
             let print_extra = json!({
                 "layout": layout_name, "size_mm": size_mm,
-                "output_mode": args.output_mode, "batch_label": batch_label,
+                "output_mode": args.output_mode,
                 "extra": extra,
             });
             let entry = qx_observability::print_audit_entry(
@@ -1428,12 +1367,11 @@ pub fn render_label_summary(out: &LabelOutcome, cable_od: Option<f64>) -> String
 fn select_parts(
     rows: &[Part],
     explicit_ids: &[String],
-    batch: Option<&str>,
     status: Option<StatusArg>,
 ) -> Result<Vec<Part>, CliError> {
-    if explicit_ids.is_empty() && batch.is_none() && status.is_none() {
+    if explicit_ids.is_empty() && status.is_none() {
         return Err(CliError::BadArg(
-            "specify at least one of --id, --batch, --status".into(),
+            "specify at least one of --id, --status".into(),
         ));
     }
     let mut selected: Vec<Part> = rows.to_vec();
@@ -1451,9 +1389,6 @@ fn select_parts(
                 m.join(", ")
             )));
         }
-    }
-    if let Some(b) = batch {
-        selected.retain(|p| p.batch.as_deref() == Some(b));
     }
     if let Some(s) = status {
         let want = s.to_domain();
@@ -1896,15 +1831,6 @@ mod tests {
         assert_eq!(tape_size_mm("dk-62"), Some(56.0));
         assert_eq!(tape_size_mm("nope"), None);
     }
-
-    #[test]
-    fn default_batch_label_matches_python_format() {
-        let t = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
-        let label = default_batch_label(t);
-        // 2023-11-14T22:13:20Z
-        assert_eq!(label, "B-2023-11-14-2213");
-    }
-
     #[test]
     fn minted_ids_always_fit_micro_m3_l() {
         // The mint M3-L fence (issue #211 interim): every minted id

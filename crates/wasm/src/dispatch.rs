@@ -178,7 +178,6 @@ fn parse_csv(text: &str) -> Result<Vec<Part>, String> {
             id,
             status,
             minted_at,
-            batch: opt("batch"),
             bound_at: row.get("bound_at").and_then(|s| parse_timestamp(s)),
             type_: opt("type"),
             description: opt("description"),
