@@ -62,6 +62,14 @@ pub fn is_compatible(contract: &Contract) -> bool {
 // not silently-ignored chrome.
 // -------------------------------------------------------------------
 
+/// The engine-owned regulated core (ADR-033 §3 / ADR-035 §1b tier-1): the
+/// field keys the tool owns and validates uniformly on every collection.
+/// A registry's contract may ADD custom fields but may not declare a field
+/// that redefines one of these. `label` is intentionally excluded — it is
+/// a declarable render convenience (e.g. `companies.label`), not regulated.
+/// `components` is the as-built relation, declared via `relations[]`.
+pub const REGULATED_CORE: &[&str] = &["id", "status", "created_at", "transitioned_at", "kind"];
+
 /// A registry's contract: a format generation + the collection roster.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -504,6 +512,20 @@ impl Collection {
             if !seen_keys.insert(f.key.as_str()) {
                 errs.push(format!("{where_}.fields: duplicate field key `{}`", f.key));
             }
+            // Core-union-declared, ADR-033 §3: a registry may ADD custom
+            // fields but may not REDEFINE the engine-owned regulated core,
+            // whose keys the tool owns and validates uniformly everywhere.
+            // A declared field colliding with one would shadow the
+            // hard-gated core. The `label` key is excluded — it is a
+            // declarable render convenience, e.g. a companies name, not
+            // part of the regulated core.
+            if REGULATED_CORE.contains(&f.key.as_str()) {
+                errs.push(format!(
+                    "{where_}.fields: `{}` redefines a regulated core field \
+                     (ADR-033 §3 — the core is tool-owned and immutable)",
+                    f.key
+                ));
+            }
         }
 
         // The status universe a field's lifecycle-coupled flags may name.
@@ -795,6 +817,25 @@ mod tests {
               "id": {{ "scheme": "nano14", "default": true, "mintable": true }},
               "fields": [ {field} ] }} ] }}"#
         )
+    }
+
+    #[test]
+    fn declared_field_redefining_regulated_core_is_invalid() {
+        // ADR-033 §3: a registry may ADD custom fields but may not redefine
+        // the engine-owned regulated core.
+        for core in REGULATED_CORE {
+            let json = one_collection(&format!(
+                r#"{{ "key": "{core}", "type": "string", "label": "X" }}"#
+            ));
+            let err = parse(&json).unwrap_err();
+            assert!(
+                matches!(err, ContractError::Invalid(ref v) if v.iter().any(|m| m.contains("redefines a regulated core field"))),
+                "field `{core}` must be rejected as a core redefinition"
+            );
+        }
+        // `label` is a declarable render convenience — NOT regulated.
+        let ok = one_collection(r#"{ "key": "label", "type": "string", "label": "Name" }"#);
+        assert!(parse(&ok).is_ok(), "declaring `label` must remain valid");
     }
 
     #[test]

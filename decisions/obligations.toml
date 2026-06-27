@@ -311,8 +311,9 @@ id = "core-plus-custom-schema"
 adr = "ADR-033"
 statement = "Schema = fixed regulated core + registry-declared custom fields; consumers operate over core∪declared"
 kind = "crate"
-status = "pending"
-tracking = "ADR-033 §3; validators/codec/FE are hardcoded to the core column list today"
+status = "satisfied"
+satisfied_by = ["crates/contract/src/lib.rs", "crates/validators/src/record.rs"]
+tracking = "SATISFIED (ADR-033 §3 / ADR-035 §1b). SCHEMA = FIXED REGULATED CORE + REGISTRY-DECLARED CUSTOM FIELDS: the engine owns REGULATED_CORE (crates/contract: id, status, created_at, transitioned_at, kind — the tier-1 core; label is a declarable render convenience, components is the relations[] edge); a contract may ADD typed custom fields per collection (collection.fields) + per-kind fields (kind tree). MAY NOT REDEFINE CORE: NEW contract guard — Collection::validate_into rejects any declared field whose key is in REGULATED_CORE (declared_field_redefining_regulated_core_is_invalid; shipped example/preset/parts-floor contracts still validate). CONSUMERS OPERATE OVER core∪declared: the ONE authoritative validation engine (crates/validators record.rs) validates over ENVELOPE(core) ∪ collection.fields ∪ kind_fields — no hardcoded core column list (the kind tree retired it); the FE calls THIS engine via wasm validate_record_json (not a separate schema), and the JSONL entity projection reads records generically. (FE Vitest parity over the shipped wasm is tracked under contract-ssot-validation.) Whole workspace suite + wasm32 green, clippy clean."
 
 [[obligation]]
 id = "operator-workspace"
