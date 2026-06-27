@@ -1202,7 +1202,13 @@ fn check_contract(
         universe.insert(coll.name.clone(), ids);
         head_records.insert(coll.name.clone(), recs);
     }
-    let ctx = RecordContext::new(universe);
+    // The kind tree (ADR-035 §5): kinds live as records in the `types`
+    // collection; resolve their inherited field schemas for per-kind
+    // validation dispatch.
+    let kind_schemas = resolve_kind_schemas(
+        &read_jsonl_records(&path.join("collections/types.jsonl")).unwrap_or_default(),
+    );
+    let ctx = RecordContext::new(universe).with_kind_schemas(kind_schemas);
 
     // 3. Effective-dating filter: with a base, the set of new/changed ids
     //    per collection (untouched records are skipped).
@@ -1350,6 +1356,54 @@ fn check_attachment_blobs(
         }
     }
     errs
+}
+
+/// Resolve the kind tree (ADR-035 §5) from the `types` collection records
+/// into `{kind -> fields}` with inheritance applied: a kind's own fields
+/// plus its `extends` ancestors' (own wins on key collisions; cycles are
+/// broken). Drives per-kind validation dispatch.
+fn resolve_kind_schemas(
+    types: &[Map<String, Value>],
+) -> std::collections::BTreeMap<String, Vec<qx_contract::Field>> {
+    use std::collections::{BTreeMap, BTreeSet};
+    let mut own: BTreeMap<String, (Vec<qx_contract::Field>, Option<String>)> = BTreeMap::new();
+    for rec in types {
+        let Some(id) = rec.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        let fields: Vec<qx_contract::Field> = rec
+            .get("fields")
+            .and_then(|f| serde_json::from_value(f.clone()).ok())
+            .unwrap_or_default();
+        let extends = rec
+            .get("extends")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        own.insert(id.to_owned(), (fields, extends));
+    }
+    let mut resolved: BTreeMap<String, Vec<qx_contract::Field>> = BTreeMap::new();
+    for kind in own.keys() {
+        let mut acc: Vec<qx_contract::Field> = Vec::new();
+        let mut keys: BTreeSet<String> = BTreeSet::new();
+        let mut cur = Some(kind.clone());
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        while let Some(k) = cur {
+            if !seen.insert(k.clone()) {
+                break; // inheritance cycle — stop
+            }
+            let Some((fields, extends)) = own.get(&k) else {
+                break;
+            };
+            for f in fields {
+                if keys.insert(f.key.clone()) {
+                    acc.push(f.clone());
+                }
+            }
+            cur = extends.clone();
+        }
+        resolved.insert(kind.clone(), acc);
+    }
+    resolved
 }
 
 /// Index the audit spine `audit_log.jsonl` as `{id -> set of entry
@@ -2175,6 +2229,28 @@ mod tests {
             serde_json::from_str(r#"{"id":"ZZZZZZZZZZZZZZ","created_at":"2030-01-01T00:00:00Z"}"#)
                 .unwrap();
         assert!(stamp_provenance_issues(&absent, &idx).is_empty());
+    }
+
+    #[test]
+    fn resolve_kind_schemas_applies_extends_inheritance() {
+        let obj = |s: &str| serde_json::from_str::<Map<String, Value>>(s).unwrap();
+        let types = vec![
+            obj(r#"{"id":"component","fields":[{"key":"footprint","type":"string","label":"F"}]}"#),
+            obj(
+                r#"{"id":"resistor","extends":"component","fields":[{"key":"resistance","type":"string","label":"R"}]}"#,
+            ),
+        ];
+        let ks = resolve_kind_schemas(&types);
+        let resistor: Vec<&str> = ks["resistor"].iter().map(|f| f.key.as_str()).collect();
+        // resistor carries its own field AND the inherited parent field.
+        assert!(resistor.contains(&"resistance"));
+        assert!(
+            resistor.contains(&"footprint"),
+            "inherits the parent's field: {resistor:?}"
+        );
+        // component has only its own.
+        let component: Vec<&str> = ks["component"].iter().map(|f| f.key.as_str()).collect();
+        assert_eq!(component, vec!["footprint"]);
     }
 
     #[test]

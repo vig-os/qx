@@ -71,6 +71,12 @@ impl RecordIssue {
 #[derive(Clone, Debug, Default)]
 pub struct RecordContext {
     pub known_ids: BTreeMap<String, BTreeSet<String>>,
+    /// Per-kind tier-2 field schemas (ADR-035 §5), inheritance already
+    /// resolved (each entry = the kind's own fields PLUS its ancestors').
+    /// A record whose `kind` is present here is validated against these
+    /// fields in addition to its collection's tier-1 core. Empty = no
+    /// kind tree loaded (validation dispatches on `kind` only when known).
+    pub kind_schemas: BTreeMap<String, Vec<Field>>,
 }
 
 impl RecordContext {
@@ -78,7 +84,14 @@ impl RecordContext {
     pub fn new(universe: BTreeMap<String, BTreeSet<String>>) -> Self {
         Self {
             known_ids: universe,
+            kind_schemas: BTreeMap::new(),
         }
+    }
+
+    /// Attach the resolved per-kind field schemas (the kind tree).
+    pub fn with_kind_schemas(mut self, kind_schemas: BTreeMap<String, Vec<Field>>) -> Self {
+        self.kind_schemas = kind_schemas;
+        self
     }
 }
 
@@ -93,7 +106,21 @@ pub fn validate_record(
     ctx: &RecordContext,
 ) -> Vec<RecordIssue> {
     let mut issues = Vec::new();
-    let declared: BTreeSet<&str> = collection.fields.iter().map(|f| f.key.as_str()).collect();
+    // Tier-2: the record's kind (ADR-035 §5) contributes its resolved
+    // per-kind fields on top of the collection's tier-1 core. Validation
+    // dispatches on `kind`: an unknown/absent kind contributes nothing.
+    let kind_fields: &[Field] = record
+        .get("kind")
+        .and_then(Value::as_str)
+        .and_then(|k| ctx.kind_schemas.get(k))
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    let declared: BTreeSet<&str> = collection
+        .fields
+        .iter()
+        .chain(kind_fields)
+        .map(|f| f.key.as_str())
+        .collect();
 
     // Unknown keys: allowed only when the collection opts into tier-3
     // open_properties (ADR-035 §1). `id` and `status` are engine-owned
@@ -111,7 +138,7 @@ pub fn validate_record(
     ];
     if !collection.open_properties {
         for key in record.keys() {
-            if key == "id" || key == "status" {
+            if ENVELOPE.contains(&key.as_str()) {
                 continue;
             }
             if !declared.contains(key.as_str()) {
@@ -148,7 +175,9 @@ pub fn validate_record(
         check_id_format(&collection.id, id, &mut issues);
     }
 
-    for field in &collection.fields {
+    // Validate the collection's tier-1 core fields AND the record's kind's
+    // tier-2 fields (ADR-035 §5 — validation dispatches on kind).
+    for field in collection.fields.iter().chain(kind_fields) {
         validate_field_value(
             field,
             record.get(&field.key),
@@ -957,6 +986,37 @@ mod tests {
         assert!(
             issues.iter().any(|i| i.path == "nested"),
             "an object-valued open property must be rejected: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn validation_dispatches_on_kind() {
+        // A no-open-properties collection with no `resistance` field.
+        let contract = Contract::from_bytes(
+            br#"{"format_version":1,"collections":[
+            {"name":"parts","id":{"scheme":"nano14","default":true,"mintable":true},
+             "fields":[{"key":"type","type":"string","label":"Type"}]}]}"#,
+        )
+        .unwrap();
+        let parts = contract.collection("parts").unwrap();
+        let resistance: Field =
+            serde_json::from_str(r#"{"key":"resistance","type":"string","label":"R"}"#).unwrap();
+        let mut ks = BTreeMap::new();
+        ks.insert("resistor".to_string(), vec![resistance]);
+        let ctx = RecordContext::default().with_kind_schemas(ks);
+
+        let rec = obj(r#"{"id":"PART2223AAAAAA","kind":"resistor","resistance":"10k","type":"r"}"#);
+        // With the kind's tier-2 schema, `resistance` is an accepted field.
+        let issues = validate_record(parts, &rec, None, &ctx);
+        assert!(
+            !issues.iter().any(|i| i.path == "resistance"),
+            "the kind's field is accepted: {issues:?}"
+        );
+        // Without the kind tree loaded, `resistance` is an unknown field.
+        let issues2 = validate_record(parts, &rec, None, &RecordContext::default());
+        assert!(
+            issues2.iter().any(|i| i.path == "resistance"),
+            "unknown without the kind dispatch: {issues2:?}"
         );
     }
 

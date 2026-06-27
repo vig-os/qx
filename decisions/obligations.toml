@@ -363,8 +363,9 @@ id = "tiered-data-model"
 adr = "ADR-035"
 statement = "Part = tier-1 core (incl. kind + components) + tier-2 per-kind schema + tier-3 open properties; validation dispatches on kind"
 kind = "crate"
-status = "pending"
-tracking = "ADR-035 §1; domain Part + kind-dispatching validators not yet built"
+status = "satisfied"
+satisfied_by = ["crates/validators/src/record.rs", "crates/cli/src/bin/qx.rs"]
+tracking = "SATISFIED (ADR-035 §5, M-B). All terms: tier-1 core (the Entity envelope incl. kind + relations/components); tier-2 PER-KIND SCHEMA + VALIDATION DISPATCHES ON KIND — the kind tree: kinds are records in the types collection (collections/types.jsonl) with extends inheritance (resolve_kind_schemas, crates/cli/bin/qx.rs), and validate_record validates a record against its kind's resolved fields on top of the collection's core (RecordContext.kind_schemas, crates/validators/record.rs); tier-3 open properties (shape-checked). Proven by validation_dispatches_on_kind + resolve_kind_schemas_applies_extends_inheritance + the qx_check_dispatches_validation_on_kind e2e."
 
 [[obligation]]
 id = "component-graph-integrity"
@@ -432,8 +433,9 @@ id = "entity-store"
 adr = "ADR-035"
 statement = "Git-native NDJSON entity store: global id space + Resolve{id}; entity micro-core; kind tree w/ inheritance in types; generic List{collection,filter}; no join DSL"
 kind = "crate"
-status = "pending"
-tracking = "ADR-035 §0 entity store; generic READ query LANDED (M-B): Repository::list_collection (default empty; JSONL adapter reads collections/<name>.jsonl) + entity_from_record + List{collection}/Count served generically for any contract-declared collection (crates/app+storage; proven by list_serves_a_generic_contract_collection). generic Resolve{id} across the global id space LANDED (M-B): the parts path stays first; contract-loaded falls through to a cross-collection exact-id search → entity_from_record (proven by the Resolve assertions in list_serves_a_generic_contract_collection). So entity micro-core + generic List/Count + global-id Resolve are DONE. REMAINING: the kind tree w/ inheritance in `types` (deferred to M-B.2 per the sequencing doc — enum+reference already cover non-schema-bearing kinds)"
+status = "satisfied"
+satisfied_by = ["crates/validators/src/record.rs", "crates/cli/src/bin/qx.rs", "crates/app/src/engine.rs"]
+tracking = "SATISFIED (ADR-035, M-B). Git-native NDJSON entity store (collections/*.jsonl) with a global id space + Resolve{id} (cross-collection resolve), the entity micro-core, generic List{collection,filter}, and NO join DSL — all in the generic engine (crates/app). The final term, the KIND TREE w/ inheritance in types, now lands: kinds as records in collections/types.jsonl with extends inheritance resolved (resolve_kind_schemas) and per-kind validation dispatch (validate_record + RecordContext.kind_schemas). Proven by the kind-tree tests + the generic List/Resolve/Describe suites."
 
 [[obligation]]
 id = "lifecycle-timestamps"
