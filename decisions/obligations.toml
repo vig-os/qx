@@ -233,8 +233,9 @@ id = "print-contracts"
 adr = "ADR-031"
 statement = "Print contracts SSOT: one deduction engine (symbology contributes only N); groupings are data vectors with one text renderer; descriptor declares offered contracts/presets per feature, manifest gates the feature"
 kind = "crate"
-status = "pending"
-tracking = "ADR-031 §8; engine + grouping-vector renderer + descriptor render-block declaration not yet built"
+status = "satisfied"
+satisfied_by = ["crates/codec/src/px.rs", "crates/contract/src/lib.rs", "crates/cli/src/manifest.rs"]
+tracking = "SATISFIED (ADR-031 §8). ALL FOUR TERMS: (1) ONE DEDUCTION ENGINE — deduce_module_px(size_px, pad_a, pad_b, data, quiet, mode) (crates/codec/px.rs) is written ONCE; a symbology contributes ONLY its module count N (Family::contribution -> data; micro M4=17, qr V1=21 + quiet). (2) GROUPINGS ARE DATA VECTORS WITH ONE TEXT RENDERER — qx_codec::scheme_groupings (the id-scheme declaration) + split_rows (the one renderer); see structured-print-request. (3) DESCRIPTOR DECLARES OFFERED CONTRACTS/PRESETS PER FEATURE — RenderCollection.print_contracts (crates/contract) declares the offered print contracts per collection; Collection::validate_into rejects any not in KNOWN_PRINT_CONTRACTS (the tool-implemented micro/qr), run by from_bytes->validate in qx check + the meta-schema (renderCollection.print_contracts in contract.schema.json, shipped contracts still validate). (4) MANIFEST GATES THE FEATURE — Manifest::feature_enabled(family, collection) (crates/cli/manifest) reads the ops map: a <family>:<collection> key set to off disables the feature (a disabled (op,collection) disappears from the shells, ADR-034 §3); absence = enabled. Proven by render_print_contracts_must_be_tool_implemented + manifest_gates_a_feature_per_collection (+ the existing px deduction + grouping tests); contract/cli suites + meta-schema parity + wasm32 green, clippy clean."
 
 [[obligation]]
 id = "structured-print-request"

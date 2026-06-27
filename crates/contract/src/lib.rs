@@ -364,12 +364,25 @@ pub enum Widget {
     File,
 }
 
+/// The print contracts the tool IMPLEMENTS (ADR-031 §8): named
+/// parameterizations a registry's descriptor may *offer*. Each is a
+/// symbology family the one deduction engine knows how to size (it
+/// contributes only its module count N). `dm`/`code128` are documented
+/// but not implemented, so a descriptor may not offer them yet.
+pub const KNOWN_PRINT_CONTRACTS: &[&str] = &["micro", "qr"];
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RenderCollection {
     /// Which fields compose an entity's short label rendering.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub label_fields: Vec<String>,
+    /// The print contracts this collection OFFERS (ADR-031 §8 — the
+    /// descriptor declares offered contracts/presets per feature). Each
+    /// must be a tool-implemented [`KNOWN_PRINT_CONTRACTS`] entry; the
+    /// manifest separately gates whether the print feature is enabled.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub print_contracts: Vec<String>,
 }
 
 fn default_true() -> bool {
@@ -537,6 +550,20 @@ impl Collection {
 
         for f in &self.fields {
             f.validate_into(where_, declared, &statuses, self.lifecycle.is_some(), errs);
+        }
+
+        // Print contracts (ADR-031 §8): every offered print contract must
+        // be one the tool implements — a registry cannot declare a feature
+        // the deduction engine can't size.
+        if let Some(render) = &self.render {
+            for pc in &render.print_contracts {
+                if !KNOWN_PRINT_CONTRACTS.contains(&pc.as_str()) {
+                    errs.push(format!(
+                        "{where_}.render.print_contracts: `{pc}` is not a tool-implemented print contract (known: {})",
+                        KNOWN_PRINT_CONTRACTS.join(", ")
+                    ));
+                }
+            }
         }
 
         // Relations (ADR-035 §1a): unique names; every target is a
@@ -817,6 +844,30 @@ mod tests {
               "id": {{ "scheme": "nano14", "default": true, "mintable": true }},
               "fields": [ {field} ] }} ] }}"#
         )
+    }
+
+    #[test]
+    fn render_print_contracts_must_be_tool_implemented() {
+        // ADR-031 §8: a descriptor may only offer print contracts the tool
+        // implements (micro, qr); an unknown family is rejected.
+        let bad = r#"{ "format_version": 1, "collections": [
+            { "name": "parts", "id": { "scheme": "nano14", "default": true, "mintable": true },
+              "render": { "label_fields": ["id"], "print_contracts": ["micro", "hologram"] },
+              "fields": [] } ] }"#;
+        let err = parse(bad).unwrap_err();
+        assert!(
+            matches!(err, ContractError::Invalid(ref v) if v.iter().any(|m| m.contains("not a tool-implemented print contract"))),
+            "unknown print contract must be rejected: {err:?}"
+        );
+        // The implemented families are accepted.
+        let ok = r#"{ "format_version": 1, "collections": [
+            { "name": "parts", "id": { "scheme": "nano14", "default": true, "mintable": true },
+              "render": { "label_fields": ["id"], "print_contracts": ["micro", "qr"] },
+              "fields": [] } ] }"#;
+        assert!(
+            parse(ok).is_ok(),
+            "tool-implemented print contracts must validate"
+        );
     }
 
     #[test]

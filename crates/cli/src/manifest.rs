@@ -85,6 +85,16 @@ impl Manifest {
         refs
     }
 
+    /// Whether a feature (op-family, e.g. `print`) is enabled for a
+    /// collection (ADR-031 §8 / ADR-034 §3 — the manifest gates the
+    /// feature). A `<family>:<collection>` ops key set to `off` disables
+    /// it; absence means enabled (default = all reads + writes-via-
+    /// proposal). A disabled `(op, collection)` disappears from the shells.
+    pub fn feature_enabled(&self, family: &str, collection: &str) -> bool {
+        let key = format!("{family}:{collection}");
+        !matches!(self.ops.get(&key), Some(OpState::Off))
+    }
+
     /// Manifest↔contract FK (`capability-grain`): every collection named
     /// by an `[ops]` key or a role-capability key must be declared in the
     /// contract. Returns one message per dangling reference.
@@ -151,6 +161,25 @@ mod tests {
         );
         assert!(issues[0].contains("companies"));
         assert!(issues[0].contains("not declared"));
+    }
+
+    #[test]
+    fn manifest_gates_a_feature_per_collection() {
+        // ADR-031 §8 / ADR-034 §3: the manifest gates a feature (op-family)
+        // per collection. Absence = enabled; an explicit `off` disables.
+        let m = Manifest::parse(
+            "[registry]\nid=\"x\"\nname=\"X\"\n[ops]\n\"print:parts\" = \"off\"\n\"print:labels\" = \"on\"\n",
+        )
+        .unwrap();
+        assert!(
+            !m.feature_enabled("print", "parts"),
+            "explicit off disables"
+        );
+        assert!(m.feature_enabled("print", "labels"), "explicit on enables");
+        assert!(
+            m.feature_enabled("print", "widgets"),
+            "absence = enabled (default)"
+        );
     }
 
     #[test]
