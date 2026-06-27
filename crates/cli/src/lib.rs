@@ -35,6 +35,9 @@
 
 #![forbid(unsafe_code)]
 
+/// `.qx/manifest.toml` — per-registry policy manifest (ADR-034 §3).
+pub mod manifest;
+
 /// `qx serve` — HTTP shell over the command protocol (ADR-030 §2).
 #[cfg(feature = "serve")]
 pub mod serve;

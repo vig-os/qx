@@ -549,6 +549,50 @@ fn personas_approver_must_resolve_to_active_persona() {
 }
 
 #[test]
+fn manifest_fk_rejects_undeclared_collection() {
+    // ADR-034 §3 / capability-grain: a manifest [ops] key naming a
+    // collection the contract does not declare fails the gate.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    write_repo(dir, TWO_COLLECTION_CONTRACT, "", "");
+    // `vendors` is not a declared collection (the contract has parts +
+    // companies).
+    fs::write(
+        dir.join(".qx/manifest.toml"),
+        "[registry]\nid = \"acme\"\nname = \"Acme\"\n\n[ops]\n\"create:parts\" = \"on\"\n\"create:vendors\" = \"off\"\n",
+    )
+    .unwrap();
+    let out = pr_check(dir, None);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "dangling manifest FK must fail: {stderr}"
+    );
+    assert!(
+        stderr.contains("vendors") && stderr.contains("not declared"),
+        "expected a manifest FK violation, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn manifest_fk_passes_when_collections_declared() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    write_repo(dir, TWO_COLLECTION_CONTRACT, "", "");
+    fs::write(
+        dir.join(".qx/manifest.toml"),
+        "[registry]\nid = \"acme\"\nname = \"Acme\"\n\n[ops]\n\"create:parts\" = \"on\"\n\"transition:companies:archived\" = \"on\"\n\n[roles.lead]\n\"parts:bulk\" = \"approve\"\n",
+    )
+    .unwrap();
+    let out = pr_check(dir, None);
+    assert!(
+        out.status.success(),
+        "all-declared manifest must pass, got:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
 fn personas_cross_check_passes_when_all_resolve() {
     // The same shape, but every principal resolves to an active persona.
     let tmp = tempfile::tempdir().unwrap();
