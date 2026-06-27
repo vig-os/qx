@@ -758,10 +758,11 @@ pub fn record_write_audit_entry(
     collection: String,
     id: String,
     extra: serde_json::Value,
+    timestamp: time::OffsetDateTime,
 ) -> AuditEntry {
     AuditEntry {
         request_id,
-        timestamp: time::OffsetDateTime::now_utc(),
+        timestamp,
         actor,
         action: Action::RecordWrite {
             collection: collection.clone(),
