@@ -3872,6 +3872,7 @@ dependencies = [
  "clap",
  "crossterm",
  "csv",
+ "dirs 5.0.1",
  "getrandom 0.2.17",
  "http-body-util",
  "image",

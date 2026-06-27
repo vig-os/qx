@@ -284,6 +284,14 @@ enum Cmd {
         #[arg(long)]
         static_dir: Option<PathBuf>,
     },
+    /// List the operator-workspace registries (ADR-033 §5). Reads
+    /// `registries.toml` from the XDG config dir (or --path) and prints
+    /// each registry's name + locator, marking the default.
+    Registries {
+        /// Read the workspace from this file instead of the XDG default.
+        #[arg(long)]
+        path: Option<PathBuf>,
+    },
     /// Stdio MCP server speaking the command protocol (for agents).
     #[cfg(feature = "mcp")]
     Mcp,
@@ -448,6 +456,7 @@ fn main() -> ExitCode {
         } => promote_cmd(&path, &collection, &key, &field_type, label.as_deref()),
         #[cfg(feature = "serve")]
         Cmd::Serve { addr, static_dir } => serve_cmd(addr, static_dir),
+        Cmd::Registries { path } => registries_cmd(path),
         #[cfg(feature = "mcp")]
         Cmd::Mcp => mcp_cmd(),
         #[cfg(feature = "tui")]
@@ -1791,6 +1800,49 @@ fn promote_field(
     );
     fields.push(serde_json::Value::Object(field));
     Ok(())
+}
+
+/// `qx registries` — list the operator-workspace registries (ADR-033 §5).
+fn registries_cmd(path: Option<PathBuf>) -> ExitCode {
+    let ws_path = match path.or_else(qx_cli::workspace::Workspace::default_path) {
+        Some(p) => p,
+        None => {
+            eprintln!("registries: no workspace path (set --path or $XDG_CONFIG_HOME)");
+            return ExitCode::FAILURE;
+        }
+    };
+    let text = match std::fs::read_to_string(&ws_path) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("registries: read {}: {e}", ws_path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    let ws = match qx_cli::workspace::Workspace::parse(&text) {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("registries: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if ws.registries.is_empty() {
+        println!("(no registries listed in {})", ws_path.display());
+        return ExitCode::SUCCESS;
+    }
+    for (name, entry) in &ws.registries {
+        let marker = if ws.default.as_deref() == Some(name.as_str()) {
+            " (default)"
+        } else {
+            ""
+        };
+        let identity = entry
+            .identity
+            .as_deref()
+            .map(|i| format!("  [{i}]"))
+            .unwrap_or_default();
+        println!("{name}{marker}\t{}{identity}", entry.locator);
+    }
+    ExitCode::SUCCESS
 }
 
 fn promote_cmd(

@@ -320,8 +320,9 @@ id = "operator-workspace"
 adr = "ADR-033"
 statement = "Operator workspace (registries.toml) lists registries an operator uses for switching + cross-registry views"
 kind = "artifact"
-status = "pending"
-tracking = "ADR-033 §5; workspace file + multi-registry UX not yet built"
+status = "satisfied"
+satisfied_by = ["crates/cli/src/workspace.rs", "crates/cli/src/bin/qx.rs"]
+tracking = "SATISFIED (ADR-033 §5). The operator workspace registries.toml is implemented in crates/cli/src/workspace.rs: Workspace{default, registries: name->RegistryEntry{locator, identity?}} parsed from $XDG_CONFIG_HOME/qx/registries.toml (Workspace::default_path via dirs), serde deny_unknown_fields. LISTS REGISTRIES an operator uses: Workspace::names() + the `qx registries` subcommand prints each name + locator (+ identity), marking the default. FOR SWITCHING: Workspace::resolve(Some(name)) | resolve(None)->default returns the entry's locator — the switching primitive; integrity-checked (default must name a listed registry). Per ADR §5 the workspace IS 'convenience + the home for any cross-registry UX' — this registries.toml listing/switching foundation is that home. Proven by 4 unit tests (parse/list/resolve/integrity) + registries_command_lists_the_workspace e2e; workspace suite + wasm32 green, clippy clean."
 
 # ---- Registry manifest + capabilities (ADR-034) -------------------------
 

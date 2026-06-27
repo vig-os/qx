@@ -74,6 +74,34 @@ fn git_init(dir: &Path) {
 }
 
 #[test]
+fn registries_command_lists_the_workspace() {
+    // ADR-033 §5: `qx registries` lists the operator-workspace registries
+    // and marks the default.
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = tmp.path().join("registries.toml");
+    fs::write(
+        &ws,
+        "default = \"acme\"\n\n[registries.acme]\nlocator = \"github:acme/parts\"\nidentity = \"persona:alice\"\n\n[registries.local]\nlocator = \"/tmp/dev\"\n",
+    )
+    .unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_qx"))
+        .args(["registries", "--path"])
+        .arg(&ws)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "registries must succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("acme (default)"), "got:\n{stdout}");
+    assert!(stdout.contains("github:acme/parts"), "got:\n{stdout}");
+    assert!(stdout.contains("persona:alice"), "got:\n{stdout}");
+    assert!(stdout.contains("local"), "got:\n{stdout}");
+}
+
+#[test]
 fn structural_mode_accepts_a_clean_repo() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path();
