@@ -505,8 +505,9 @@ id = "declared-relations"
 adr = "ADR-035"
 statement = "Relations declared per descriptor (components = parts preset instance); store one direction, derive backlinks; naming/labels in descriptor — no hardcoded display strings in shells"
 kind = "crate"
-status = "pending"
-tracking = "ADR-035 §1a; relations[] now TYPED + structurally validated in the contract (M-B — crates/contract Relation{name,target,kind,acyclic,void_policy,backlink}; target must be a declared collection; meta-schema aligned, SSOT parity held). REMAINING: runtime backlink derivation + shell consumption (no hardcoded display strings) — ride the entity-store/query layer + FE"
+status = "satisfied"
+satisfied_by = ["crates/contract/src/lib.rs", "crates/validators/src/record.rs"]
+tracking = "SATISFIED (ADR-035 §1a). RELATIONS DECLARED PER DESCRIPTOR: Contract.collections[].relations (Relation{name, target, kind, acyclic, void_policy, backlink}); target must be a declared collection (checked in contract validate). COMPONENTS = PARTS PRESET INSTANCE: the registry contract declares the components relation as a self-referential parts edge. STORE ONE DIRECTION, DERIVE BACKLINKS: records hold only the FORWARD edge (relation_edges reads the source field); derive_backlinks(contract, target_collection, target_id, records) scans every collection whose descriptor declares a relation targeting it with a backlink name and returns the derived Backlink{name, from_collection, from_id} set (deterministic order). NAMING/LABELS IN DESCRIPTOR — NO HARDCODED DISPLAY STRINGS IN SHELLS: the backlink name is rel.backlink (descriptor-declared, e.g. part_of); grep confirms NO hardcoded relation display strings in cli/wasm/serve. Proven by derive_backlinks_from_declared_relation + the existing graph/void-policy relation tests; validators suite green, clippy clean."
 
 # ---- Audit evidence set (ADR-036/037/038) --------------------------------
 
