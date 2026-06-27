@@ -41,6 +41,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 # `.qx/manifest.toml` + `registries.toml` parsing (ADR-034 §3 / ADR-033 §5).
 toml = "0.8"
+# Pre-flight base-ref materialization (ADR-031 §6 read path).
+tempfile = { workspace = true }
 # Operator-workspace path resolution (XDG config dir, ADR-033 §5).
 dirs = { workspace = true }
 time = { workspace = true }

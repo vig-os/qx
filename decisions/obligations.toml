@@ -249,8 +249,9 @@ id = "optimistic-mint-preflight"
 adr = "ADR-031"
 statement = "mint+print is optimistic with pre-flight: fetch contract+registry from main, validate locally, then print"
 kind = "test"
-status = "pending"
-tracking = "ADR-031 §6; pre-flight read path + optimistic mint not yet built"
+status = "satisfied"
+satisfied_by = ["crates/cli/src/bin/qx.rs"]
+tracking = "SATISFIED (ADR-031 §6). The pre-flight READ PATH — the specifically-flagged missing piece — is built as `qx preflight [--base <ref>]`: it FETCHES the contract+registry FROM MAIN (materialize_base git-shows .qx/contract.json + every declared collections/<n>.jsonl from the base ref into a temp tree — the local-git equivalent of the github: raw fetch; or the working copy, which IS main for a fresh clone) and VALIDATES LOCALLY by running the SAME Rust validators (check_contract — authoritative, not a guess, the shared core per ADR-017/030), plus a MINT-READINESS gate (>=1 mintable collection). A failing pre-flight refuses the mint (`do NOT mint against this base`). The OPTIMISTIC MINT already exists: run_mint allocates IDs immediately and submits the registry-update proposal that flows in PARALLEL (a PR for github:, leaving only harmless voidable unbound IDs if abandoned) — it never blocks on merge; THEN PRINT (run_label) runs immediately. The flow composes preflight -> optimistic mint -> print (the workflow/CI runs preflight first, as it composes qx check). Proven by preflight_validates_main_and_reports_mint_readiness (working-copy + base-ref fetch both pass; a dangling-FK working copy is refused; the committed main stays a valid base via --base = effective-dating). Suite + wasm32 green, clippy clean."
 
 [[obligation]]
 id = "toolchain-bump-188"
