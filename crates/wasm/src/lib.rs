@@ -92,6 +92,17 @@ pub fn wasm_request_id_new() -> String {
     RequestId::new().to_string()
 }
 
+/// Decode a QR/Micro-QR/DataMatrix from an encoded image (PNG/JPEG bytes)
+/// via the Rust `qx_codec` (rxing) — the `decode-image` façade (ADR-032 §1).
+/// Gated behind the `decoder` feature so it ships only in the dual-engine
+/// A/B test bench, not the lean production FE. Returns the decoded payload,
+/// or `null` when nothing is found (a blurred/empty frame).
+#[cfg(feature = "decoder")]
+#[wasm_bindgen]
+pub fn decode_image(bytes: &[u8]) -> Option<String> {
+    qx_codec::decode_qr(bytes).ok()
+}
+
 /// One-shot init for the WASM façade. Today a no-op: see module docs
 /// for why a `tracing-web` shim is deferred. Idempotent; safe to call
 /// from any JS-side entry point.
