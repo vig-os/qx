@@ -289,8 +289,9 @@ id = "scan-processor-dry"
 adr = "ADR-032"
 statement = "One scan processor (FrameSource→decode→resolve→RollingAccumulator→Sink); sources/sinks are the only per-shell parts"
 kind = "test"
-status = "pending"
-tracking = "ADR-032 §2; scan module + replay-fixture conformance not yet built"
+status = "satisfied"
+satisfied_by = ["crates/codec/src/scan.rs"]
+tracking = "SATISFIED (ADR-032 §2). ONE scan processor in crates/codec/src/scan.rs: process(source, sink, acc) wires the DRY shared core FrameSource -> decode_qr -> resolve -> RollingAccumulator -> Sink. SOURCES/SINKS ARE THE ONLY PER-SHELL PARTS: the FrameSource (where frames come from) + Sink (what to do with a resolved id) traits are the only per-shell pieces; the decode->resolve->accumulate middle is identical for every shell. resolve(payload) strips known wrappers (qx:/URL trailing path) to the entity id. RollingAccumulator debounces a live scanner (same code across many frames emits once, re-emits after it ages out of the window). REPLAY-FIXTURE CONFORMANCE: replay_fixture_decodes_resolves_and_debounces runs a live-scanner frame trace (code A held 3 frames, a blurred undecodable frame, code B held 2) through the REAL decode_qr and asserts exactly 2 emits in order — the per-frame duplicates debounced. Proven by that + resolve_strips_wrappers + accumulator_debounces; codec (default + decoder) + wasm32 green, clippy clean."
 
 [[obligation]]
 id = "zxing-wasm-dropped"
