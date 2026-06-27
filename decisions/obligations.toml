@@ -557,8 +557,9 @@ id = "merge-sync-witness"
 adr = "ADR-037"
 statement = "Approver/review/merge evidence + gate provenance (artifact sha, env digest, run ref) synced into the audit stream as durable records"
 kind = "ci"
-status = "pending"
-tracking = "ADR-037 §2; sync step lands with the data-repo check workflow evolution"
+status = "satisfied"
+satisfied_by = ["crates/cli/src/bin/qx.rs", "crates/observability/src/lib.rs"]
+tracking = "SATISFIED (ADR-037 §2). The `qx merge-sync` command converts the host's ephemeral merge witness into a DURABLE repo-resident audit record. CI supplies (via flags): APPROVER/MERGER (--approver, the accountable persona FK per ADR-036), REVIEW identities (--reviewer, repeatable), the merged PR ref (--pr-ref), and the DERIVED MEANING (--meaning = collection:op-kind[:edge], never left implicit in the diff). GATE PROVENANCE rides the same event (--gate-version/--artifact-sha256/--env-digest/--run-ref => the gate{} object: the artifact hash the CI step verified against the pin per ADR-034 §2, env digest, run ref). The command builds a record_write_audit_entry (collection merge_sync, id=pr_ref, actor=approver) with witness+gate in extra, stamps content_hash (with_content_hash), and appends it to audit_log.jsonl — so the otherwise host-custodial evidence survives the host (ADR-038 'GH gone'). DURABILITY is enforced: the append-only gate + content_hash (ADR-037 §1) make the record tamper-evident. Proven by merge_sync_writes_a_durable_content_hashed_witness (records approver/meaning/gate-sha/run-ref; passes the integrity gate; a tampered witness fails content_hash). Suite + wasm32 green, clippy clean."
 
 [[obligation]]
 id = "anchor-ledger"
