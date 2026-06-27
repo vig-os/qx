@@ -18,6 +18,7 @@ import init, {
   initSync,
   render_label as wasmRenderLabel,
   validate_diff as wasmValidateDiff,
+  validate_record_json as wasmValidateRecord,
   classify_diff as wasmClassifyDiff,
   policy_decision as wasmPolicyDecision,
   recommend_format as wasmRecommendFormat,
@@ -69,6 +70,7 @@ export type AuthDecision =
 type WasmModule = {
   renderLabel: typeof wasmRenderLabel;
   validateDiff: typeof wasmValidateDiff;
+  validateRecord: typeof wasmValidateRecord;
   classifyDiff: typeof wasmClassifyDiff;
   policyDecision: typeof wasmPolicyDecision;
   recommendFormat: typeof wasmRecommendFormat;
@@ -92,6 +94,7 @@ export function loadWasm(): Promise<WasmModule> {
     ready = {
       renderLabel: wasmRenderLabel,
       validateDiff: wasmValidateDiff,
+      validateRecord: wasmValidateRecord,
       classifyDiff: wasmClassifyDiff,
       policyDecision: wasmPolicyDecision,
       recommendFormat: wasmRecommendFormat,
@@ -122,6 +125,7 @@ export function initWasmFromBytes(bytes: BufferSource): void {
   ready = {
     renderLabel: wasmRenderLabel,
     validateDiff: wasmValidateDiff,
+    validateRecord: wasmValidateRecord,
     classifyDiff: wasmClassifyDiff,
     policyDecision: wasmPolicyDecision,
     recommendFormat: wasmRecommendFormat,
@@ -169,6 +173,28 @@ export function renderLabelSync(
 /** Synchronous `validateDiff`. Requires `await loadWasm()` to have completed. */
 export function validateDiffSync(input: unknown): ValidateResult {
   return requireReady().validateDiff(JSON.stringify(input)) as ValidateResult;
+}
+
+/**
+ * Synchronous `validate_record_json` — the SSOT record validator (ADR-039
+ * §3-4), the FE arm of the conformance triplet. Byte-identical verdicts to
+ * the native `qx check` gate. Returns `[{path, severity, message}]`.
+ */
+export function validateRecordSync(
+  contract: Uint8Array,
+  record: Uint8Array,
+  collection: string,
+  status: string | undefined,
+  knownIds: Uint8Array,
+): Array<{ path: string; severity: string; message: string }> {
+  const json = requireReady().validateRecord(
+    contract,
+    record,
+    collection,
+    status,
+    knownIds,
+  );
+  return JSON.parse(json);
 }
 
 /** Synchronous `classifyDiff`. Requires `await loadWasm()` to have completed. */
