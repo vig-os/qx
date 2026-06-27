@@ -372,6 +372,7 @@ fn target_kind_str(t: &TargetRef) -> &'static str {
         TargetRef::Batch { .. } => "batch",
         TargetRef::Diff { .. } => "diff",
         TargetRef::File { .. } => "file",
+        TargetRef::Record { .. } => "record",
     }
 }
 
@@ -740,6 +741,33 @@ pub fn mint_audit_entry(
         actor,
         action: Action::RowAdd { row },
         target: TargetRef::Part { id: minted_id },
+        before: None,
+        after: None,
+        extra,
+        signatures: Vec::new(),
+        chain_hash: None,
+    }
+}
+
+/// Build an [`AuditEntry`] for a generic entity-store write (ADR-035):
+/// a `RecordWrite` action keyed on {collection, id}, so non-parts
+/// collections are audited on the same spine as parts.
+pub fn record_write_audit_entry(
+    request_id: RequestId,
+    actor: Operator,
+    collection: String,
+    id: String,
+    extra: serde_json::Value,
+) -> AuditEntry {
+    AuditEntry {
+        request_id,
+        timestamp: time::OffsetDateTime::now_utc(),
+        actor,
+        action: Action::RecordWrite {
+            collection: collection.clone(),
+            id: id.clone(),
+        },
+        target: TargetRef::Record { collection, id },
         before: None,
         after: None,
         extra,

@@ -783,10 +783,25 @@ pub struct PrintEvent {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TargetRef {
-    Part { id: PartId },
-    Batch { label: String },
-    Diff { hash: Hash },
-    File { repo: String, path: String },
+    Part {
+        id: PartId,
+    },
+    Batch {
+        label: String,
+    },
+    Diff {
+        hash: Hash,
+    },
+    File {
+        repo: String,
+        path: String,
+    },
+    /// A generic entity-store record (ADR-035) — keyed on its collection
+    /// and id, the typed-id target for non-parts collections.
+    Record {
+        collection: String,
+        id: String,
+    },
 }
 
 /// Where an audit emit originated, per ADR-022 §"AuditSource".

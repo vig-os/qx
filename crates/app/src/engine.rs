@@ -24,7 +24,9 @@ use qx_domain::{
     ProposalRef, RecordWrite, RequestId, PART_ID_ALPHABET, PART_ID_LEN,
 };
 use qx_identity::IdentityProvider;
-use qx_observability::{bind_audit_entry, emit_audit, mint_audit_entry, void_audit_entry};
+use qx_observability::{
+    bind_audit_entry, emit_audit, mint_audit_entry, record_write_audit_entry, void_audit_entry,
+};
 use qx_storage::{PartFilter, Repository};
 use qx_transport::ProposalSink;
 
@@ -549,18 +551,28 @@ fn generic_create(
     let proposal = Proposal {
         diff: diff.clone(),
         batch_label: None,
-        author: op,
+        author: op.clone(),
         signatures: Vec::new(),
         change_classification: diff.classify(),
         message: format!("create {collection}: {id}"),
         request_id,
     };
     match ctx.sink.submit(proposal) {
-        Ok(proposal_ref) => Response::ok(json!({
-            "id": id,
-            "collection": collection,
-            "proposal": proposal_ref.url,
-        })),
+        Ok(proposal_ref) => {
+            // Audit the create on the same spine as parts (ADR-022).
+            let extra = json!({ "proposal": proposal_ref.url });
+            let entry =
+                record_write_audit_entry(request_id, op, collection.to_string(), id.clone(), extra);
+            emit_audit(&entry);
+            if let Err(e) = ctx.repo.append_audit_event(entry) {
+                tracing::warn!(error = %e, "append_audit_event failed; tracing is the fallback");
+            }
+            Response::ok(json!({
+                "id": id,
+                "collection": collection,
+                "proposal": proposal_ref.url,
+            }))
+        }
         Err(e) => Response::error(ErrorKind::Backend, e.to_string()),
     }
 }
@@ -608,18 +620,35 @@ fn submit_record_write(
     let proposal = Proposal {
         diff: diff.clone(),
         batch_label: None,
-        author: op,
+        author: op.clone(),
         signatures: Vec::new(),
         change_classification: diff.classify(),
         message,
         request_id,
     };
     match ctx.sink.submit(proposal) {
-        Ok(proposal_ref) => Response::ok(json!({
-            "id": id,
-            "collection": collection,
-            "proposal": proposal_ref.url,
-        })),
+        Ok(proposal_ref) => {
+            // Audit the generic write on the same spine as parts (ADR-022):
+            // a RecordWrite entry keyed on {collection, id}. Without this,
+            // non-parts mutations were silently un-audited.
+            let extra = json!({ "proposal": proposal_ref.url });
+            let entry = record_write_audit_entry(
+                request_id,
+                op,
+                collection.to_string(),
+                id.to_string(),
+                extra,
+            );
+            emit_audit(&entry);
+            if let Err(e) = ctx.repo.append_audit_event(entry) {
+                tracing::warn!(error = %e, "append_audit_event failed; tracing is the fallback");
+            }
+            Response::ok(json!({
+                "id": id,
+                "collection": collection,
+                "proposal": proposal_ref.url,
+            }))
+        }
         Err(e) => Response::error(ErrorKind::Backend, e.to_string()),
     }
 }
