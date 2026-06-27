@@ -363,6 +363,7 @@ fn action_kind_str(action: &Action) -> &'static str {
         qx_domain::ActionKind::HeaderChange => "header_change",
         qx_domain::ActionKind::BulkChange => "bulk_change",
         qx_domain::ActionKind::RecordWrite => "record_write",
+        qx_domain::ActionKind::Print => "print",
     }
 }
 
@@ -769,6 +770,33 @@ pub fn record_write_audit_entry(
             id: id.clone(),
         },
         target: TargetRef::Record { collection, id },
+        before: None,
+        after: None,
+        extra,
+        signatures: Vec::new(),
+        chain_hash: None,
+    }
+}
+
+/// Build an [`AuditEntry`] for a label print (ADR-022 print-fold): the
+/// print is a typed audit event on the one spine, not a `print_log` row.
+pub fn print_audit_entry(
+    request_id: RequestId,
+    actor: Operator,
+    id: qx_domain::PartId,
+    copies: u32,
+    extra: serde_json::Value,
+    timestamp: time::OffsetDateTime,
+) -> AuditEntry {
+    AuditEntry {
+        request_id,
+        timestamp,
+        actor,
+        action: Action::Print {
+            id: id.as_str().to_string(),
+            copies,
+        },
+        target: TargetRef::Part { id },
         before: None,
         after: None,
         extra,

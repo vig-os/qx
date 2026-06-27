@@ -94,11 +94,11 @@ mod tests {
     use tower::ServiceExt;
 
     use qx_domain::{
-        AuditEntry, Hash, IdentitySource, Operator, OperatorId, Part, PartId, PartStatus,
-        PrintEvent, Proposal, ProposalRef, ProposalStatus,
+        AuditEntry, Hash, IdentitySource, Operator, OperatorId, Part, PartId, PartStatus, Proposal,
+        ProposalRef, ProposalStatus,
     };
     use qx_identity::{Capabilities, IdentityError, IdentityProvider};
-    use qx_storage::{AuditFilter, PartFilter, PrintEventFilter, RepoError, Repository};
+    use qx_storage::{AuditFilter, PartFilter, RepoError, Repository};
     use qx_transport::{ProposalError, ProposalSink};
 
     struct MemRepo(Mutex<Vec<Part>>);
@@ -118,13 +118,7 @@ mod tests {
         fn list_audit_events(&self, _f: &AuditFilter) -> Result<Vec<AuditEntry>, RepoError> {
             Ok(Vec::new())
         }
-        fn list_print_events(&self, _f: &PrintEventFilter) -> Result<Vec<PrintEvent>, RepoError> {
-            Ok(Vec::new())
-        }
         fn append_audit_event(&self, _e: AuditEntry) -> Result<(), RepoError> {
-            Ok(())
-        }
-        fn append_print_event(&self, _e: PrintEvent) -> Result<(), RepoError> {
             Ok(())
         }
         fn snapshot_hash(&self) -> Result<Hash, RepoError> {

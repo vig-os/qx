@@ -36,11 +36,11 @@ use wasm_bindgen::prelude::*;
 
 use qx_app::{dispatch as app_dispatch, AppContext, ErrorKind, Request, Response};
 use qx_domain::{
-    AuditEntry, Hash, IdentitySource, Operator, OperatorId, Part, PartId, PartStatus, PrintEvent,
-    Proposal, ProposalRef, ProposalStatus,
+    AuditEntry, Hash, IdentitySource, Operator, OperatorId, Part, PartId, PartStatus, Proposal,
+    ProposalRef, ProposalStatus,
 };
 use qx_identity::{Capabilities, IdentityError, IdentityProvider};
-use qx_storage::{AuditFilter, PartFilter, PrintEventFilter, RepoError, Repository};
+use qx_storage::{AuditFilter, PartFilter, RepoError, Repository};
 use qx_transport::{ProposalError, ProposalSink};
 
 // -------------------------------------------------------------------
@@ -52,7 +52,6 @@ use qx_transport::{ProposalError, ProposalSink};
 struct SnapshotRepo {
     parts: Vec<Part>,
     audit: Mutex<Vec<AuditEntry>>,
-    prints: Mutex<Vec<PrintEvent>>,
 }
 
 impl Repository for SnapshotRepo {
@@ -65,15 +64,8 @@ impl Repository for SnapshotRepo {
     fn list_audit_events(&self, _filter: &AuditFilter) -> Result<Vec<AuditEntry>, RepoError> {
         Ok(self.audit.lock().expect("audit lock").clone())
     }
-    fn list_print_events(&self, _filter: &PrintEventFilter) -> Result<Vec<PrintEvent>, RepoError> {
-        Ok(self.prints.lock().expect("prints lock").clone())
-    }
     fn append_audit_event(&self, ev: AuditEntry) -> Result<(), RepoError> {
         self.audit.lock().expect("audit lock").push(ev);
-        Ok(())
-    }
-    fn append_print_event(&self, ev: PrintEvent) -> Result<(), RepoError> {
-        self.prints.lock().expect("prints lock").push(ev);
         Ok(())
     }
     fn snapshot_hash(&self) -> Result<Hash, RepoError> {
@@ -263,7 +255,6 @@ fn open_impl(format: &str, text: &str, registry_name: &str) -> Result<usize, Str
         repo: Arc::new(SnapshotRepo {
             parts,
             audit: Mutex::new(Vec::new()),
-            prints: Mutex::new(Vec::new()),
         }),
         identity: Box::new(SharedIdentity(identity.clone())),
         sink: Box::new(BrowserSink),

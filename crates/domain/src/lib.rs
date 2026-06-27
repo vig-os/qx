@@ -303,6 +303,9 @@ pub enum ActionKind {
     /// A generic entity-store record upsert (ADR-035): keyed on
     /// {collection, id}, not the parts-row vocabulary.
     RecordWrite,
+    /// A label print (ADR-022 print-fold): print events are typed audit
+    /// events on the one spine, not a separate `print_log`.
+    Print,
 }
 
 /// `ChangeClass` is an alias for `ActionKind` per ADR-016 §"Semantic
@@ -357,6 +360,12 @@ pub enum Action {
         collection: String,
         id: String,
     },
+    /// A label print (ADR-022 print-fold) — the id printed and the copy
+    /// count, recorded on the audit spine rather than a separate log.
+    Print {
+        id: String,
+        copies: u32,
+    },
 }
 
 impl Action {
@@ -372,6 +381,7 @@ impl Action {
             Action::HeaderChange { .. } => ActionKind::HeaderChange,
             Action::BulkChange { .. } => ActionKind::BulkChange,
             Action::RecordWrite { .. } => ActionKind::RecordWrite,
+            Action::Print { .. } => ActionKind::Print,
         }
     }
 }

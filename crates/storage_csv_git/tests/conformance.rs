@@ -19,7 +19,7 @@ use qx_domain::{
     Action, AuditEntry, Hash, IdentitySource, KeyId, Operator, OperatorId, PartFilter, PartId,
     PartStatus, RekorProof, RequestId, Signature, TargetRef,
 };
-use qx_storage::{AuditFilter, PrintEventFilter, Repository};
+use qx_storage::{AuditFilter, Repository};
 use qx_storage_csv_git::{CsvGitConfig, CsvGitRepository};
 use serde_json::json;
 use tempfile::TempDir;
@@ -36,7 +36,7 @@ fn fixtures_dir() -> PathBuf {
         .join("fixtures")
 }
 
-/// Create a tempdir, copy `registry.csv` + `print_log.csv` fixtures
+/// Create a tempdir, copy `registry.csv` fixtures
 /// into it, and open a `CsvGitRepository` with `commit_on_write =
 /// false` (no git commit produced — tests must never push or commit).
 fn fresh_repo() -> (TempDir, CsvGitRepository) {
@@ -44,10 +44,6 @@ fn fresh_repo() -> (TempDir, CsvGitRepository) {
     copy_fixture(
         &fixtures_dir().join("registry.csv"),
         &tmp.path().join("registry.csv"),
-    );
-    copy_fixture(
-        &fixtures_dir().join("print_log.csv"),
-        &tmp.path().join("print_log.csv"),
     );
     let cfg = CsvGitConfig {
         repo_path: tmp.path().to_path_buf(),
@@ -140,18 +136,6 @@ fn list_parts_filters_by_batch_and_vendor() {
     assert_eq!(parts.len(), 1);
     assert_eq!(parts[0].id.as_str(), "4M4DWPCHD9PTGH");
 }
-
-#[test]
-fn list_print_events_reads_fixture() {
-    let (_tmp, repo) = fresh_repo();
-    let events = repo
-        .list_print_events(&PrintEventFilter::default())
-        .unwrap();
-    assert_eq!(events.len(), 2);
-    assert_eq!(events[0].layout, "horz");
-    assert_eq!(events[0].copies, 1);
-}
-
 // -------------------------------------------------------------------
 // Audit-append round-trip (forward-compat per ADR-023 / ADR-027 §T2)
 // -------------------------------------------------------------------

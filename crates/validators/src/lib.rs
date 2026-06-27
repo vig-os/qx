@@ -405,6 +405,8 @@ fn decide_one(action: &Action, operator: &Operator, policy: &Policy) -> AuthDeci
         // A generic entity-store upsert is a non-destructive write (the
         // PR review + gate enforce the contract); allow, like RowEdit.
         ActionKind::RecordWrite => AuthDecision::Allow,
+        // A label print is read-only output (ADR-022 print-fold) — allow.
+        ActionKind::Print => AuthDecision::Allow,
     }
 }
 

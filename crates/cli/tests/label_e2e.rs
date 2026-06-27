@@ -12,7 +12,6 @@ mod common;
 
 use qx_cli::{run_label, FormatArg, LabelArgs, LayoutArg, StatusArg};
 use qx_codec::TextFormat;
-use qx_storage::PrintEventFilter;
 
 const FIXED_ID_A: &str = "K7M3PQ9RT5VAXY";
 const FIXED_ID_B: &str = "ABCDEFGHJKMNPQ";
@@ -59,18 +58,25 @@ fn label_renders_svg_per_id_and_logs_print_event() {
         assert!(r.svg.contains(&id[8..12]));
     }
 
-    // print_log.csv has two rows.
+    // Print-fold (ADR-022): two Print audit events on the one spine.
     let events = wiring
         .repo
-        .list_print_events(&PrintEventFilter::default())
+        .list_audit_events(&qx_storage::AuditFilter::default())
         .unwrap();
-    assert_eq!(events.len(), 2);
-    for e in &events {
-        assert_eq!(e.layout, "horz");
-        assert_eq!(e.size_mm, 11.0);
-        assert_eq!(e.printed_by.0 .0, "gerchowl");
-        assert_eq!(e.output_mode, "dk-continuous-auto-cut");
-        assert_eq!(e.copies, 1);
+    let prints: Vec<_> = events
+        .iter()
+        .filter(|e| e.action.kind() == qx_domain::ActionKind::Print)
+        .collect();
+    assert_eq!(prints.len(), 2);
+    for e in &prints {
+        assert_eq!(e.extra["layout"], "horz");
+        assert_eq!(e.extra["size_mm"], 11.0);
+        assert_eq!(e.extra["output_mode"], "dk-continuous-auto-cut");
+        assert_eq!(e.actor.id.0, "gerchowl");
+        assert!(matches!(
+            e.action,
+            qx_domain::Action::Print { copies: 1, .. }
+        ));
     }
 }
 
@@ -99,9 +105,11 @@ fn label_no_log_skips_print_event_append() {
     assert!(!out.logged);
     let events = wiring
         .repo
-        .list_print_events(&PrintEventFilter::default())
+        .list_audit_events(&qx_storage::AuditFilter::default())
         .unwrap();
-    assert!(events.is_empty());
+    assert!(!events
+        .iter()
+        .any(|e| e.action.kind() == qx_domain::ActionKind::Print));
 }
 
 #[test]

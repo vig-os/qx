@@ -89,9 +89,7 @@ mod wasm_stub {
     use std::path::PathBuf;
 
     use qx_domain::{AuditEntry, Hash, PartId};
-    use qx_storage::{
-        AuditFilter, Part, PartFilter, PrintEvent, PrintEventFilter, RepoError, Repository,
-    };
+    use qx_storage::{AuditFilter, Part, PartFilter, RepoError, Repository};
 
     /// Config struct kept in-shape for wasm32 so downstream code
     /// referencing it under `cfg(target_arch = "wasm32")` does not

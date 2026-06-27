@@ -20,12 +20,13 @@ use qx_codec::{
     RepeatOpts, Rotate, SizeMode, SolverInputs, Spacing, Symbology, TextFormat,
 };
 use qx_domain::{
-    Diff, DiffEdit, DiffRow, Operator, OperatorRef, Part, PartId, PartStatus, PrintEvent, Proposal,
-    ProposalRef, RecordWrite, RequestId, PART_ID_ALPHABET, PART_ID_LEN,
+    Diff, DiffEdit, DiffRow, Operator, Part, PartId, PartStatus, Proposal, ProposalRef,
+    RecordWrite, RequestId, PART_ID_ALPHABET, PART_ID_LEN,
 };
 use qx_identity::IdentityProvider;
 use qx_observability::{
-    bind_audit_entry, emit_audit, mint_audit_entry, record_write_audit_entry, void_audit_entry,
+    bind_audit_entry, emit_audit, mint_audit_entry, print_audit_entry, record_write_audit_entry,
+    void_audit_entry,
 };
 use qx_storage::{PartFilter, Repository};
 use qx_transport::ProposalSink;
@@ -1415,25 +1416,31 @@ fn print_mm(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
     }
 
     if options.log {
-        let printed_by = match operator(ctx) {
-            Ok(o) => OperatorRef(o.id),
+        let op = match operator(ctx) {
+            Ok(o) => o,
             Err(r) => return r,
         };
         let now = OffsetDateTime::now_utc();
+        let request_id = RequestId::new();
         for p in &targets {
-            let ev = PrintEvent {
-                id: p.id.clone(),
-                printed_at: now,
-                printed_by: printed_by.clone(),
-                layout: options.layout.clone(),
-                size_mm: options.size_mm,
-                extra: json!({ "chars": options.chars, "micro": micro, "symbology": resolved }),
-                copies: options.copies,
-                output_mode: "app-dispatch-svg".into(),
-                batch_label: None,
-            };
-            if let Err(e) = ctx.repo.append_print_event(ev) {
-                tracing::warn!(error = %e, "append_print_event failed");
+            // Print-fold (ADR-022): the print is a typed audit event on the
+            // one spine, not a separate print_log row.
+            let extra = json!({
+                "layout": options.layout, "size_mm": options.size_mm,
+                "output_mode": "app-dispatch-svg",
+                "chars": options.chars, "micro": micro, "symbology": resolved,
+            });
+            let entry = print_audit_entry(
+                request_id,
+                op.clone(),
+                p.id.clone(),
+                options.copies,
+                extra,
+                now,
+            );
+            emit_audit(&entry);
+            if let Err(e) = ctx.repo.append_audit_event(entry) {
+                tracing::warn!(error = %e, "append_audit_event (print) failed");
             }
         }
     }
@@ -1732,38 +1739,41 @@ fn print_px(ctx: &AppContext, selection: &Selection, options: &PrintOptions) -> 
         .collect();
 
     if options.log {
-        let printed_by = match operator(ctx) {
-            Ok(o) => OperatorRef(o.id),
+        let op = match operator(ctx) {
+            Ok(o) => o,
             Err(r) => return r,
         };
         let now = OffsetDateTime::now_utc();
+        let request_id = RequestId::new();
         for (p, l) in targets.iter().zip(&rendered) {
-            let ev = PrintEvent {
-                id: p.id.clone(),
-                printed_at: now,
-                printed_by: printed_by.clone(),
-                layout: options.layout.clone(),
-                // The physical size the snapped symbol maps to at `dpi`
-                // — resolved params are the audit evidence (ADR-031 §7).
-                size_mm: f64::from(l.qr_px) * MM_PER_INCH / dpi,
-                extra: json!({
-                    "chars": options.chars,
-                    "symbology": l.symbology,
-                    "unit": "px",
-                    "qr_px": l.qr_px,
-                    "module_px": l.module_px,
-                    "data_px": l.data_px,
-                    "white": l.white,
-                    "padding": padding,
-                    "padding_mode": l.padding_mode,
-                    "dpi": dpi,
-                }),
-                copies: options.copies,
-                output_mode: "app-dispatch-svg".into(),
-                batch_label: None,
-            };
-            if let Err(e) = ctx.repo.append_print_event(ev) {
-                tracing::warn!(error = %e, "append_print_event failed");
+            // Print-fold (ADR-022): a typed Print audit event, not print_log.
+            // Resolved params are the audit evidence (ADR-031 §7).
+            let extra = json!({
+                "layout": options.layout,
+                "size_mm": f64::from(l.qr_px) * MM_PER_INCH / dpi,
+                "output_mode": "app-dispatch-svg",
+                "chars": options.chars,
+                "symbology": l.symbology,
+                "unit": "px",
+                "qr_px": l.qr_px,
+                "module_px": l.module_px,
+                "data_px": l.data_px,
+                "white": l.white,
+                "padding": padding,
+                "padding_mode": l.padding_mode,
+                "dpi": dpi,
+            });
+            let entry = print_audit_entry(
+                request_id,
+                op.clone(),
+                p.id.clone(),
+                options.copies,
+                extra,
+                now,
+            );
+            emit_audit(&entry);
+            if let Err(e) = ctx.repo.append_audit_event(entry) {
+                tracing::warn!(error = %e, "append_audit_event (print) failed");
             }
         }
     }
