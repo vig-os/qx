@@ -39,8 +39,10 @@ tracing = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-# `.qx/manifest.toml` parsing (ADR-034 §3 registry policy manifest).
+# `.qx/manifest.toml` + `registries.toml` parsing (ADR-034 §3 / ADR-033 §5).
 toml = "0.8"
+# Operator-workspace path resolution (XDG config dir, ADR-033 §5).
+dirs = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }
 # CSPRNG used by `mint_part_id`. Re-uses the same `getrandom` build
