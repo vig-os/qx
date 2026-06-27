@@ -271,8 +271,9 @@ id = "auth-credential-resolver"
 adr = "ADR-020"
 statement = "GitHub token resolves first-hit-wins: explicit env → cached → borrow system (gh/keychain) → device flow"
 kind = "crate"
-status = "pending"
-tracking = "ADR-020 'Credential resolution order' refinement; borrow-system + conventional env names not yet built"
+status = "satisfied"
+satisfied_by = ["crates/cli/src/lib.rs", "crates/cli/src/bin/qx.rs"]
+tracking = "SATISFIED (ADR-020 §Credential resolution order). resolve_github_token_chain (crates/cli/src/lib.rs) resolves FIRST-HIT-WINS across all FOUR rungs in order, each production-wired: (1) EXPLICIT/ENV — config.transport.github_token + the conventional GITHUB_TOKEN / GH_TOKEN names (resolve_github_token_from); (2) CACHED — cached_github_token reads <config-dir>/qx/github-token.json from a prior login; (3) BORROW SYSTEM — gh_borrowed_token runs `gh auth token` only if present (no hard gh dependency); (4) DEVICE FLOW — device_flow_token implements the github.com/login/device flow (request device+user code, show the user_code, poll the token endpoint past authorization_pending/slow_down until granted), reached in production via the new `qx login` command (run_login: ReqwestDeviceFlow over blocking reqwest/rustls, client_id = identity.github_client_id the OAuth-app registration, caches the token to the rung-2 store). Blank values fall through. Proven by token_chain_resolves_first_hit_wins_across_all_four_rungs (ordering, all 4 rungs injected) + device_flow_requests_code_then_polls_until_authorised (request->pending->granted via a mock OAuth). cli suite + wasm32 green, clippy clean."
 
 # ---- Scan pipeline + decode-image (ADR-032) -----------------------------
 

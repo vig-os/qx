@@ -300,6 +300,9 @@ enum Cmd {
         #[arg(long, default_value = ".")]
         path: PathBuf,
     },
+    /// Interactive GitHub login via the device flow (ADR-020 rung 4) —
+    /// caches the token so later runs resolve it first-hit-wins.
+    Login,
     /// Append a stream checkpoint (ADR-037 §1) pinning the current
     /// `audit_log.jsonl` to `audit_checkpoints.jsonl`, restoring standalone
     /// stream verifiability without a base diff.
@@ -534,6 +537,7 @@ fn main() -> ExitCode {
         Cmd::Serve { addr, static_dir } => serve_cmd(addr, static_dir),
         Cmd::Registries { path } => registries_cmd(path),
         Cmd::Codeowners { path } => codeowners_cmd(&path),
+        Cmd::Login => login_cmd(),
         Cmd::Checkpoint { path } => checkpoint_cmd(&path),
         Cmd::Verify { path, anchors } => verify_cmd(&path, anchors),
         Cmd::Preflight { path, base } => preflight_cmd(&path, base.as_deref()),
@@ -2295,6 +2299,27 @@ fn checkpoint_cmd(path: &Path) -> ExitCode {
 }
 
 /// `qx registries` — list the operator-workspace registries (ADR-033 §5).
+/// `qx login` — the interactive device-flow credential rung (ADR-020).
+fn login_cmd() -> ExitCode {
+    let cfg = match load_config() {
+        Ok(c) => c,
+        Err(code) => return code,
+    };
+    let prompt = |code: &str, uri: &str| {
+        eprintln!("qx login: open {uri} and enter code {code}");
+    };
+    match qx_cli::run_login(&cfg, prompt) {
+        Ok(_) => {
+            println!("qx login: token cached — subsequent runs resolve it first-hit-wins");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("qx login: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 /// `qx codeowners` — generate `.github/CODEOWNERS` from the manifest's
 /// role→capability map (ADR-034 §4). Prints the body to stdout; the caller
 /// writes it to `.github/CODEOWNERS`, which GitHub enforces. The tool
