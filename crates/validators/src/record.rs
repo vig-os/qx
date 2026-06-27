@@ -98,6 +98,17 @@ pub fn validate_record(
     // Unknown keys: allowed only when the collection opts into tier-3
     // open_properties (ADR-035 §1). `id` and `status` are engine-owned
     // envelope keys, never declared as fields.
+    // Engine-owned envelope keys — never declared as fields, never part
+    // of the tier-3 open-properties bag (`transitioned_at` is a status→ts
+    // object, the rest are scalars).
+    const ENVELOPE: [&str; 6] = [
+        "id",
+        "status",
+        "created_at",
+        "transitioned_at",
+        "label",
+        "kind",
+    ];
     if !collection.open_properties {
         for key in record.keys() {
             if key == "id" || key == "status" {
@@ -107,6 +118,25 @@ pub fn validate_record(
                 issues.push(RecordIssue::error(
                     key.clone(),
                     format!("unknown field `{key}` (collection does not allow open properties)"),
+                ));
+            }
+        }
+    } else {
+        // The tier-3 open-properties bag is shape-checked (ADR-035 §3):
+        // it holds flat scalars. Structured data (objects/arrays) must be
+        // a declared tier-2 field, or promoted into one — it cannot hide
+        // in the open bag.
+        for (key, value) in record {
+            if declared.contains(key.as_str()) || ENVELOPE.contains(&key.as_str()) {
+                continue;
+            }
+            if value.is_object() || value.is_array() {
+                issues.push(RecordIssue::error(
+                    key.clone(),
+                    format!(
+                        "open property `{key}` must be a scalar (string/number/bool); \
+                         structured data needs a declared field"
+                    ),
                 ));
             }
         }
@@ -913,6 +943,21 @@ mod tests {
         let ctx = ctx_with("companies", &["VENDOR01"]);
         let issues = validate_record(parts, &record, Some("bound"), &ctx);
         assert!(!issues.iter().any(|i| i.path == "scratchpad"));
+    }
+
+    #[test]
+    fn open_property_with_structured_value_is_rejected() {
+        let c = contract();
+        let parts = c.collection("parts").unwrap();
+        // The tier-3 open bag is flat scalars: an object (or array) open
+        // property is rejected — structured data needs a declared field.
+        let record = obj(r#"{ "type": "x", "manufacturer": "VENDOR01", "nested": { "a": 1 } }"#);
+        let ctx = ctx_with("companies", &["VENDOR01"]);
+        let issues = validate_record(parts, &record, Some("bound"), &ctx);
+        assert!(
+            issues.iter().any(|i| i.path == "nested"),
+            "an object-valued open property must be rejected: {issues:?}"
+        );
     }
 
     #[test]

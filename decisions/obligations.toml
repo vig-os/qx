@@ -390,7 +390,7 @@ adr = "ADR-035"
 statement = "Open properties bag is shape-checked; a promote op moves a hot key into a typed tier-2 field"
 kind = "test"
 status = "pending"
-tracking = "ADR-035 §3; promote op + shape-check not yet built"
+tracking = "ADR-035 §3; the SHAPE-CHECK half is BUILT (M-B): validate_record now shape-checks the tier-3 open-properties bag — when open_properties=true, an object/array-valued open property is rejected (structured data must be a declared field), excluding the engine envelope keys (id/status/created_at/transitioned_at/label/kind). Proven by open_property_with_structured_value_is_rejected. REMAINING: the promote op (a contract-mutating qx command that moves a hot open-property key into a declared tier-2 field — the contract crate is a pure parser today, so it needs raw-JSON contract editing + re-validation)"
 
 [[obligation]]
 id = "idd-controlled-vocab"
