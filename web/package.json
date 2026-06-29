@@ -12,7 +12,10 @@
     "test": "npm run build:wasm && vitest",
     "test:run": "npm run build:wasm && vitest run",
     "e2e": "playwright test",
-    "e2e:install": "playwright install chromium"
+    "e2e:install": "playwright install chromium",
+    "bench": "vite --config bench/vite.config.ts",
+    "bench:wasm": "cd .. && cargo build --target wasm32-unknown-unknown -p qx-wasm --release --features decoder && \"${WASM_BINDGEN:-$HOME/.cargo/bin/wasm-bindgen}\" --target web --out-dir web/bench/wasm --out-name qx_decoder target/wasm32-unknown-unknown/release/qx_wasm.wasm",
+    "bench:build": "vite build --config bench/vite.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.59.1",
