@@ -138,8 +138,30 @@ pub fn encode_pinned(
 /// for the size-sensitive consumer that uses this opt-out.
 #[cfg(feature = "decoder")]
 pub fn decode_qr(image_png: &[u8]) -> Result<String, CodecError> {
+    let mut hints = scan_hints();
+    let result = rxing::helpers::detect_in_buffer_with_hints(image_png, None, &mut hints)
+        .map_err(|e| CodecError::Decode(format!("rxing: {e:?}")))?;
+    Ok(result.getText().to_string())
+}
+
+/// Decode directly from a raw 8-bit grayscale (luma) buffer, `width *
+/// height` bytes, row-major. Skips image-container decoding entirely — the
+/// caller hands over the exact pixels, so an A/B against another decoder is
+/// apples-to-apples (no JPEG/PNG re-encode in between). Same symbology set +
+/// TryHarder as [`decode_qr`].
+#[cfg(feature = "decoder")]
+pub fn decode_luma(width: u32, height: u32, luma: Vec<u8>) -> Result<String, CodecError> {
+    let mut hints = scan_hints();
+    let result = rxing::helpers::detect_in_luma_with_hints(luma, width, height, None, &mut hints)
+        .map_err(|e| CodecError::Decode(format!("rxing: {e:?}")))?;
+    Ok(result.getText().to_string())
+}
+
+/// Shared decode hints: the qx symbology set + TryHarder.
+#[cfg(feature = "decoder")]
+fn scan_hints() -> rxing::DecodeHints {
     use rxing::{BarcodeFormat, DecodeHints};
-    let mut hints = DecodeHints {
+    DecodeHints {
         PossibleFormats: Some(
             [
                 BarcodeFormat::QR_CODE,
@@ -151,8 +173,5 @@ pub fn decode_qr(image_png: &[u8]) -> Result<String, CodecError> {
         ),
         TryHarder: Some(true),
         ..DecodeHints::default()
-    };
-    let result = rxing::helpers::detect_in_buffer_with_hints(image_png, None, &mut hints)
-        .map_err(|e| CodecError::Decode(format!("rxing: {e:?}")))?;
-    Ok(result.getText().to_string())
+    }
 }

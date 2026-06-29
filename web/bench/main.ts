@@ -1,12 +1,11 @@
 // Dual-engine scan bench — one camera, both decoders, live A/B.
 //
-// Lifts the production scanner's camera loop (web/src/ui/scanner.ts) into a
-// measurement harness: every frame is painted once and fanned to zxing-wasm
-// AND the Rust rxing `decode_image`, recording hit-rate, latency, and — the
-// number that gates dropping zxing — rxing's parity on the frames zxing
-// reads. Capture interesting frames straight into the CI corpus.
+// Lifts the v1 scanner's live-camera feel: the stream shows continuously and
+// detected codes are marked up in real time (fast zxing every animation
+// frame). The slow rxing `decode_image` runs on a throttled background
+// sampler so it measures the A/B without ever stuttering the live view.
 
-import { decodeBoth, initEngines } from "./dual-decode";
+import { decodeBoth, initEngines, liveDetectZxing, type Point2D } from "./dual-decode";
 import {
   emptyTallies,
   hitRate,
@@ -17,11 +16,12 @@ import {
 } from "./stats";
 
 const SNAPSHOT_MAX_PX = 1280;
+const AB_SAMPLE_MS = 500; // how often the slow rxing A/B samples a frame
 
 const $ = (id: string) => document.getElementById(id)!;
 const video = $("cam") as HTMLVideoElement;
 const overlay = $("overlay") as HTMLCanvasElement;
-const work = document.createElement("canvas"); // off-screen frame buffer
+const abCanvas = document.createElement("canvas"); // off-screen A/B frame buffer
 
 const tallies: Tallies = emptyTallies();
 let frame = 0;
@@ -33,13 +33,84 @@ function fmt(n: number, d = 1): string {
   return n.toFixed(d);
 }
 
+// ---- live overlay (every animation frame, zxing only) ----
+
+function drawOverlay(corners: Point2D[] | null, label?: string): void {
+  const ctx = overlay.getContext("2d")!;
+  if (overlay.width !== video.videoWidth || overlay.height !== video.videoHeight) {
+    overlay.width = video.videoWidth;
+    overlay.height = video.videoHeight;
+  }
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  if (!corners || corners.length < 3) return;
+  ctx.strokeStyle = "#19e08a";
+  ctx.lineWidth = Math.max(3, overlay.width / 200);
+  ctx.beginPath();
+  corners.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+  ctx.closePath();
+  ctx.stroke();
+  for (const p of corners) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, ctx.lineWidth * 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = "#19e08a";
+    ctx.fill();
+  }
+  if (label) {
+    const cx = corners.reduce((s, p) => s + p.x, 0) / corners.length;
+    const top = Math.min(...corners.map((p) => p.y));
+    ctx.font = `bold ${Math.max(20, overlay.width / 30)}px ui-monospace, monospace`;
+    ctx.textAlign = "center";
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "#000";
+    ctx.strokeText(label, cx, top - 12);
+    ctx.fillStyle = "#19e08a";
+    ctx.fillText(label, cx, top - 12);
+  }
+}
+
+async function liveTick(): Promise<void> {
+  if (!running) return;
+  if (video.videoWidth) {
+    // zxing reads the video element directly — fast, every frame.
+    const hit = await liveDetectZxing(video);
+    drawOverlay(hit?.corners ?? null, hit?.value);
+  }
+  requestAnimationFrame(() => void liveTick());
+}
+
+// ---- throttled rxing A/B sampler (background, never blocks the live view) ----
+
+async function abSample(): Promise<void> {
+  if (!running || !video.videoWidth) return;
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  const longEdge = Math.max(vw, vh);
+  const scale = longEdge > SNAPSHOT_MAX_PX ? SNAPSHOT_MAX_PX / longEdge : 1;
+  abCanvas.width = Math.round(vw * scale);
+  abCanvas.height = Math.round(vh * scale);
+  const actx = abCanvas.getContext("2d", { willReadFrequently: true })!;
+  actx.drawImage(video, 0, 0, abCanvas.width, abCanvas.height);
+  // Hand both engines the IDENTICAL pixels (same ImageData → same luma).
+  const img = actx.getImageData(0, 0, abCanvas.width, abCanvas.height);
+
+  const r = await decodeBoth(img);
+  frame++;
+  record(tallies, frame, r);
+  renderStats();
+
+  if (autoCaptureDiverge && r.diverge) {
+    abCanvas.toBlob((b) => b && downloadFrame(b, `diverge-${frame}`), "image/jpeg", 0.95);
+  }
+  abCanvas.toBlob((b) => (lastFrameJpeg = b), "image/jpeg", 0.95);
+}
+
 function renderStats(): void {
   const z = tallies.zxing;
   const r = tallies.rxing;
   const parity = rxingParityOnZxingHits(tallies);
   $("stats").innerHTML = `
     <table>
-      <tr><th></th><th>zxing</th><th>rxing</th></tr>
+      <tr><th>A/B samples</th><th>zxing</th><th>rxing</th></tr>
       <tr><td>frames</td><td>${z.frames}</td><td>${r.frames}</td></tr>
       <tr><td>hits</td><td>${z.hits}</td><td>${r.hits}</td></tr>
       <tr><td>hit-rate</td><td>${fmt(hitRate(z))}%</td><td>${fmt(hitRate(r))}%</td></tr>
@@ -49,7 +120,7 @@ function renderStats(): void {
     <div class="gate">
       <strong>rxing parity on zxing's hits:</strong>
       ${parity.agree}/${parity.zxingHitFrames} = <b>${fmt(parity.parityPct)}%</b>
-      <div class="muted">This must reach ~100% before zxing can be dropped.</div>
+      <div class="muted">Must reach ~100% before zxing can be dropped.</div>
     </div>
     <div>agree: ${tallies.agree} &nbsp; diverge: ${tallies.diverge}</div>`;
 
@@ -65,55 +136,6 @@ function renderStats(): void {
         )
         .join("<br>");
   }
-}
-
-function drawOverlay(corners?: { x: number; y: number }[], label?: string): void {
-  const ctx = overlay.getContext("2d")!;
-  overlay.width = video.videoWidth;
-  overlay.height = video.videoHeight;
-  ctx.clearRect(0, 0, overlay.width, overlay.height);
-  if (!corners || corners.length < 3) return;
-  ctx.strokeStyle = "#19e08a";
-  ctx.lineWidth = Math.max(3, overlay.width / 240);
-  ctx.beginPath();
-  corners.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-  ctx.closePath();
-  ctx.stroke();
-  if (label) {
-    const cx = corners.reduce((s, p) => s + p.x, 0) / corners.length;
-    const top = Math.min(...corners.map((p) => p.y));
-    ctx.font = `${Math.max(18, overlay.width / 36)}px ui-monospace, monospace`;
-    ctx.fillStyle = "#19e08a";
-    ctx.textAlign = "center";
-    ctx.fillText(label, cx, top - 8);
-  }
-}
-
-async function loop(): Promise<void> {
-  if (!running) return;
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
-  if (vw && vh) {
-    const longEdge = Math.max(vw, vh);
-    const scale = longEdge > SNAPSHOT_MAX_PX ? SNAPSHOT_MAX_PX / longEdge : 1;
-    work.width = Math.round(vw * scale);
-    work.height = Math.round(vh * scale);
-    work.getContext("2d")!.drawImage(video, 0, 0, work.width, work.height);
-
-    const r = await decodeBoth(work);
-    frame++;
-    record(tallies, frame, r);
-    // scale zxing corners (work-space) back to video-space for the overlay
-    const corners = r.zxing.corners?.map((p) => ({ x: p.x / scale, y: p.y / scale }));
-    drawOverlay(corners, r.zxing.value ?? r.rxing.value ?? undefined);
-    renderStats();
-
-    if (autoCaptureDiverge && r.diverge) {
-      work.toBlob((b) => b && downloadFrame(b, `diverge-${frame}`), "image/jpeg", 0.95);
-    }
-    work.toBlob((b) => (lastFrameJpeg = b), "image/jpeg", 0.95);
-  }
-  requestAnimationFrame(() => void loop());
 }
 
 function downloadFrame(blob: Blob, name: string): void {
@@ -135,13 +157,25 @@ async function start(): Promise<void> {
   await new Promise<void>((res) => (video.onloadedmetadata = () => res()));
   await video.play();
   $("status").textContent = `live — ${video.videoWidth}×${video.videoHeight}`;
+  $("startBtn").textContent = "● live";
+  (($("startBtn") as HTMLButtonElement).disabled = true);
   running = true;
-  void loop();
+  void liveTick();
+  // Background A/B sampler — independent cadence so the slow rxing decode
+  // never stutters the live overlay.
+  const pump = async () => {
+    if (!running) return;
+    await abSample();
+    setTimeout(() => void pump(), AB_SAMPLE_MS);
+  };
+  void pump();
 }
 
-$("startBtn").addEventListener("click", () => void start().catch((e) => {
-  $("status").textContent = "error: " + (e as Error).message;
-}));
+$("startBtn").addEventListener("click", () =>
+  void start().catch((e) => {
+    $("status").textContent = "error: " + (e as Error).message;
+  }),
+);
 $("captureBtn").addEventListener("click", () => {
   if (lastFrameJpeg) downloadFrame(lastFrameJpeg, `corpus-frame-${frame}`);
 });

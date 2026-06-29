@@ -103,6 +103,15 @@ pub fn decode_image(bytes: &[u8]) -> Option<String> {
     qx_codec::decode_qr(bytes).ok()
 }
 
+/// Decode from a raw 8-bit grayscale buffer (`width * height` bytes) — the
+/// apples-to-apples A/B path: the bench hands the SAME luma to rxing and to
+/// zxing, so any divergence is the decoder, not a JPEG re-encode.
+#[cfg(feature = "decoder")]
+#[wasm_bindgen]
+pub fn decode_luma(width: u32, height: u32, luma: &[u8]) -> Option<String> {
+    qx_codec::decode_luma(width, height, luma.to_vec()).ok()
+}
+
 /// One-shot init for the WASM façade. Today a no-op: see module docs
 /// for why a `tracing-web` shim is deferred. Idempotent; safe to call
 /// from any JS-side entry point.

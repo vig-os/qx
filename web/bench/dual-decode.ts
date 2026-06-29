@@ -1,12 +1,23 @@
-// Dual-engine decode: feed ONE captured frame to both decoders and time
-// each. This is the honest rxing-vs-zxing A/B — same pixels, same moment.
+// Dual-engine decode.
 //
-//  - zxing-wasm  : via the `barcode-detector` ponyfill (the production
-//                  scanner's decoder), `detect(canvas)` → cornerPoints.
-//  - rxing (Rust): the `decode_image` wasm facade (crates/wasm, built with
-//                  --features decoder), fed the frame as JPEG bytes.
+// TWO paths, deliberately:
+//
+//  - LIVE overlay  → the production `barcode-detector` ponyfill on the video
+//    element directly (color frames, smooth markup) — the v1 feel.
+//  - A/B sampler    → both engines fed BYTE-IDENTICAL grayscale luma from one
+//    `ImageData`, so divergence is the DECODER, not a JPEG re-encode or a
+//    different input pipeline:
+//      · zxing : `readBarcodes(grayImageData)` (zxing-wasm/reader)
+//      · rxing : `decode_luma(w, h, luma)`     (Rust, crates/wasm)
 
-import initRxingWasm, { decode_image } from "./wasm/qx_decoder";
+import {
+  prepareZXingModule as prepareReader,
+  readBarcodes,
+  ZXING_WASM_VERSION,
+  type ReaderOptions,
+} from "zxing-wasm/reader";
+
+import initRxingWasm, { decode_luma } from "./wasm/qx_decoder";
 
 export interface Point2D {
   x: number;
@@ -17,18 +28,20 @@ export interface EngineResult {
   hit: boolean;
   value: string | null;
   ms: number;
-  /** zxing-only: detected quad for the overlay. */
-  corners?: Point2D[];
 }
 
 export interface FrameResult {
   zxing: EngineResult;
   rxing: EngineResult;
-  /** Both decoded the same payload. */
   agree: boolean;
-  /** Exactly one engine decoded (the interesting divergence). */
   diverge: boolean;
 }
+
+const READER_OPTS: ReaderOptions = {
+  tryHarder: true,
+  formats: ["QRCode", "MicroQRCode", "DataMatrix"],
+  maxNumberOfSymbols: 1,
+};
 
 interface ZxingDetector {
   detect(src: CanvasImageSource): Promise<
@@ -36,97 +49,111 @@ interface ZxingDetector {
   >;
 }
 
-let detector: ZxingDetector | null = null;
-let rxingReady = false;
+let detector: ZxingDetector | null = null; // live (ponyfill)
+let ready = false; // A/B (reader + rxing)
 
 export interface InitInfo {
   zxingVersion: string;
 }
 
-/** Load both decoders. zxing from the production polyfill path (own-origin
- *  wasm), rxing from the bench-only decoder bundle. */
 export async function initEngines(): Promise<InitInfo> {
-  const ponyfill = await import("barcode-detector/ponyfill");
   const wasmUrl = (await import("zxing-wasm/reader/zxing_reader.wasm?url"))
     .default;
-  ponyfill.prepareZXingModule({
+  const ownOrigin = {
     overrides: {
       locateFile: (path: string, prefix: string) =>
         path.endsWith(".wasm") ? wasmUrl : prefix + path,
     },
-  });
+  };
+
+  // Live decoder: the production scanner's ponyfill (color video frames).
+  const ponyfill = await import("barcode-detector/ponyfill");
+  ponyfill.prepareZXingModule(ownOrigin);
   detector = new ponyfill.BarcodeDetector({
     formats: ["qr_code", "micro_qr_code", "data_matrix"],
   }) as unknown as ZxingDetector;
 
-  await initRxingWasm();
-  rxingReady = true;
+  // A/B zxing: the lower-level reader, fed identical luma (own-origin wasm).
+  prepareReader(ownOrigin);
 
-  return { zxingVersion: ponyfill.ZXING_WASM_VERSION };
+  await initRxingWasm();
+  ready = true;
+  return { zxingVersion: ZXING_WASM_VERSION };
 }
 
-/** Normalise a decoded payload so the two engines are compared on the same
- *  footing (trim, uppercase, strip separators — matches the production
- *  `canonicalizeId` shape closely enough for agreement scoring). */
+/** Fast zxing-only detect for the LIVE overlay — the video element straight
+ *  into the production ponyfill, every animation frame. */
+export async function liveDetectZxing(
+  src: CanvasImageSource,
+): Promise<{ value: string; corners: Point2D[] } | null> {
+  if (!detector) return null;
+  try {
+    const matches = await detector.detect(src);
+    const hit = matches.find((m) => m.rawValue);
+    if (hit) return { value: hit.rawValue, corners: hit.cornerPoints };
+  } catch {
+    /* partial frame */
+  }
+  return null;
+}
+
 export function normalize(raw: string | null): string | null {
   if (!raw) return null;
   return raw.trim().toUpperCase().replace(/[-\s]/g, "");
 }
 
-function canvasToJpegBytes(canvas: HTMLCanvasElement): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) return reject(new Error("toBlob failed"));
-        blob.arrayBuffer().then((b) => resolve(new Uint8Array(b)), reject);
-      },
-      "image/jpeg",
-      0.92,
-    );
-  });
+/** Rec.601 luma from RGBA, one byte per pixel. The SAME buffer goes to both
+ *  engines — zxing via a grayscale ImageData, rxing via `decode_luma`. */
+function toLuma(img: ImageData): Uint8Array {
+  const { data, width, height } = img;
+  const luma = new Uint8Array(width * height);
+  for (let i = 0, p = 0; i < luma.length; i++, p += 4) {
+    luma[i] = (data[p] * 77 + data[p + 1] * 150 + data[p + 2] * 29) >> 8;
+  }
+  return luma;
 }
 
-/** Decode one frame through both engines. Caller passes a canvas already
- *  painted with the frame so both see identical pixels. */
-export async function decodeBoth(canvas: HTMLCanvasElement): Promise<FrameResult> {
-  if (!detector || !rxingReady) throw new Error("initEngines() not awaited");
+function lumaToImageData(luma: Uint8Array, w: number, h: number): ImageData {
+  const rgba = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0, p = 0; i < luma.length; i++, p += 4) {
+    rgba[p] = rgba[p + 1] = rgba[p + 2] = luma[i];
+    rgba[p + 3] = 255;
+  }
+  return new ImageData(rgba, w, h);
+}
 
-  // --- zxing ---
+/** Apples-to-apples A/B: both decoders read the identical grayscale image. */
+export async function decodeBoth(img: ImageData): Promise<FrameResult> {
+  if (!ready) throw new Error("initEngines() not awaited");
+  const luma = toLuma(img);
+  const gray = lumaToImageData(luma, img.width, img.height);
+
   const z0 = performance.now();
   let zVal: string | null = null;
-  let zCorners: Point2D[] | undefined;
   try {
-    const matches = await detector.detect(canvas);
-    const hit = matches.find((m) => m.rawValue);
-    if (hit) {
-      zVal = hit.rawValue;
-      zCorners = hit.cornerPoints;
-    }
+    const res = await readBarcodes(gray, READER_OPTS);
+    const hit = res.find((r) => r.text);
+    if (hit) zVal = hit.text;
   } catch {
-    // partial / undecodable frame — counts as a miss
+    /* miss */
   }
   const zMs = performance.now() - z0;
 
-  // --- rxing (same frame, as JPEG bytes) ---
   const r0 = performance.now();
   let rVal: string | null = null;
   try {
-    const bytes = await canvasToJpegBytes(canvas);
-    rVal = decode_image(bytes) ?? null;
+    rVal = decode_luma(img.width, img.height, luma) ?? null;
   } catch {
-    // decode error — miss
+    /* miss */
   }
   const rMs = performance.now() - r0;
 
   const zn = normalize(zVal);
   const rn = normalize(rVal);
-  const agree = zn !== null && zn === rn;
-  const diverge = (zn === null) !== (rn === null);
-
   return {
-    zxing: { hit: zn !== null, value: zVal, ms: zMs, corners: zCorners },
+    zxing: { hit: zn !== null, value: zVal, ms: zMs },
     rxing: { hit: rn !== null, value: rVal, ms: rMs },
-    agree,
-    diverge,
+    agree: zn !== null && zn === rn,
+    diverge: (zn === null) !== (rn === null),
   };
 }
