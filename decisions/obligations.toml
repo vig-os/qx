@@ -32,6 +32,7 @@ schema_version = 1
 excluded = [
   { adr = "ADR-014", reason = "superseded by ADR-030 (TS SPA retired)" },
   { adr = "ADR-015", reason = "generalised by ADR-022 audit-log layer" },
+  { adr = "ADR-013", reason = "superseded by ADR-030 (GitHub Pages target dropped 2026-06-30; FE deploy = qx serve + tailscale + Tauri)" },
 ]
 
 # ---- Identification + data contract -------------------------------------
