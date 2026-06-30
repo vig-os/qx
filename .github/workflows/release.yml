@@ -223,54 +223,113 @@ jobs:
               --notes-file release-notes.md
           fi
 
-  # The `qx` command (ADR-030 §2) — the artifact data-repo CI
-  # gates pin (check.yml.tmpl fetches it by tag + sha256; ADR-034 §2:
-  # CI runs the released binary, not a from-source build). Lean build —
-  # `qx check` needs no serve/mcp/tui features.
+  # The `qx` gate binary (ADR-030 §2 / ADR-034 §2) — the artifact a
+  # deployed data-repo's CI pins + runs. Three properties make it the
+  # audit-grade, vendorable gate:
+  #   - MUSL-STATIC (x86_64-unknown-linux-musl): zero glibc coupling, runs
+  #     on any Linux / scratch container — the ADR-038 vendored-gate carrier.
+  #   - REPRODUCIBLE (ADR-024): pinned toolchain + path-remap +
+  #     SOURCE_DATE_EPOCH, PROVEN by a byte-identical clean rebuild.
+  #   - SIGNED + ATTESTED (ADR-025 distribution-integrity): keyless sigstore
+  #     signature (OIDC, no stored key), SLSA build provenance, + SRI hash.
   qx-binary:
     needs: [test, bundle]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write    # upload release assets
+      id-token: write    # keyless cosign signing + attestation (OIDC)
+      attestations: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # SOURCE_DATE_EPOCH from the commit timestamp
 
       - name: Install Rust toolchain
         run: rustup show
 
+      - name: Install musl target
+        run: rustup target add x86_64-unknown-linux-musl
+
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build qx (release, lean)
-        run: cargo build --release -p qx-cli --bin qx
+      - name: Determinism epoch
+        id: repro
+        run: echo "epoch=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
 
-      - name: Stage + checksum
+      - name: Build qx (release, musl-static, reproducible)
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.repro.outputs.epoch }}
+        run: |
+          export RUSTFLAGS="--remap-path-prefix=$PWD=. --remap-path-prefix=$HOME/.cargo=cargo"
+          cargo build --release --target x86_64-unknown-linux-musl -p qx-cli --bin qx
+
+      - name: Reproducibility proof (clean rebuild → byte-identical)
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.repro.outputs.epoch }}
+        run: |
+          export RUSTFLAGS="--remap-path-prefix=$PWD=. --remap-path-prefix=$HOME/.cargo=cargo"
+          BIN=target/x86_64-unknown-linux-musl/release/qx
+          h1=$(sha256sum "$BIN" | cut -d' ' -f1)
+          cargo clean -p qx-cli --release --target x86_64-unknown-linux-musl
+          cargo build --release --target x86_64-unknown-linux-musl -p qx-cli --bin qx
+          h2=$(sha256sum "$BIN" | cut -d' ' -f1)
+          if [ "$h1" != "$h2" ]; then echo "::error::NON-REPRODUCIBLE: $h1 != $h2"; exit 1; fi
+          echo "reproducible ✓ $h1"
+
+      - name: Stage + checksum + SRI (ADR-025)
         run: |
           TAG="${{ needs.bundle.outputs.tag }}"
-          cp target/release/qx "qx-x86_64-unknown-linux-gnu"
-          sha256sum "qx-x86_64-unknown-linux-gnu" > "qx-sha256sums-${TAG}.txt"
-          cat "qx-sha256sums-${TAG}.txt"
+          cp target/x86_64-unknown-linux-musl/release/qx "qx-x86_64-unknown-linux-musl"
+          sha256sum "qx-x86_64-unknown-linux-musl" > "qx-sha256sums-${TAG}.txt"
+          echo "sha384-$(openssl dgst -sha384 -binary qx-x86_64-unknown-linux-musl | openssl base64 -A)" \
+            > "qx-x86_64-unknown-linux-musl.sri"
+          cat "qx-sha256sums-${TAG}.txt" "qx-x86_64-unknown-linux-musl.sri"
 
-      - name: Upload to the release
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign gate binary (keyless — OIDC, no stored key; ADR-024)
+        run: |
+          cosign sign-blob --yes "qx-x86_64-unknown-linux-musl" \
+            --output-signature "qx-x86_64-unknown-linux-musl.sig" \
+            --output-certificate "qx-x86_64-unknown-linux-musl.pem"
+
+      - name: SLSA build provenance attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: "qx-x86_64-unknown-linux-musl"
+
+      - name: Upload gate binary + integrity evidence to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ needs.bundle.outputs.tag }}"
           gh release upload "${TAG}" \
-            "qx-x86_64-unknown-linux-gnu" \
+            "qx-x86_64-unknown-linux-musl" \
             "qx-sha256sums-${TAG}.txt" \
+            "qx-x86_64-unknown-linux-musl.sri" \
+            "qx-x86_64-unknown-linux-musl.sig" \
+            "qx-x86_64-unknown-linux-musl.pem" \
             --repo "${GITHUB_REPOSITORY}" --clobber
 
       # ADR-038 §5: the curl-able install.sh pins this tarball by its
       # released sha256 — registry setup runs release-verified code,
-      # never whatever happens to be on main.
-      - name: Bootstrap tarball (install.sh pin target)
+      # never whatever happens to be on main. Signed too.
+      - name: Bootstrap tarball (install.sh pin target; signed)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ needs.bundle.outputs.tag }}"
           tar -czf "bootstrap-${TAG}.tar.gz" install.sh tools/bootstrap-data-repo.sh tools/data-repo-templates
           sha256sum "bootstrap-${TAG}.tar.gz" > "bootstrap-${TAG}.tar.gz.sha256"
+          cosign sign-blob --yes "bootstrap-${TAG}.tar.gz" \
+            --output-signature "bootstrap-${TAG}.tar.gz.sig" \
+            --output-certificate "bootstrap-${TAG}.tar.gz.pem"
           gh release upload "${TAG}" \
             "bootstrap-${TAG}.tar.gz" \
             "bootstrap-${TAG}.tar.gz.sha256" \
+            "bootstrap-${TAG}.tar.gz.sig" \
+            "bootstrap-${TAG}.tar.gz.pem" \
             --repo "${GITHUB_REPOSITORY}" --clobber
 
   # ADR-038 §4: the runner image — data repos (and operators, via
@@ -291,9 +350,9 @@ jobs:
         run: |
           TAG="${{ needs.bundle.outputs.tag }}"
           gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}" \
-            --pattern "qx-x86_64-unknown-linux-gnu" \
+            --pattern "qx-x86_64-unknown-linux-musl" \
             --pattern "qx-sha256sums-*.txt"
-          grep "qx-x86_64-unknown-linux-gnu" "qx-sha256sums-${TAG}.txt" | sha256sum -c -
+          grep "qx-x86_64-unknown-linux-musl" "qx-sha256sums-${TAG}.txt" | sha256sum -c -
 
       - name: Build + push runner image
         env:
@@ -301,7 +360,7 @@ jobs:
         run: |
           TAG="${{ needs.bundle.outputs.tag }}"
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}-runner"
-          cp qx-x86_64-unknown-linux-gnu qx
+          cp qx-x86_64-unknown-linux-musl qx
           cat > Dockerfile <<'DOCKER'
           FROM debian:bookworm-slim
           RUN apt-get update \
