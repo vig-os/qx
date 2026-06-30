@@ -1,11 +1,23 @@
 # ADR-013 — Parts registry web app: GH Pages + WASM DuckDB + PR-driven binds
 
-- Status: Proposed
+- Status: Superseded by ADR-030 (GitHub Pages target dropped 2026-06-30)
 - Date: 2026-05-08
 - Component / area: Phase 2 of the part identification system (ADR-012).
   Tooling target: a separate `part-registry` repo (extraction trigger
   defined below).
 - Supersedes: none. Builds on ADR-012.
+
+> **Superseded 2026-06-30.** This ADR proposed (never Accepted) a static
+> GitHub-Pages SPA as the app. ADR-030 reframed the FE as one UI over the
+> shared application layer with three deploy targets, and the serverless
+> Pages target is now **dropped**: serverless WASM is read-only (it cannot
+> run the device-flow write auth — ADR-030 §"Per-shell consequence"), so it
+> never carried the real app. The FE deploy story is the **local-first
+> shells**: `qx serve` (static bundle + JSON command API, full read+write
+> via the credential resolver; reach a phone over the tailnet with
+> `tailscale serve`) and **Tauri v2** native desktop/mobile. The Pages
+> workflow is disabled (manual-only). The PR-driven-bind + CI-enforced-
+> invariant ideas below remain valid and live on in ADR-030/ADR-034.
 
 ## Context
 

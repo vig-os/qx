@@ -32,6 +32,7 @@ schema_version = 1
 excluded = [
   { adr = "ADR-014", reason = "superseded by ADR-030 (TS SPA retired)" },
   { adr = "ADR-015", reason = "generalised by ADR-022 audit-log layer" },
+  { adr = "ADR-013", reason = "superseded by ADR-030 (GitHub Pages target dropped 2026-06-30; FE deploy = qx serve + tailscale + Tauri)" },
 ]
 
 # ---- Identification + data contract -------------------------------------
@@ -45,12 +46,12 @@ status = "satisfied"
 satisfied_by = "schema/registry-contract.json"
 
 [[obligation]]
-id = "web-app-static-deploy"
-adr = "ADR-013"
-statement = "The registry web app deploys as a static GitHub Pages build"
-kind = "ci"
+id = "web-app-served-local-first"
+adr = "ADR-030"
+statement = "The web app is served by the local-first shells, NOT a serverless GitHub Pages build (ADR-013 superseded; the Pages target was dropped 2026-06-30 because serverless WASM is read-only and cannot run device-flow write auth). `qx serve` serves the static FE bundle + the JSON command API with SPA fallback to index.html, over localhost or remote, with full read+write via the credential resolver; a phone reaches it over the tailnet via `tailscale`/`headscale serve` (proven with the dual-engine bench). Tauri v2 covers native desktop/mobile."
+kind = "crate"
 status = "satisfied"
-satisfied_by = ".github/workflows/pages.yml"
+satisfied_by = "crates/cli/src/serve.rs"
 
 [[obligation]]
 id = "pr-diff-policy-gate"
@@ -480,11 +481,11 @@ tracking = "SATISFIED (ADR-022 print-fold, ADR-018 refinement). PrintEvent LEFT 
 [[obligation]]
 id = "export-never-committed"
 adr = "ADR-035"
-statement = "Exports (CSV) are generated via Export op / Pages build — never committed beside the source of truth"
+statement = "Exports (CSV) are generated via the Export op — never committed beside the source of truth"
 kind = "ci"
 status = "satisfied"
 satisfied_by = ["crates/app/src/engine.rs", "crates/cli/src/bin/qx.rs", "crates/cli/tests/pr_check_contract.rs"]
-tracking = "SATISFIED (M-B): the Export op generates CSV on demand for ANY declared collection (engine export: served_collection + load_entities + columns from the contract fields), and qx check REJECTS any *.csv committed beside the JSONL collections (collections/<name>.csv) so exports are never stored. Proven by export_generates_csv_for_any_declared_collection + e2e committed_csv_export_fails_the_gate. The Pages build consumes the same Export op."
+tracking = "SATISFIED (M-B): the Export op generates CSV on demand for ANY declared collection (engine export: served_collection + load_entities + columns from the contract fields), and qx check REJECTS any *.csv committed beside the JSONL collections (collections/<name>.csv) so exports are never stored. Proven by export_generates_csv_for_any_declared_collection + e2e committed_csv_export_fails_the_gate. (The dropped Pages preview consumed this same Export op; serve/Tauri now do.)"
 
 [[obligation]]
 id = "attachments-content-addressed"
