@@ -114,7 +114,14 @@
           pname = "qx-devtools";
           version = "0.1.0";
           src = ./.;
-          cargoLock.lockFile = ./Cargo.lock;
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+            # qrcode2 is git-pinned to our Annex-J fork (issue #211); the
+            # cargoLock vendorer needs the FOD hash for the git source.
+            outputHashes = {
+              "qrcode2-0.18.0" = "sha256-5kRNtF9lK0DbUc1zpCSObWj+YWRAHm5AGq+ZJmAwpLw=";
+            };
+          };
           buildAndTestSubdir = "crates/devtools";
           doCheck = false;
         };
