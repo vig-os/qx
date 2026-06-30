@@ -1,16 +1,19 @@
-# Per #35: this workflow stays as a code-repo preview deploy so the
-# vanilla FE bundle (sandbox-default registry) is available at
-# https://morepet.github.io/part-registry/. Production deployments live
-# on the data repos (exo-pet/exopet-registry[-sandbox]) and consume
-# released bundles from this repo per Phase 2's release.yml.
-name: Deploy web to GitHub Pages
+# DEPRECATED 2026-06-30 — auto-deploy DISABLED (manual-only).
+#
+# The serverless GitHub Pages target is dropped (ADR-013 superseded by
+# ADR-030). It was only a read-only preview: serverless WASM can't do
+# device-flow write auth, so it never carried the real app. The FE deploy
+# story is now the local-first shells per ADR-030 §"three deploy targets":
+#   - `qx serve` — static bundle + JSON command API over localhost/remote,
+#     with full read+write via the credential resolver; reach a phone over
+#     the tailnet with `tailscale serve` (proven with the dual-engine bench).
+#   - Tauri v2 — native desktop/mobile (desktop/src-tauri/).
+# Kept manual-only (workflow_dispatch) for one-off public read demos; remove
+# entirely once nothing references it. NOTE: VITE_BASE below still says
+# /part-registry/ — irrelevant while auto-deploy is off.
+name: Deploy web to GitHub Pages (DEPRECATED — manual-only)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "web/**"
-      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
