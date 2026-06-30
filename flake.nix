@@ -259,7 +259,7 @@
           pname = "qx-web-node-modules";
           version = "0.0.1";
           src = webSrc;
-          npmDepsHash = "sha256-4kq1WOmJ0BVbf106buk9H/qZbGKTw2ypKvHnaZBq0SY=";
+          npmDepsHash = "sha256-OkPpV3icc5xpqvc0sdV01kcfRT21nM0eXSuS3UWgEQc=";
           dontNpmBuild = true;
           installPhase = ''
             mkdir -p $out
