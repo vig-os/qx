@@ -11,8 +11,13 @@
         background: #0d1117; color: #e6edf3;
         display: grid; grid-template-columns: 1fr 360px; gap: 0; height: 100vh;
       }
-      @media (max-width: 760px) { body { grid-template-columns: 1fr; height: auto; } }
-      .stage { position: relative; background: #000; overflow: hidden; }
+      .stage { position: relative; background: #000; overflow: hidden; min-height: 0; }
+      @media (max-width: 760px) {
+        body { grid-template-columns: 1fr; height: auto; }
+        /* On mobile the grid row has no intrinsic height (absolute children),
+           so the camera would collapse to 0px — pin it to the viewport. */
+        .stage { height: 70vh; }
+      }
       #cam, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
       #overlay { pointer-events: none; }
       .panel { padding: 16px; overflow-y: auto; border-left: 1px solid #21262d; }
