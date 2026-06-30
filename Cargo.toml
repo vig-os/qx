@@ -80,3 +80,6 @@ codegen-units = 1
 lto = "fat"
 strip = "symbols"
 panic = "abort"
+
+[patch.crates-io]
+qrcode2 = { git = "https://github.com/gerchowl/qrcode-rust2", rev = "2b288f230f119e26dc8c905089c82bd1e6504503" }

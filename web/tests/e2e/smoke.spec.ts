@@ -13,12 +13,12 @@
 import { expect, test } from "@playwright/test";
 
 const REGISTRY_HEADER =
-  "id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes,minted_by,bound_by,last_edited_at,last_edited_by,components,manufacturer_id,metadata\n";
+  "id,status,minted_at,bound_at,type,description,vendor,part_number,location,notes,minted_by,bound_by,last_edited_at,last_edited_by,components,manufacturer_id,metadata\n";
 
 const REGISTRY_TWO_ROWS =
   REGISTRY_HEADER +
-  `ABCDEFGHJKMNPQ,bound,2026-05-08T12:00:00+00:00,B-2026-05-08,2026-05-08T12:30:00+00:00,PT100,Supply temperature sensor,TC Direct,402-141,cooling loop / supply-T,bench fixture,,,,,,,\n` +
-  `ABCDEFGHJKMNPR,unbound,2026-05-08T12:00:00+00:00,B-2026-05-08,,,,,,,,,,,,,,\n`;
+  `ABCDEFGHJKMNPQ,bound,2026-05-08T12:00:00+00:00,2026-05-08T12:30:00+00:00,PT100,Supply temperature sensor,TC Direct,402-141,cooling loop / supply-T,bench fixture,,,,,,,\n` +
+  `ABCDEFGHJKMNPR,unbound,2026-05-08T12:00:00+00:00,,,,,,,,,,,,,,\n`;
 
 // Intercept the data-repo fetch so the smoke runs offline against a
 // known-empty registry. The real data-repo Pages workflow does the
