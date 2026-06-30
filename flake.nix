@@ -484,9 +484,12 @@
           web-unit = pkgs.runCommand "web-unit" {
             nativeBuildInputs = [ pkgs.nodejs_22 ];
           } ''
-            mkdir -p $TMPDIR/repo/web $TMPDIR/repo/schema
+            mkdir -p $TMPDIR/repo/web $TMPDIR/repo/schema $TMPDIR/repo/conformance
             cp -r ${webSrc}/. $TMPDIR/repo/web/
             cp -r ${./schema}/. $TMPDIR/repo/schema/
+            # ADR-039 conformance corpus the FE arm reads at test time
+            # (web/src/wasm/conformance.test.ts resolves ../../../conformance).
+            cp -r ${./conformance}/. $TMPDIR/repo/conformance/
             chmod -R u+w $TMPDIR/repo
             cd $TMPDIR/repo/web
             # Hard-link the FOD-fetched node_modules so npm scripts find
