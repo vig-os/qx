@@ -36,6 +36,13 @@ time = { workspace = true }
 # Browser clock + CSPRNG for the dispatch shell: the engine stamps
 # created_at/printed_at (time -> js Date) and mints ids (getrandom ->
 # crypto.getRandomValues). Target-gated so native builds are untouched.
+[features]
+# OFF by default — production FE stays decoder-free (zxing-wasm). The
+# dual-engine A/B test bench builds with `--features decoder` to put the
+# Rust rxing decode (`decode_image`) in the browser alongside zxing.
+default = []
+decoder = ["qx-codec/decoder"]
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 time = { workspace = true, features = ["wasm-bindgen"] }
 getrandom = { version = "0.2", features = ["js"] }

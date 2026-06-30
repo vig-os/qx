@@ -72,6 +72,10 @@ const buildTime = new Date().toISOString();
 // fresh writes are still picked up when online).
 export default defineConfig({
   base: BASE,
+  // Dev server: accept the tailnet hostname so `tailscale serve` can front
+  // the v1 app for side-by-side comparison with the bench (dev-only; no
+  // effect on the production build).
+  server: { host: true, allowedHosts: [".ts.net"] },
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
     __GIT_HASH__: JSON.stringify(gitHash),

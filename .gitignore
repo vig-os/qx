@@ -30,3 +30,7 @@ result-*
 # and pre-compaction handoff notes. Never meant to be tracked.
 .claude/*.lock
 HANDOFF.md
+
+# Bench-only rxing decoder wasm (built via `npm run bench:wasm`, ~4.5 MB)
+web/bench/wasm/qx_decoder*
+web/bench/dist/

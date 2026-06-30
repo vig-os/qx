@@ -67,7 +67,7 @@ pub use px::{
     PxLabel, RenderOpts, SizeMode,
 };
 #[cfg(feature = "decoder")]
-pub use qr::decode_qr;
+pub use qr::{decode_luma, decode_qr};
 pub use qr::{encode, encode_pinned, QrMatrix};
 pub use receipt::Receipt;
 pub use repeat::{

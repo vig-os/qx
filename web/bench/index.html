@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>qx · dual-engine scan bench (rxing vs zxing)</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0; font: 14px ui-monospace, SFMono-Regular, Menlo, monospace;
+        background: #0d1117; color: #e6edf3;
+        display: grid; grid-template-columns: 1fr 360px; gap: 0; height: 100vh;
+      }
+      .stage { position: relative; background: #000; overflow: hidden; min-height: 0; }
+      @media (max-width: 760px) {
+        body { grid-template-columns: 1fr; height: auto; }
+        /* On mobile the grid row has no intrinsic height (absolute children),
+           so the camera would collapse to 0px — pin it to the viewport. */
+        .stage { height: 70vh; }
+      }
+      #cam, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+      #overlay { pointer-events: none; }
+      .panel { padding: 16px; overflow-y: auto; border-left: 1px solid #21262d; }
+      h1 { font-size: 15px; margin: 0 0 4px; }
+      .sub { color: #7d8590; margin: 0 0 12px; font-size: 12px; }
+      button {
+        font: inherit; background: #21262d; color: #e6edf3; border: 1px solid #30363d;
+        border-radius: 6px; padding: 8px 12px; cursor: pointer; margin: 0 6px 8px 0;
+      }
+      button:hover { background: #30363d; }
+      #startBtn { background: #1f6feb; border-color: #1f6feb; }
+      table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+      th, td { text-align: right; padding: 4px 8px; border-bottom: 1px solid #21262d; }
+      th:first-child, td:first-child { text-align: left; color: #7d8590; }
+      .gate { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 10px; margin: 12px 0; }
+      .gate b { color: #19e08a; font-size: 16px; }
+      .muted { color: #7d8590; font-size: 11px; margin-top: 4px; }
+      #log { font-size: 11px; line-height: 1.7; margin-top: 12px; }
+      code { background: #161b22; padding: 1px 5px; border-radius: 4px; color: #ffa657; }
+      #status { color: #7d8590; font-size: 12px; margin-top: 8px; }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <video id="cam" playsinline autoplay muted></video>
+      <canvas id="overlay"></canvas>
+    </div>
+    <div class="panel">
+      <h1>qx · dual-engine scan bench</h1>
+      <p class="sub">one camera → zxing-wasm + rxing (Rust/wasm), same frame</p>
+      <button id="startBtn">▶ Start camera</button>
+      <button id="captureBtn">⬇ Capture frame → corpus</button>
+      <button id="autoBtn">auto-capture divergences: OFF</button>
+      <div id="stats"></div>
+      <div id="log"></div>
+      <div id="status">idle</div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
