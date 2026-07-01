@@ -15,7 +15,7 @@
 # defaults talks to the throwaway registry, never the audit-of-record
 # one. Per #35.
 data_repo_url = "https://github.com/exo-pet/exopet-registry-sandbox"
-code_repo_url = "https://github.com/MorePET/part-registry"
+code_repo_url = "https://github.com/vig-os/qx"
 # `local_clone_path` deliberately omitted: `Config::resolve_data_path`
 # falls back to `<data_dir>/qx/<owner>-<repo>/` (XDG on
 # Linux, Application Support on macOS, %APPDATA% on Windows) when

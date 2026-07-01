@@ -1878,7 +1878,7 @@ jobs:
       - name: Install the qx engine
         # Swap for a pinned released binary in production (faster + the
         # SSoT hash you attest to — see ADR-038 release engineering).
-        run: cargo install --git https://github.com/MorePET/part-registry qx-cli --bin qx --locked
+        run: cargo install --git https://github.com/vig-os/qx qx-cli --bin qx --locked
       - name: Validate against the contract
         run: qx check --path . --base "origin/${{ github.base_ref || 'main' }}"
 "#;
