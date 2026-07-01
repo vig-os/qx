@@ -250,6 +250,14 @@ jobs:
       - name: Install musl target
         run: rustup target add x86_64-unknown-linux-musl
 
+      - name: Install musl C cross toolchain
+        # ring / other cc-rs crates invoke the target-prefixed C compiler
+        # x86_64-linux-musl-gcc; musl-tools ships musl-gcc — symlink it.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          sudo ln -sf "$(command -v musl-gcc)" /usr/local/bin/x86_64-linux-musl-gcc
+
       - uses: Swatinem/rust-cache@v2
 
       - name: Determinism epoch
@@ -259,6 +267,8 @@ jobs:
       - name: Build qx (release, musl-static, reproducible)
         env:
           SOURCE_DATE_EPOCH: ${{ steps.repro.outputs.epoch }}
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
         run: |
           export RUSTFLAGS="--remap-path-prefix=$PWD=. --remap-path-prefix=$HOME/.cargo=cargo"
           cargo build --release --target x86_64-unknown-linux-musl -p qx-cli --bin qx
@@ -266,6 +276,8 @@ jobs:
       - name: Reproducibility proof (clean rebuild → byte-identical)
         env:
           SOURCE_DATE_EPOCH: ${{ steps.repro.outputs.epoch }}
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
         run: |
           export RUSTFLAGS="--remap-path-prefix=$PWD=. --remap-path-prefix=$HOME/.cargo=cargo"
           BIN=target/x86_64-unknown-linux-musl/release/qx
