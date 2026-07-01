@@ -51,6 +51,19 @@ struct Cli {
 }
 
 #[allow(clippy::large_enum_variant)]
+/// `qx gate` subcommands (ADR-038 vendored gate).
+#[derive(Subcommand)]
+enum GateCmd {
+    /// Pin-verify-before-exec (ADR-034 §2): the `.qx/gate/` binary's sha256
+    /// must match `manifest.toml`, and (vendored knob) its provenance bundle
+    /// must be present, before the gate is run. Exit 1 on any mismatch.
+    Verify {
+        /// The `.qx/gate/` directory.
+        #[arg(long, default_value = ".qx/gate")]
+        path: PathBuf,
+    },
+}
+
 #[derive(Subcommand)]
 enum Cmd {
     /// Mint N fresh part ids (live PR unless --dry-run).
@@ -303,6 +316,12 @@ enum Cmd {
     /// Interactive GitHub login via the device flow (ADR-020 rung 4) —
     /// caches the token so later runs resolve it first-hit-wins.
     Login,
+    /// Vendored-gate operations (ADR-038): pin-verify the `.qx/gate/` gate
+    /// binary against its manifest before it runs.
+    Gate {
+        #[command(subcommand)]
+        cmd: GateCmd,
+    },
     /// Append a stream checkpoint (ADR-037 §1) pinning the current
     /// `audit_log.jsonl` to `audit_checkpoints.jsonl`, restoring standalone
     /// stream verifiability without a base diff.
@@ -538,6 +557,7 @@ fn main() -> ExitCode {
         Cmd::Registries { path } => registries_cmd(path),
         Cmd::Codeowners { path } => codeowners_cmd(&path),
         Cmd::Login => login_cmd(),
+        Cmd::Gate { cmd } => gate_cmd(cmd),
         Cmd::Checkpoint { path } => checkpoint_cmd(&path),
         Cmd::Verify { path, anchors } => verify_cmd(&path, anchors),
         Cmd::Preflight { path, base } => preflight_cmd(&path, base.as_deref()),
@@ -2317,6 +2337,26 @@ fn login_cmd() -> ExitCode {
             eprintln!("qx login: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// `qx gate` — vendored-gate operations (ADR-038).
+fn gate_cmd(cmd: GateCmd) -> ExitCode {
+    match cmd {
+        GateCmd::Verify { path } => match qx_cli::gate::verify(&path) {
+            Ok(m) => {
+                let short = &m.sha256[..m.sha256.len().min(12)];
+                println!(
+                    "gate verified: {} {} (knob={}, sha256={}…)",
+                    m.binary, m.version, m.knob, short
+                );
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("qx gate verify: {e}");
+                ExitCode::FAILURE
+            }
+        },
     }
 }
 

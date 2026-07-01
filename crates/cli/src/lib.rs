@@ -36,6 +36,7 @@
 #![forbid(unsafe_code)]
 
 /// `.qx/manifest.toml` — per-registry policy manifest (ADR-034 §3).
+pub mod gate;
 pub mod manifest;
 
 /// `registries.toml` — the operator workspace (ADR-033 §5).
