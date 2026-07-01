@@ -215,11 +215,19 @@ jobs:
               "sha256sums-${TAG}.txt" \
               --repo "${GITHUB_REPOSITORY}" --clobber
           else
+            # Create as a DRAFT: this repo has immutable releases on
+            # (ADR-037 anchor-ledger tamper-evidence), and a PUBLISHED
+            # release is sealed instantly — no later job could append the
+            # gate binary + integrity evidence. So every job uploads to
+            # the mutable draft; the terminal `publish` job flips
+            # --draft=false once all assets are present, sealing
+            # immutability WITH the full asset set.
             gh release create "${TAG}" \
               "frontend-bundle-${TAG}.tar.gz" \
               "sha256sums-${TAG}.txt" \
               --repo "${GITHUB_REPOSITORY}" \
               --title "${TAG}" \
+              --draft \
               --notes-file release-notes.md
           fi
 
@@ -386,3 +394,24 @@ jobs:
           docker build -t "${IMAGE}:${TAG}" -t "${IMAGE}:latest" .
           docker push "${IMAGE}:${TAG}"
           docker push "${IMAGE}:latest"
+
+  # Terminal seal: flip the draft to a published (immutable) release once
+  # every audit-critical asset is present. Gated on the asset PRODUCERS
+  # only (bundle + qx-binary) — runner-image merely CONSUMES the released
+  # binary, so a transient ghcr flake there must not leave the release an
+  # unconsumable draft. Publishing here is the moment ADR-037 immutability
+  # seals the gate binary + its signature/SRI/provenance against tamper.
+  publish:
+    needs: [bundle, qx-binary]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the release (seal immutability with all assets present)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ needs.bundle.outputs.tag }}"
+          gh release edit "${TAG}" --repo "${GITHUB_REPOSITORY}" --draft=false
+          echo "published ${TAG} (immutable seal) with assets:"
+          gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name'
