@@ -3000,7 +3000,10 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let _ = init_repo(tmp.path(), false, GateMode::Dev);
         let wf = std::fs::read_to_string(tmp.path().join(".github/workflows/check.yml")).unwrap();
-        assert!(wf.contains("cargo install"), "dev builds the gate from source");
+        assert!(
+            wf.contains("cargo install"),
+            "dev builds the gate from source"
+        );
         assert!(
             !tmp.path().join(".qx/gate/manifest.toml").exists(),
             "dev mode carries no vendored gate"

@@ -136,10 +136,20 @@ pub fn vendor(version: &str, dir: &Path, repo: &str) -> Result<GateManifest, Str
     // 1. Binary + sha256 + sigstore signature/cert from the release.
     let out = Command::new("gh")
         .args([
-            "release", "download", version, "--repo", repo, "--dir", dir_s, "--clobber",
-            "--pattern", "qx-x86_64-unknown-linux-musl",
-            "--pattern", "qx-x86_64-unknown-linux-musl.sig",
-            "--pattern", "qx-x86_64-unknown-linux-musl.pem",
+            "release",
+            "download",
+            version,
+            "--repo",
+            repo,
+            "--dir",
+            dir_s,
+            "--clobber",
+            "--pattern",
+            "qx-x86_64-unknown-linux-musl",
+            "--pattern",
+            "qx-x86_64-unknown-linux-musl.sig",
+            "--pattern",
+            "qx-x86_64-unknown-linux-musl.pem",
         ])
         .output()
         .map_err(|e| format!("run gh release download (is gh installed + authed?): {e}"))?;
