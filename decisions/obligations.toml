@@ -355,10 +355,10 @@ tracking = "SATISFIED (ADR-034 §3). .qx/manifest.toml is parsed by crates/cli/s
 [[obligation]]
 id = "canary-pipeline"
 adr = "ADR-034"
-statement = "Live canary CI (golden-path + red-test matrix) exercises the released pr artifact against EPHEMERAL sandbox repos created/torn down by the qx-provisioner GitHub App"
+statement = "Live canary CI (golden-path + red-test matrix) exercises the released qx gate against EPHEMERAL sandbox repos it creates/tears down, authenticated by a SOPS-encrypted admin token (age-keyed; the age key is the ONLY CI secret, GH_AGE_KEY). One command runs identically local + CI. The qx-provisioner GitHub App is a DEFERRED scale upgrade (ADR-034 §7 / ADR-030), NOT required — ADR-034 base is an admin token."
 kind = "ci"
 status = "pending"
-tracking = "task #11; needs first pushed release tag + the provisioner App (Administration rw, per-run installation tokens, always() teardown + orphan sweeper); green runs = satisfied-evidence for pr-diff-policy-gate / host-enforced-authz / protection-drift-selfaudit"
+tracking = "task #11; SOPS/age model (decided 2026-06-30): a fine-grained vig-os-owned admin PAT, SOPS-encrypted in-repo, decrypted by GH_AGE_KEY (CI) or the dev keyring (local); `qx canary` = create ephemeral repo -> golden-path (mint->PR->qx check --diff->merge->assert) + red-matrix (invalid PRs blocked = conformance corpus through a real PR) -> always() teardown + orphan sweeper. Needs first pushed release tag. Green runs = satisfied-evidence for pr-diff-policy-gate / host-enforced-authz / protection-drift-selfaudit. App deferred (no external moving piece)."
 
 [[obligation]]
 id = "protection-drift-selfaudit"
