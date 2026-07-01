@@ -62,6 +62,20 @@ enum GateCmd {
         #[arg(long, default_value = ".qx/gate")]
         path: PathBuf,
     },
+    /// Seed/upgrade the vendored gate (ADR-038 §1): fetch a released static
+    /// musl binary + its sha256 + sigstore signature/cert into `.qx/gate/`,
+    /// pin them in `manifest.toml`, and snapshot the Nix recipe (`flake.lock`).
+    /// Commit `.qx/gate/` — the repo then carries + pin-verifies its own gate.
+    Vendor {
+        /// Released version to vendor (e.g. `v0.14.0`).
+        version: String,
+        /// The `.qx/gate/` directory.
+        #[arg(long, default_value = ".qx/gate")]
+        path: PathBuf,
+        /// Code repo the release lives on.
+        #[arg(long, default_value = "vig-os/qx")]
+        repo: String,
+    },
 }
 
 /// `qx init --gate` mode: how a scaffolded repo runs its gate.
@@ -2438,6 +2452,25 @@ fn gate_cmd(cmd: GateCmd) -> ExitCode {
             }
             Err(e) => {
                 eprintln!("qx gate verify: {e}");
+                ExitCode::FAILURE
+            }
+        },
+        GateCmd::Vendor {
+            version,
+            path,
+            repo,
+        } => match qx_cli::gate::vendor(&version, &path, &repo) {
+            Ok(m) => {
+                println!(
+                    "vendored gate {} into {} (sha256={}…) — commit .qx/gate/ + pin-verify runs it",
+                    m.version,
+                    path.display(),
+                    &m.sha256[..m.sha256.len().min(12)]
+                );
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("qx gate vendor: {e}");
                 ExitCode::FAILURE
             }
         },
