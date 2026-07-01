@@ -358,7 +358,11 @@ jobs:
   # moves to a flake dockerTools build when the gate build goes
   # in-flake (the image then becomes bit-reproducible too).
   runner-image:
-    needs: [bundle, qx-binary]
+    # After `publish`, not just `qx-binary`: this job downloads the gate
+    # binary from the release like a data repo would, and `gh release
+    # download` cannot see a DRAFT release ("release not found"). Waiting
+    # for the publish seal means it fetches the real published asset.
+    needs: [bundle, qx-binary, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: read
