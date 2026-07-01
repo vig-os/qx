@@ -175,7 +175,7 @@ open-source while operator data stays scoped to its registry:
 
 | Repo | What | Visibility |
 |---|---|---|
-| `MorePET/part-registry` (this) | Rust + FE source, ADRs, examples | Public |
+| `vig-os/qx` (this) | Rust + FE source, ADRs, examples | Public |
 | `exo-pet/exopet-registry` | Production registry data (audit-of-record) | Private (planned; currently public until org upgrade) |
 | `exo-pet/exopet-registry-sandbox` | Throwaway sandbox for experimentation | Public |
 

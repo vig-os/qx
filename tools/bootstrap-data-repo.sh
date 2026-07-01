@@ -40,7 +40,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATES_DIR="${SCRIPT_DIR}/data-repo-templates"
-CODE_REPO="MorePET/part-registry"
+CODE_REPO="vig-os/qx"
 
 # CSV headers (canonical, from the workspace contracts).
 REGISTRY_HEADER='id,status,minted_at,batch,bound_at,type,description,vendor,part_number,location,notes'

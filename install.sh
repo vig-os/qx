@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # qx — one-line registry (data repo) setup, per ADR-038 §5.
 #
-#   curl -fsSL https://raw.githubusercontent.com/MorePET/part-registry/main/install.sh \
+#   curl -fsSL https://raw.githubusercontent.com/vig-os/qx/main/install.sh \
 #     | bash -s -- <owner/repo> [bootstrap flags]
 #
 # Fetches the RELEASE-PINNED bootstrap (sha256-verified against the
@@ -11,13 +11,13 @@
 # anchor + bundle workflows, and (with --protect) branch protection.
 #
 # Env overrides:
-#   PART_REGISTRY_CODE_REPO   tool repo slug   (default MorePET/part-registry)
+#   PART_REGISTRY_CODE_REPO   tool repo slug   (default vig-os/qx)
 #   PART_REGISTRY_RELEASE     release tag       (default: latest release)
 #
 # Requires: gh (authenticated), git, curl, tar, sha256sum.
 set -euo pipefail
 
-CODE_REPO="${PART_REGISTRY_CODE_REPO:-MorePET/part-registry}"
+CODE_REPO="${PART_REGISTRY_CODE_REPO:-vig-os/qx}"
 TAG="${PART_REGISTRY_RELEASE:-}"
 
 err() { echo "install.sh: $*" >&2; exit 1; }
