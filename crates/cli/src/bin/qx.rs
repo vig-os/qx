@@ -91,6 +91,11 @@ enum GateMode {
     Vendored,
 }
 
+// The command enum is a parse-once dispatch table: `Print` carries many
+// optional `--flags`, so it dwarfs the small variants. Boxing every field
+// to appease `large_enum_variant` only obscures the CLI surface for a value
+// that lives for one `match`; suppress it here.
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand)]
 enum Cmd {
     /// Mint N fresh part ids (live PR unless --dry-run).
