@@ -138,16 +138,18 @@ id = "reproducible-signed-releases"
 adr = "ADR-024"
 statement = "Release builds are reproducible and signed"
 kind = "ci"
-status = "pending"
-tracking = ".github/workflows/release.yml hardening (repro verify + signing)"
+status = "satisfied"
+satisfied_by = [".github/workflows/release.yml"]
+tracking = "SATISFIED (ADR-024). The release job builds `qx` as an x86_64-unknown-linux-musl static binary under the pinned toolchain (rust-toolchain.toml 1.93.0) with the determinism recipe: [profile.release] codegen-units=1 + lto=fat + strip=symbols, RUSTFLAGS --remap-path-prefix for $PWD and $CARGO_HOME, and SOURCE_DATE_EPOCH pinned to the tag commit timestamp. A `Reproducibility proof` step then `cargo clean`s qx-cli and rebuilds, asserting a byte-identical sha256 (fails the release otherwise). The binary is signed keyless with cosign sign-blob (OIDC id-token, no stored key); .sig + .pem are attached. First proven green on v0.14.2 (run 28500171573): reproducible ✓ sha256 872fa5c6c91a76f56b81689cf7bfb9539250e1bf3e77fb6774decf3bb15c3786."
 
 [[obligation]]
 id = "distribution-integrity"
 adr = "ADR-025"
 statement = "Release artifacts carry integrity evidence (signatures, SRI, repro-build proof)"
 kind = "ci"
-status = "pending"
-tracking = "distribution-integrity pipeline; not yet wired"
+status = "satisfied"
+satisfied_by = [".github/workflows/release.yml"]
+tracking = "SATISFIED (ADR-025). Every release artifact carries integrity evidence attached to the (immutable) GitHub Release: sha256sums (qx-sha256sums-<tag>.txt), an SRI sha384 (.sri), a keyless cosign signature (.sig) + Fulcio cert (.pem), and a SLSA build-provenance attestation (actions/attest-build-provenance) over the gate binary. The repro-proof step (see reproducible-signed-releases) is the build-integrity half. The bootstrap tarball (install.sh + templates) is likewise sha256'd + cosign-signed. Sealed by the draft→publish flow so immutability locks the full asset set. First proven green on v0.14.2 (run 28500171573)."
 
 # ---- Verification discipline (ADR-027/028/029) --------------------------
 
@@ -591,8 +593,9 @@ id = "gate-vendored"
 adr = "ADR-038"
 statement = "Regulated default: gate binary + sha256 + attestation + source + Nix recipe vendored under .qx/gate/ (no LFS); pin-verify-before-exec unchanged; knob vendored|fetched"
 kind = "ci"
-status = "pending"
-tracking = "ADR-038 §1; bootstrap seeding of the vendored gate awaits the musl static build"
+status = "satisfied"
+satisfied_by = ["crates/cli/src/gate.rs", "crates/cli/src/bin/qx.rs"]
+tracking = "SATISFIED (ADR-038 §1). `qx gate vendor <tag>` fetches the released musl gate binary + its .sig/.pem (attestation), the flake.lock recipe, and the source tarball from the tool-repo release/tag, writes them under `.qx/gate/` with a manifest.toml (knob=vendored, version, binary, sha256, attestation, source, recipe), and self-verifies (binary sha256 == manifest.sha256; the vendored knob requires attestation+source+recipe present) — pin-verify-before-exec unchanged (ADR-034 §2). `qx gate verify --path <dir>` re-checks a vendored dir offline. `qx init --gate=vendored` seeds a `.qx/gate/` skeleton + the pin-verifying CHECK workflow. Proven by gate.rs unit tests (manifest roundtrip, tamper-rejection, provenance-required-for-vendored, seed+verify, base64) AND a live run: `qx gate vendor v0.14.2` fetched binary+sig+pem+source+flake.lock and `qx gate verify` reported 'gate verified: qx v0.14.2 (knob=vendored, sha256=872fa5c6c91a…)'. Knob vendored|fetched per ADR-038."
 
 [[obligation]]
 id = "upgrade-succession"
