@@ -1,7 +1,7 @@
 # ADR-041 — Live authz canary: a SOPS-encrypted token, no GitHub App
 
-- Status: Proposed
-- Date: 2026-06-30
+- Status: Accepted
+- Date: 2026-06-30 (Accepted 2026-09-13)
 - Component / area: how the tool *proves* — against real, ephemeral
   GitHub repos — that its host-enforced authorization (ADR-034) and its
   PR-diff gate (ADR-016) actually bite, with the fewest possible moving
@@ -11,7 +11,7 @@
   and rewrites ADR-030 §7 / the `canary-pipeline` obligation (the
   `qx-provisioner` GitHub App demotes from "required" to "deferred scale
   upgrade").
-- Reviewers: Lars Gerchow (required for Accepted)
+- Reviewers: Lars Gerchow (approved 2026-09-13, PR #303)
 - Related: ADR-016 (pr-diff policy gate), ADR-024/025 (repro + signed
   releases — the canary exercises a *released* gate), ADR-030 (multicall
   `qx`, per-shell auth, §7 provisioner App), ADR-034 (host-enforced
