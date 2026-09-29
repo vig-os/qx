@@ -1,0 +1,35 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "Etc/UTC",
+  "schedule": ["before 9am on monday"],
+  "baseBranchPatterns": ["main"],
+  "enabledManagers": ["cargo", "npm", "github-actions"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 9am on monday"]
+  },
+  "vulnerabilityAlerts": {
+    "labels": ["security"]
+  },
+  "packageRules": [
+    {
+      "description": "Cargo",
+      "matchManagers": ["cargo"],
+      "semanticCommitType": "build",
+      "semanticCommitScope": "cargo"
+    },
+    {
+      "description": "npm (web/ and webapp/)",
+      "matchManagers": ["npm"],
+      "semanticCommitType": "build",
+      "semanticCommitScope": "npm"
+    },
+    {
+      "description": "GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "semanticCommitType": "ci",
+      "semanticCommitScope": "actions"
+    }
+  ]
+}
