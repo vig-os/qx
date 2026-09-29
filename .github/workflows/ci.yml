@@ -46,3 +46,28 @@ jobs:
         env:
           PARTREG_TEST_PAT: ${{ secrets.PARTREG_TEST_PAT }}
         run: nix flake check -L --keep-going
+
+  # The ONE context the org's `Main protection` ruleset requires
+  # (vig-os/org-config ADR-0008, #310). Requiring the matrix legs by name
+  # would couple the ruleset to this file: renaming, adding or dropping a
+  # leg would leave a required context that never reports and blocks every
+  # merge. This job only reads the matrix result and runs no gate itself, so
+  # every gate still lives in `flake.nix` (ADR-038). `if: always()` makes it
+  # report even when a leg fails or is cancelled; anything but `success`
+  # fails it, because a cancelled leg produced no verdict.
+  summary:
+    name: CI Summary
+    needs: [flake-check]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check flake-check result
+        env:
+          FLAKE_CHECK_RESULT: ${{ needs.flake-check.result }}
+        run: |
+          echo "flake-check: ${FLAKE_CHECK_RESULT}"
+          if [ "${FLAKE_CHECK_RESULT}" != "success" ]; then
+            echo "::error::flake-check did not succeed on every system (${FLAKE_CHECK_RESULT})"
+            exit 1
+          fi
